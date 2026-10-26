@@ -23,19 +23,25 @@ $products = $catalog['products'] ?? [];
 function out(array $r): void { echo json_encode($r, JSON_UNESCAPED_UNICODE); exit; }
 function money(float $n): string { return '$' . number_format($n, 2); }
 
-// --- item resolution: exact name > distinctive token > tie -> clarify --------
+// --- item resolution: exact name > alias > distinctive token > tie -> clarify
+// A person hears "Coke" and knows the item: the catalog carries the nicknames
+// people actually use, and resolution checks name, aliases, and name tokens.
 function resolve_item(array $products, string $text): array {
     $t = mb_strtolower($text);
     $hits = [];
     foreach ($products as $p) {
         $name = mb_strtolower($p['name']);
         if (mb_strpos($t, $name) !== false) { return ['one' => $p]; }
+        foreach (($p['aliases'] ?? []) as $a) {
+            if (mb_strpos($t, mb_strtolower((string)$a)) !== false) { return ['one' => $p]; }
+        }
     }
     foreach ($products as $p) {
         $score = 0;
-        foreach (preg_split('/\s+/', mb_strtolower($p['name'])) as $tok) {
-            $tok = trim($tok);
-            if (mb_strlen($tok) >= 3 && mb_strpos($t, $tok) !== false) { $score++; }
+        $tokens = preg_split('/[^a-z0-9]+/u', mb_strtolower($p['name'] . ' ' . implode(' ', $p['aliases'] ?? [])));
+        foreach ($tokens as $tok) {
+            $tok = trim((string)$tok);
+            if (mb_strlen($tok) >= 3 && preg_match('/\b' . preg_quote($tok, '/') . '\b/u', $t)) { $score++; }
         }
         if ($score > 0) { $hits[] = ['p' => $p, 's' => $score]; }
     }
