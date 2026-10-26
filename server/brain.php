@@ -32,10 +32,16 @@ function resolve_item(array $products, string $text): array {
     foreach ($products as $p) {
         $name = mb_strtolower($p['name']);
         if (mb_strpos($t, $name) !== false) { return ['one' => $p]; }
+    }
+    // A nickname shared by several products (chips, beer) is a tie, not a first-match win.
+    $aliasHits = [];
+    foreach ($products as $p) {
         foreach (($p['aliases'] ?? []) as $a) {
-            if (mb_strpos($t, mb_strtolower((string)$a)) !== false) { return ['one' => $p]; }
+            if (mb_strpos($t, mb_strtolower((string)$a)) !== false) { $aliasHits[] = $p; break; }
         }
     }
+    if (count($aliasHits) === 1) { return ['one' => $aliasHits[0]]; }
+    if (count($aliasHits) > 1) { return ['many' => $aliasHits]; }
     foreach ($products as $p) {
         $score = 0;
         $tokens = preg_split('/[^a-z0-9]+/u', mb_strtolower($p['name'] . ' ' . implode(' ', $p['aliases'] ?? [])));
