@@ -1,0 +1,13 @@
+{
+  "store": { "name": "Sunrise Mart (demo)", "currency": "USD", "tax_rate": 0.08 },
+  "products": [
+    { "sku": "1001", "barcode": "049000000443", "name": "Coca-Cola 20oz", "category": "Drinks", "price": 2.19 },
+    { "sku": "1002", "barcode": "049000050103", "name": "Pepsi 20oz", "category": "Drinks", "price": 2.19 },
+    { "sku": "1003", "barcode": "073360003516", "name": "Red Bull 8.4oz", "category": "Drinks", "price": 3.49 },
+    { "sku": "1004", "barcode": "030000010174", "name": "Gatorade Cool Blue 20oz", "category": "Drinks", "price": 2.49 },
+    { "sku": "1005", "barcode": "041220871320", "name": "Bottled Water 16.9oz", "category": "Drinks", "price": 1.29 },
+    { "sku": "1006", "barcode": "028400064057", "name": "Lays Classic Chips 1oz", "category": "Snacks", "price": 1.19 },
+    { "sku": "1007", "barcode": "028400064064", "name": "Doritos Nacho 1oz", "category": "Snacks", "price": 1.19 },
+    { "sku": "1008", "barcode": "040000575698", "name": "Snickers Bar", "category": "Snacks", "price": 1.49 },
+    { "sku": "1009", "barcode": "03400004
+...[truncated 1474 chars]
