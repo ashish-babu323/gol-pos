@@ -81,7 +81,7 @@ if (preg_match('/(kati bikri|aaja ko|today|close|banda|hisab|sales)/iu', $msg)) 
     if ($s['txns'] === 0) {
         out(['reply' => 'Aaja ahile samma bikri record chhaina. Pahilo sale register bata garnus, ani hisab dinchhu.']);
     }
-    out(['reply' => 'Aaja ko hisab: jम्मा ' . money($s['gross']) . ' (' . $s['txns'] . ' ota sale) — cash ' .
+    out(['reply' => 'Aaja ko hisab: jamma ' . money($s['gross']) . ' (' . $s['txns'] . ' ota sale) — cash ' .
                     money($s['cash']) . ', card ' . money($s['card']) . '.']);
 }
 
