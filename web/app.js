@@ -119,7 +119,7 @@ $('scanInput').addEventListener('keydown', (e) => {
   const code = $('scanInput').value.trim();
   const p = catalog.products.find(x => x.barcode === code || x.sku === code);
   if (p) { addToCart(p.sku); $('scanInput').value = ''; }
-  else { chatMsg('Barcode ' + code + ' bhettiyena — Gol lai naam bhannus, ma thapchhu.', 'gol'); $('chatDrawer').classList.remove('hidden'); }
+  else { chatMsg('Barcode ' + code + ' not found — tell Gol the name and I\'ll add it.', 'gol'); $('chatDrawer').classList.remove('hidden'); }
 });
 $('cashBtn').addEventListener('click', () => tender('cash'));
 $('cardBtn').addEventListener('click', () => tender('card'));

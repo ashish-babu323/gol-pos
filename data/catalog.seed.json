@@ -8,7 +8,8 @@
    "sku": "1001",
    "aliases": [
     "coke",
-    "coca cola"
+    "coca cola",
+    "कोक"
    ]
   },
   {
@@ -18,7 +19,8 @@
    "price": 2.19,
    "sku": "1002",
    "aliases": [
-    "pepsi"
+    "pepsi",
+    "पेप्सी"
    ]
   },
   {
@@ -29,7 +31,8 @@
    "sku": "1003",
    "aliases": [
     "redbull",
-    "energy drink"
+    "energy drink",
+    "रेड बुल"
    ]
   },
   {
@@ -50,7 +53,8 @@
    "sku": "1005",
    "aliases": [
     "water",
-    "pani"
+    "pani",
+    "पानी"
    ]
   },
   {
@@ -61,7 +65,8 @@
    "sku": "1006",
    "aliases": [
     "lays",
-    "chips"
+    "chips",
+    "चिप्स"
    ]
   },
   {
@@ -72,7 +77,8 @@
    "sku": "1007",
    "aliases": [
     "doritos",
-    "chips"
+    "chips",
+    "चिप्स"
    ]
   },
   {
@@ -83,7 +89,8 @@
    "sku": "1008",
    "aliases": [
     "snickers",
-    "chocolate"
+    "chocolate",
+    "चकलेट"
    ]
   },
   {
@@ -104,7 +111,8 @@
    "sku": "1010",
    "aliases": [
     "pringles",
-    "chips"
+    "chips",
+    "चिप्स"
    ]
   },
   {
@@ -115,7 +123,9 @@
    "sku": "1011",
    "aliases": [
     "milk",
-    "dudh"
+    "dudh",
+    "doodh",
+    "दूध"
    ]
   },
   {
@@ -126,7 +136,8 @@
    "sku": "1012",
    "aliases": [
     "bread",
-    "pau roti"
+    "pau roti",
+    "पाउरोटी"
    ]
   },
   {
@@ -137,7 +148,9 @@
    "sku": "1013",
    "aliases": [
     "eggs",
-    "anda"
+    "anda",
+    "अण्डा",
+    "अंडा"
    ]
   },
   {
@@ -147,8 +160,10 @@
    "price": 5.49,
    "sku": "1014",
    "aliases": [
-    "rice",
-    "chamal"
+    "chamal",
+    "chawal",
+    "basmati",
+    "चामल"
    ]
   },
   {
@@ -160,7 +175,9 @@
    "aliases": [
     "noodles",
     "chow chow",
-    "wai wai"
+    "wai wai",
+    "चाउचाउ",
+    "वाइवाइ"
    ]
   },
   {
@@ -171,7 +188,8 @@
    "sku": "1016",
    "aliases": [
     "heineken",
-    "beer"
+    "beer",
+    "बियर"
    ]
   },
   {
@@ -182,7 +200,8 @@
    "sku": "1017",
    "aliases": [
     "bud light",
-    "beer"
+    "beer",
+    "बियर"
    ]
   },
   {
@@ -193,7 +212,8 @@
    "sku": "1018",
    "aliases": [
     "wine",
-    "red wine"
+    "red wine",
+    "वाइन"
    ]
   },
   {
@@ -215,7 +235,8 @@
    "sku": "1020",
    "aliases": [
     "detergent",
-    "surf"
+    "surf",
+    "सर्फ"
    ]
   },
   {
@@ -226,7 +247,9 @@
    "sku": "1021",
    "aliases": [
     "pain relief",
-    "medicine"
+    "medicine",
+    "औषधि",
+    "दवाई"
    ]
   },
   {
@@ -237,7 +260,8 @@
    "sku": "1022",
    "aliases": [
     "battery",
-    "batteries"
+    "batteries",
+    "ब्याट्री"
    ]
   },
   {
@@ -248,7 +272,8 @@
    "sku": "1023",
    "aliases": [
     "charger",
-    "cable"
+    "cable",
+    "चार्जर"
    ]
   },
   {
@@ -258,7 +283,449 @@
    "price": 1.59,
    "sku": "1024",
    "aliases": [
-    "lighter"
+    "lighter",
+    "लाइटर"
+   ]
+  },
+  {
+   "barcode": "200010250000",
+   "category": "Drinks",
+   "name": "Sprite 20oz",
+   "price": 2.19,
+   "sku": "1025",
+   "aliases": [
+    "sprite",
+    "स्प्राइट"
+   ]
+  },
+  {
+   "barcode": "200010260009",
+   "category": "Drinks",
+   "name": "Mountain Dew 20oz",
+   "price": 2.19,
+   "sku": "1026",
+   "aliases": [
+    "mountain dew",
+    "dew"
+   ]
+  },
+  {
+   "barcode": "200010270008",
+   "category": "Drinks",
+   "name": "Dr Pepper 20oz",
+   "price": 2.19,
+   "sku": "1027",
+   "aliases": [
+    "dr pepper",
+    "dr. pepper"
+   ]
+  },
+  {
+   "barcode": "200010280007",
+   "category": "Drinks",
+   "name": "Monster Energy 16oz",
+   "price": 3.29,
+   "sku": "1028",
+   "aliases": [
+    "monster",
+    "energy drink"
+   ]
+  },
+  {
+   "barcode": "200010290006",
+   "category": "Drinks",
+   "name": "Lemon Iced Tea 18.5oz",
+   "price": 1.99,
+   "sku": "1029",
+   "aliases": [
+    "iced tea",
+    "lemon tea"
+   ]
+  },
+  {
+   "barcode": "200010300002",
+   "category": "Drinks",
+   "name": "Orange Juice 12oz",
+   "price": 2.69,
+   "sku": "1030",
+   "aliases": [
+    "orange juice",
+    "juice",
+    "जुस"
+   ]
+  },
+  {
+   "barcode": "200010310001",
+   "category": "Drinks",
+   "name": "Hot Coffee 16oz",
+   "price": 1.99,
+   "sku": "1031",
+   "aliases": [
+    "hot coffee",
+    "coffee",
+    "कफी"
+   ]
+  },
+  {
+   "barcode": "200010320000",
+   "category": "Drinks",
+   "name": "Cold Brew Coffee 11oz",
+   "price": 3.79,
+   "sku": "1032",
+   "aliases": [
+    "cold brew",
+    "iced coffee",
+    "coffee",
+    "कफी"
+   ]
+  },
+  {
+   "barcode": "200010330009",
+   "category": "Drinks",
+   "name": "Masala Chiya 12oz",
+   "price": 1.79,
+   "sku": "1033",
+   "aliases": [
+    "chiya",
+    "masala tea",
+    "चिया"
+   ]
+  },
+  {
+   "barcode": "200010340008",
+   "category": "Snacks",
+   "name": "Cheetos Crunchy 1oz",
+   "price": 1.19,
+   "sku": "1034",
+   "aliases": [
+    "cheetos"
+   ]
+  },
+  {
+   "barcode": "200010350007",
+   "category": "Snacks",
+   "name": "Oreo Cookies 6ct",
+   "price": 1.89,
+   "sku": "1035",
+   "aliases": [
+    "oreo",
+    "biscuit",
+    "बिस्कुट"
+   ]
+  },
+  {
+   "barcode": "200010360006",
+   "category": "Snacks",
+   "name": "Kit Kat Bar",
+   "price": 1.49,
+   "sku": "1036",
+   "aliases": [
+    "kit kat",
+    "kitkat",
+    "chocolate",
+    "चकलेट"
+   ]
+  },
+  {
+   "barcode": "200010370005",
+   "category": "Snacks",
+   "name": "M&M's Peanut",
+   "price": 1.69,
+   "sku": "1037",
+   "aliases": [
+    "m&m",
+    "mnm",
+    "m and m"
+   ]
+  },
+  {
+   "barcode": "200010380004",
+   "category": "Snacks",
+   "name": "Trail Mix 2oz",
+   "price": 2.49,
+   "sku": "1038",
+   "aliases": [
+    "trail mix",
+    "badam",
+    "बदाम"
+   ]
+  },
+  {
+   "barcode": "200010390003",
+   "category": "Snacks",
+   "name": "Beef Jerky 1oz",
+   "price": 3.99,
+   "sku": "1039",
+   "aliases": [
+    "jerky"
+   ]
+  },
+  {
+   "barcode": "200010400009",
+   "category": "Snacks",
+   "name": "Sunflower Seeds 2oz",
+   "price": 1.29,
+   "sku": "1040",
+   "aliases": [
+    "sunflower",
+    "seeds"
+   ]
+  },
+  {
+   "barcode": "200010410008",
+   "category": "Snacks",
+   "name": "Sour Candy Strips",
+   "price": 1.39,
+   "sku": "1041",
+   "aliases": [
+    "candy",
+    "sour strips"
+   ]
+  },
+  {
+   "barcode": "200010420007",
+   "category": "Snacks",
+   "name": "Bhujia Namkeen 7oz",
+   "price": 2.99,
+   "sku": "1042",
+   "aliases": [
+    "bhujia",
+    "namkeen",
+    "भुजिया"
+   ]
+  },
+  {
+   "barcode": "200010430006",
+   "category": "Grocery",
+   "name": "Banana (each)",
+   "price": 0.35,
+   "sku": "1043",
+   "aliases": [
+    "banana",
+    "kera",
+    "केरा"
+   ]
+  },
+  {
+   "barcode": "200010440005",
+   "category": "Grocery",
+   "name": "Apple (each)",
+   "price": 0.89,
+   "sku": "1044",
+   "aliases": [
+    "apple",
+    "syau",
+    "स्याउ"
+   ]
+  },
+  {
+   "barcode": "200010450004",
+   "category": "Grocery",
+   "name": "Sugar 4lb",
+   "price": 3.89,
+   "sku": "1045",
+   "aliases": [
+    "sugar",
+    "chini",
+    "चिनी"
+   ]
+  },
+  {
+   "barcode": "200010460003",
+   "category": "Grocery",
+   "name": "Masoor Dal 2lb",
+   "price": 3.49,
+   "sku": "1046",
+   "aliases": [
+    "masoor",
+    "dal",
+    "daal",
+    "दाल"
+   ]
+  },
+  {
+   "barcode": "200010470002",
+   "category": "Grocery",
+   "name": "Cooking Oil 48oz",
+   "price": 5.99,
+   "sku": "1047",
+   "aliases": [
+    "cooking oil",
+    "tel",
+    "तेल"
+   ]
+  },
+  {
+   "barcode": "200010480001",
+   "category": "Grocery",
+   "name": "Salt 26oz",
+   "price": 1.29,
+   "sku": "1048",
+   "aliases": [
+    "salt",
+    "nun",
+    "नुन"
+   ]
+  },
+  {
+   "barcode": "200010490000",
+   "category": "Grocery",
+   "name": "Butter 1lb",
+   "price": 4.99,
+   "sku": "1049",
+   "aliases": [
+    "butter",
+    "makhan",
+    "मक्खन"
+   ]
+  },
+  {
+   "barcode": "200010500006",
+   "category": "Grocery",
+   "name": "Plain Yogurt 32oz",
+   "price": 3.79,
+   "sku": "1050",
+   "aliases": [
+    "yogurt",
+    "dahi",
+    "दही"
+   ]
+  },
+  {
+   "barcode": "200010510005",
+   "category": "Grocery",
+   "name": "Atta Flour 10lb",
+   "price": 8.99,
+   "sku": "1051",
+   "aliases": [
+    "atta",
+    "flour",
+    "pitho",
+    "आटा"
+   ]
+  },
+  {
+   "barcode": "200010520004",
+   "category": "Grocery",
+   "name": "Onions 2lb Bag",
+   "price": 2.49,
+   "sku": "1052",
+   "aliases": [
+    "onion",
+    "pyaj",
+    "प्याज"
+   ]
+  },
+  {
+   "barcode": "200010530003",
+   "category": "Household",
+   "name": "Dish Soap 24oz",
+   "price": 2.99,
+   "sku": "1053",
+   "aliases": [
+    "dish soap",
+    "bhada sabun"
+   ]
+  },
+  {
+   "barcode": "200010540002",
+   "category": "Household",
+   "name": "Hand Sanitizer 8oz",
+   "price": 2.79,
+   "sku": "1054",
+   "aliases": [
+    "sanitizer"
+   ]
+  },
+  {
+   "barcode": "200010550001",
+   "category": "Household",
+   "name": "Trash Bags 20ct",
+   "price": 4.49,
+   "sku": "1055",
+   "aliases": [
+    "trash bag",
+    "garbage bag"
+   ]
+  },
+  {
+   "barcode": "200010560000",
+   "category": "Household",
+   "name": "Toothpaste 4oz",
+   "price": 2.89,
+   "sku": "1056",
+   "aliases": [
+    "toothpaste",
+    "manjan",
+    "मन्जन"
+   ]
+  },
+  {
+   "barcode": "200010570009",
+   "category": "Household",
+   "name": "Toothbrush",
+   "price": 1.99,
+   "sku": "1057",
+   "aliases": [
+    "toothbrush"
+   ]
+  },
+  {
+   "barcode": "200010580008",
+   "category": "Health",
+   "name": "Cough Drops 30ct",
+   "price": 2.49,
+   "sku": "1058",
+   "aliases": [
+    "cough drop",
+    "khoki"
+   ]
+  },
+  {
+   "barcode": "200010590007",
+   "category": "Health",
+   "name": "Band-Aid Strips 30ct",
+   "price": 3.29,
+   "sku": "1059",
+   "aliases": [
+    "band aid",
+    "band-aid",
+    "plaster"
+   ]
+  },
+  {
+   "barcode": "200010600003",
+   "category": "Counter",
+   "name": "Ice Bag 7lb",
+   "price": 2.49,
+   "sku": "1060",
+   "aliases": [
+    "ice bag",
+    "baraf",
+    "बरफ"
+   ]
+  },
+  {
+   "barcode": "200010610002",
+   "category": "Counter",
+   "name": "Hot Dog",
+   "price": 1.99,
+   "sku": "1061",
+   "aliases": [
+    "hot dog",
+    "hotdog"
+   ]
+  },
+  {
+   "barcode": "200010620001",
+   "category": "Beer and Wine",
+   "name": "Corona 6 Pack",
+   "price": 11.49,
+   "sku": "1062",
+   "aliases": [
+    "corona",
+    "beer",
+    "बियर"
    ]
   }
  ],
