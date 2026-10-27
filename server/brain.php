@@ -165,6 +165,11 @@ $S = [
     'np' => 'Yo hapta: jamma %s, %d ota sale (aaja %s).',
     'hi' => 'Is hafte: kul %s, %d sale (aaj %s).',
     'dev' => 'यो हप्ता: जम्मा %s, %d वटा बिक्री (आज %s)।'],
+  'month_line' => [
+    'en' => 'This month so far: %s taken in across %d sales (cash %s, card %s). The POS records sales only, so this is money in — profit lives in the books.',
+    'np' => 'Yo mahina ahile samma: jamma %s bhitra aayo, %d ota sale (cash %s, card %s). POS le bikri matra rakhchha — yo bhitra aako paisa ho, nafa books ma hunchha.',
+    'hi' => 'Is mahine abhi tak: kul %s andar aaya, %d sale (cash %s, card %s). POS sirf bikri rakhta hai — yeh andar aaya paisa hai, munafa books mein hota hai.',
+    'dev' => 'यो महिना अहिलेसम्म: जम्मा %s भित्र आयो, %d वटा बिक्री (नगद %s, कार्ड %s)। POS ले बिक्री मात्र राख्छ — यो भित्र आएको पैसा हो, नाफा बुक्समा हुन्छ।'],
   'poster_which' => [
     'en' => 'Which product should the poster feature? Say its name — e.g. "make an offer poster for Coke".',
     'np' => 'Poster ma kun saman rakhne? Naam bhannus — jastai "Coke ko offer poster bana".',
@@ -375,8 +380,14 @@ function golpos_week_facts(string $shop, array $products): array {
     $days = [];
     for ($i = 6; $i >= 0; $i--) { $days[date('Y-m-d', strtotime("-{$i} days"))] = ['gross' => 0.0, 'txns' => 0]; }
     $items = []; $weekGross = 0.0; $weekTx = 0; $cash = 0.0; $card = 0.0;
+    $monthPrefix = date('Y-m'); $monthGross = 0.0; $monthTx = 0; $monthCash = 0.0; $monthCard = 0.0;
     foreach (golpos_sales() as $s) {
         $d = substr((string)($s['at'] ?? ''), 0, 10);
+        if (strpos($d, $monthPrefix) === 0) {
+            $mTot = (float)($s['total'] ?? 0);
+            $monthGross += $mTot; $monthTx++;
+            if (($s['tender'] ?? '') === 'cash') { $monthCash += $mTot; } else { $monthCard += $mTot; }
+        }
         if (!isset($days[$d])) { continue; }
         $tot = (float)($s['total'] ?? 0);
         $days[$d]['gross'] += $tot; $days[$d]['txns']++;
@@ -396,6 +407,8 @@ function golpos_week_facts(string $shop, array $products): array {
         $figures[] = money($v['gross']);
     }
     $lines[] = "Week total: " . money($weekGross) . " across {$weekTx} sales (cash " . money($cash) . ", card " . money($card) . ").";
+    $lines[] = "Month to date (" . date('F Y') . "): " . money($monthGross) . " across {$monthTx} sales (cash " . money($monthCash) . ", card " . money($monthCard) . "). The POS records sales only — no purchases or expenses — so for a 'money left / how much money' question this month-taken-in figure is the POS truth; profit is computed in the books. Never present a profit figure for the POS.";
+    $figures[] = money($monthGross);
     $lines[] = "Today so far: " . money($today['gross']) . " across {$today['txns']} sales.";
     $top = array_slice($items, 0, 5, true);
     if ($top) {
@@ -405,7 +418,7 @@ function golpos_week_facts(string $shop, array $products): array {
     }
     $lines[] = "Catalog (" . count($products) . " items, name — price): "
         . implode('; ', array_map(fn($p) => $p['name'] . ' — ' . money((float)$p['price']), $products));
-    return [implode("\n", $lines), $figures, $weekTx, $weekGross, $today];
+    return [implode("\n", $lines), $figures, $weekTx, $weekGross, $today, $monthGross, $monthTx, $monthCash, $monthCard];
 }
 
 if ($msg === '') { out(['reply' => t('empty')]); }
@@ -561,8 +574,8 @@ if (preg_match('/(receipt|bill|print|paper|footer|logo|tax|auto|cop(y|ies)|phone
 // if Wonder is unreachable; the template speaks if neither answers. Same
 // grounding law: a reply is accepted only if it carries a real figure.
 if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|kasto|kina|hapta|हप्ता|week|month|suggest|advice|sujhab|sujhav|sallah|slow|trend|improv)/iu', $msg)) {
-    [$facts, $figures, $weekTx, $weekGross, $todaySum] = golpos_week_facts($shop, $products);
-    if ($weekTx === 0) { out(['reply' => t('week_none')]); }
+    [$facts, $figures, $weekTx, $weekGross, $todaySum, $monthGross, $monthTx, $monthCash, $monthCard] = golpos_week_facts($shop, $products);
+    if ($weekTx === 0 && $monthTx === 0) { out(['reply' => t('week_none')]); }
     $grounded = function (?string $reply) use ($figures): bool {
         if ($reply === null) { return false; }
         foreach ($figures as $f) { if (strpos($reply, $f) !== false) { return true; } }
@@ -572,6 +585,7 @@ if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|
     if ($grounded($reply)) { out(['reply' => $reply]); }
     $reply = golpos_meta_compose($shop, $facts, $msg);
     if ($grounded($reply)) { out(['reply' => $reply]); }
+    if (preg_match('/(month|mahina|महिना)/iu', $msg)) { out(['reply' => t('month_line', money($monthGross), $monthTx, money($monthCash), money($monthCard))]); }
     out(['reply' => t('week_line', money($weekGross), $weekTx, money($todaySum['gross']))]);
 }
 
