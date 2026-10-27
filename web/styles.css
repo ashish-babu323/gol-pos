@@ -3,9 +3,13 @@
    Clean Counter, Bold Blue — ported faithfully from the approved design samples.
    Theme lives on <html data-theme="midnight|clean|bold">; layout + behavior are
    shared, each theme block below carries its own full visual language.
-   Brand mark: the canonical Gol open-ring logo (same asset as the live
-   gol-system-widget.js float — itacademy.com.np/img/brand/gol-logo-open-ring-blue.png),
-   never a redrawn approximation. Gol blue #3F80F5. */
+   Brand mark: the canonical Gol open-ring logo, as local derived assets
+   (web/assets/gol-ring-white.png / gol-ring-blue.png) — strict-alpha keys of
+   the canonical render (itacademy.com.np/img/brand/gol-logo-open-ring-blue.png,
+   the same file the live gol-system-widget.js float names). The remote render
+   itself is an opaque dark square: seating it raw (or via invert filters)
+   renders a blob, so the seats use the transparent derived forms.
+   Never a redrawn approximation. Gol blue #3F80F5. */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root { --num: ui-rounded, system-ui, -apple-system, "Segoe UI", sans-serif; }
 body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; min-height: 100vh; color: var(--ink); background-color: var(--bg); }
@@ -95,7 +99,6 @@ button { font: inherit; cursor: pointer; }
 .chat-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 100vw); z-index: 50; display: flex; flex-direction: column; background: var(--chat-bg); border-left: 1px solid var(--chat-line); box-shadow: -18px 0 44px rgba(2,6,18,.45); }
 .chat-head { display: flex; align-items: center; gap: 10px; padding: 13px 15px; color: #fff; background: linear-gradient(120deg, #2e6be6, #1d4ed8 70%, #173f9e); box-shadow: 0 8px 22px rgba(29,78,216,.3); }
 .chat-head .gol-mark { width: 33px; height: 33px; background: rgba(255,255,255,.14); border: 2.5px solid rgba(255,255,255,.9); }
-.chat-head .gol-mark-img { filter: brightness(0) invert(1); }
 .chat-title b { font-size: 17px; display: block; line-height: 1.15; }
 .chat-title small { display: block; font-size: 11.5px; font-weight: 500; color: #bdd4ff; }
 .chat-head button { margin-left: auto; background: transparent; border: none; color: #dceaff; font-size: 20px; padding: 2px 6px; }
@@ -160,7 +163,6 @@ button { font: inherit; cursor: pointer; }
 [data-theme="midnight"] .clock { color: #cfe0ff; }
 [data-theme="midnight"] .today-chip { color: #fff; background: linear-gradient(135deg, rgba(63,128,245,.35), rgba(29,78,216,.25)); border: 1px solid rgba(96,165,250,.5); }
 [data-theme="midnight"] .topbar .gol-mark { background: radial-gradient(circle at 32% 30%, #6fa8ff, #2563eb 62%, #1d4ed8); box-shadow: 0 0 0 2px rgba(147,197,253,.55), 0 0 22px rgba(63,128,245,.75), inset 0 0 0 2px rgba(255,255,255,.25); }
-[data-theme="midnight"] .topbar .gol-mark-img { filter: brightness(0) invert(1); }
 [data-theme="midnight"] .top-right > button { border: 1px solid var(--line); background: #0e1b38; color: var(--ink); }
 [data-theme="midnight"] .top-right > button.gol-btn { border: none; color: #fff; background: linear-gradient(135deg, #5b93ff, #2563eb); box-shadow: 0 6px 20px rgba(37,99,235,.5), inset 0 1px 0 rgba(255,255,255,.35); padding: 10px 18px; }
 [data-theme="midnight"] .tile-price { text-shadow: 0 0 14px rgba(63,128,245,.35); }
@@ -213,7 +215,7 @@ button { font: inherit; cursor: pointer; }
 [data-theme="clean"] .clock { color: #33507c; }
 [data-theme="clean"] .today-chip { color: #1d4ed8; background: #eaf2ff; border: 1px solid #cbdefc; }
 /* Clean carries the canonical light-surface form: white ring chip, blue open-ring mark */
-[data-theme="clean"] .topbar .gol-mark { background: #fff url(https://itacademy.com.np/img/brand/gol-logo-open-ring-blue.png) center/82% no-repeat; box-shadow: 0 0 0 2px rgba(255,255,255,.9), 0 0 0 4px rgba(63,128,245,.28), 0 0 16px rgba(191,219,254,.95); }
+[data-theme="clean"] .topbar .gol-mark { background: #fff url(assets/gol-ring-blue.png) center/82% no-repeat; box-shadow: 0 0 0 2px rgba(255,255,255,.9), 0 0 0 4px rgba(63,128,245,.28), 0 0 16px rgba(191,219,254,.95); }
 [data-theme="clean"] .topbar .gol-mark-img { visibility: hidden; }
 [data-theme="clean"] .topbar .gol-mark-dot { border-color: #fff; }
 [data-theme="clean"] .top-right > button { border: 1px solid #d5e4f8; background: #fff; color: var(--ink); }
@@ -271,9 +273,8 @@ button { font: inherit; cursor: pointer; }
 [data-theme="bold"] .status-dot { background: #4ade80; box-shadow: 0 0 10px #4ade80; }
 [data-theme="bold"] .clock { color: #fff; font-weight: 800; }
 [data-theme="bold"] .today-chip { color: #1d4ed8; background: #fff; border: none; box-shadow: 0 6px 14px rgba(11,42,107,.25); }
-/* Bold header sits ON the blue gradient — canonical FAB form: white ring-G, inverted mark */
+/* Bold header sits ON the blue gradient — canonical FAB form: white ring-G (local derived asset) */
 [data-theme="bold"] .topbar .gol-mark { background: rgba(255,255,255,.16); border: 3px solid rgba(255,255,255,.9); box-shadow: 0 0 0 5px rgba(255,255,255,.14), 0 6px 16px rgba(11,42,107,.4); }
-[data-theme="bold"] .topbar .gol-mark-img { filter: brightness(0) invert(1); }
 [data-theme="bold"] .top-right > button { border: 1.5px solid rgba(255,255,255,.45); background: rgba(255,255,255,.1); color: #fff; border-radius: 999px; padding: 10px 17px; }
 [data-theme="bold"] .top-right > button.gol-btn { background: #fff; color: #1d4ed8; border-color: #fff; font-weight: 900; box-shadow: 0 8px 18px rgba(11,42,107,.3); }
 [data-theme="bold"] .catalog { background: #fff; border-radius: 26px; padding: 18px; box-shadow: 0 24px 48px rgba(29,78,216,.16); }
