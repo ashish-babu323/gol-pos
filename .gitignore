@@ -3,3 +3,8 @@ data/catalog.live.json
 data/sales.json
 data/pending.json
 *.tmp
+web/uploads/posters/*
+web/uploads/photos/*
+!web/uploads/*/.gitkeep
+data/feed.json
+data/photos.json

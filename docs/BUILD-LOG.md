@@ -40,3 +40,47 @@ One entry per day; the git history carries the same dates.
   `model = muse-spark-1.3`. Live data restored afterwards: catalog.live is
   byte-identical to the seed, Coke back at $2.19, no pending card, no test
   sale left behind.
+- **The full Muse family inside Gol AI POS — Spark thinks fast, Wonder
+  thinks deep, SAM sees, Muse Image creates** (owner order, Oct 26 evening).
+  One server-side client (`server/meta.php`) now serves all four models off
+  the same protected key; `resolve_item()` moved to `store.php` so every
+  lane shares the resolver. The lanes:
+  - **Wonder (muse-wonder-1.0) — deep think.** Judgment questions (why /
+    how was / week / suggest / kina / kasto…) route to a new analysis
+    branch: the deterministic layer assembles the week's facts (per-day
+    totals, week aggregate, tender split, top sellers) and Wonder composes
+    the judgment under the same figure-grounding check; Spark composes if
+    Wonder is unreachable, the template speaks if neither answers.
+    Register-speed turns stay on Spark.
+  - **SAM 3.1 — the eyes.** New `server/photo.php` + a 📷 button in the
+    chat: the owner uploads a product/shelf photo with an optional concept
+    hint; SAM segments it via the Responses API and the read stages as a
+    `photo_read` card (photo, concept, region count, boxes) — candidates
+    for the owner to confirm, never silent truth. On "gol" a matched
+    catalog item goes to the cart; an unmatched read is only logged. If
+    SAM doesn't answer, the photo still stages with an honest no-read note.
+  - **Muse Image (muse-image-1.0) — creates.** "Make an offer poster for
+    Coke" resolves the item + catalog price, generates the poster, shows
+    the preview in chat as a `poster` card, and publishes ONLY on "gol" —
+    into the demo store's feed (`data/feed.json`, shown in the owner
+    view). Fictional Sunrise Mart branding only.
+  - Live proof on the dev preview (one small call per model; a fictional
+    week of 40 sales / $235.27 seeded for the Wonder test, today
+    deliberately quiet at $2.37, then removed): Wonder — "Why was today so
+    slow? How was this week overall?" → composed analysis carrying the
+    exact figures ($2.37 today · $235.27 week · top seller Pringles Sour
+    Cream 2.5oz — $36.64) + one grounded suggestion, `meta.model =
+    muse-wonder-1.0`. SAM — the generated poster uploaded back with prompt
+    "bottle" → 1 region, box x1=430 y1=652 x2=719 y2=1514 in the 1152×2016
+    frame, `meta.model = sam-3.1`; card confirmed with "gol" and logged,
+    nothing auto-added (no catalog match for "bottle"). Muse Image —
+    poster for Coca-Cola 20oz at the catalog $2.19, PNG 1152×2016 at
+    `web/uploads/posters/poster-20261027-010029-2ee738.png`, `meta.model =
+    muse-image-1.0`; confirmed with "gol" → the one entry now in the demo
+    feed (kept as demo content). Regression: Spark price path re-verified
+    after the refactor ("Coca-Cola 20oz costs $2.19.", `muse-spark-1.3`).
+    Hygiene afterwards: seeded sales + photo log + test upload removed,
+    catalog.live byte-identical to the seed, Coke $2.19, no pending card.
+    Note: heavy scripted curl from the build machine trips the host's
+    bot-check page after several calls — late checks were run over SSH
+    loopback instead; real browsers are unaffected.

@@ -1,0 +1,84 @@
+<?php
+// Gol POS — the photo lane: SAM 3.1 is Gol's eyes.
+//
+// POST (multipart): file field "photo", optional text field "prompt" — the
+// concept to look for (a product name, "printer", "bottle"…; default
+// "product"). The photo is saved under web/uploads/photos/, SAM reads it,
+// and whatever it found stages as a photo_read card. SAM's boxes are
+// CANDIDATES, never silent truth: the card shows the count, the boxes and
+// the prompt, and nothing executes until the owner says "gol" in the brain
+// (a matched catalog item goes to the cart; an unmatched read is logged).
+//
+// If SAM does not answer, the photo still stages with regions = null and an
+// honest note — the lane degrades gracefully, the register never breaks.
+
+declare(strict_types=1);
+require __DIR__ . '/store.php';
+require __DIR__ . '/meta.php';
+
+header('Content-Type: application/json; charset=utf-8');
+
+function pout(array $r): void {
+    $r['meta'] = $GLOBALS['golpos_meta'] ?? ['provider' => 'deterministic', 'model' => null];
+    echo json_encode($r, JSON_UNESCAPED_UNICODE); exit;
+}
+$GLOBALS['golpos_meta'] = ['provider' => 'deterministic', 'model' => null];
+
+if (empty($_FILES['photo']) || ($_FILES['photo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+    pout(['reply' => 'No photo received — tap the 📷 button and pick a photo.']);
+}
+$tmp = (string)$_FILES['photo']['tmp_name'];
+if (!is_uploaded_file($tmp) || (int)$_FILES['photo']['size'] > 10 * 1024 * 1024) {
+    pout(['reply' => 'That photo could not be read — try a smaller image (under 10 MB).']);
+}
+$finfo = finfo_open(FILEINFO_MIME_TYPE);
+$mime = $finfo ? (string)finfo_file($finfo, $tmp) : '';
+$exts = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+if (!isset($exts[$mime])) {
+    pout(['reply' => 'That file is not a photo I can read — JPEG, PNG or WebP please.']);
+}
+$bytes = (string)file_get_contents($tmp);
+
+$dir = dirname(__DIR__) . '/web/uploads/photos';
+if (!is_dir($dir)) { mkdir($dir, 0775, true); }
+$file = 'photo-' . date('Ymd-His') . '-' . substr(sha1(uniqid('', true)), 0, 6) . '.' . $exts[$mime];
+file_put_contents($dir . '/' . $file, $bytes);
+$imagePath = 'uploads/photos/' . $file;
+
+$prompt = trim((string)($_POST['prompt'] ?? ''));
+if ($prompt === '') { $prompt = 'product'; }
+
+$sam = golpos_meta_sam('data:' . $mime . ';base64,' . base64_encode($bytes), $prompt);
+
+// If the concept the owner named resolves to exactly one catalog item, the
+// card carries the match so "gol" can put it in the cart.
+$catalog = golpos_catalog();
+$products = $catalog['products'] ?? [];
+$r = resolve_item($products, $prompt);
+$match = !empty($r['one']) ? $r['one'] : null;
+
+$card = golpos_stage([
+    'type' => 'photo_read',
+    'image' => $imagePath,
+    'prompt' => $prompt,
+    'regions' => $sam['regions'] ?? null,
+    'boxes' => $sam['boxes'] ?? [],
+    'sam_excerpt' => $sam['excerpt'] ?? null,
+    'match_sku' => $match['sku'] ?? null,
+    'match_name' => $match['name'] ?? null,
+    'match_price' => $match['price'] ?? null,
+]);
+
+if ($sam === null) {
+    pout(['reply' => "Photo received and saved — my eyes (SAM) didn't answer just now, so there's no read on it. "
+        . "The card is staged anyway; say \"gol\" to log it, or tell me the item name and I'll handle it.",
+          'card' => $card]);
+}
+$reply = "SAM read your photo: {$sam['regions']} region(s) found for \"{$prompt}\".";
+if ($match) {
+    $reply .= " That matches {$match['name']} (" . '$' . number_format((float)$match['price'], 2) . ") in the catalog"
+        . " — say \"gol\" and I'll add it to the cart.";
+} else {
+    $reply .= " No catalog item matches \"{$prompt}\" — say \"gol\" to log the photo, or name the item if it's new.";
+}
+pout(['reply' => $reply, 'card' => $card]);

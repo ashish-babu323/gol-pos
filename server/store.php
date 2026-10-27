@@ -70,6 +70,43 @@ function golpos_clear_pending(): void {
     if (file_exists($path)) { unlink($path); }
 }
 
+// --- item resolution: exact name > alias > distinctive token > tie -> clarify
+// A person hears "Coke" and knows the item: the catalog carries the nicknames
+// people actually use, and resolution checks name, aliases, and name tokens.
+// Shared by the brain and the photo lane.
+function resolve_item(array $products, string $text): array {
+    $t = mb_strtolower($text);
+    $hits = [];
+    foreach ($products as $p) {
+        $name = mb_strtolower($p['name']);
+        if (mb_strpos($t, $name) !== false) { return ['one' => $p]; }
+    }
+    // A nickname shared by several products (chips, beer) is a tie, not a first-match win.
+    $aliasHits = [];
+    foreach ($products as $p) {
+        foreach (($p['aliases'] ?? []) as $a) {
+            if (mb_strpos($t, mb_strtolower((string)$a)) !== false) { $aliasHits[] = $p; break; }
+        }
+    }
+    if (count($aliasHits) === 1) { return ['one' => $aliasHits[0]]; }
+    if (count($aliasHits) > 1) { return ['many' => $aliasHits]; }
+    foreach ($products as $p) {
+        $score = 0;
+        $tokens = preg_split('/[^a-z0-9]+/u', mb_strtolower($p['name'] . ' ' . implode(' ', $p['aliases'] ?? [])));
+        foreach ($tokens as $tok) {
+            $tok = trim((string)$tok);
+            if (mb_strlen($tok) >= 3 && preg_match('/\b' . preg_quote($tok, '/') . '\b/u', $t)) { $score++; }
+        }
+        if ($score > 0) { $hits[] = ['p' => $p, 's' => $score]; }
+    }
+    if (!$hits) { return ['none' => true]; }
+    usort($hits, fn($a, $b) => $b['s'] <=> $a['s']);
+    $top = $hits[0]['s'];
+    $best = array_values(array_filter($hits, fn($h) => $h['s'] === $top));
+    if (count($best) === 1) { return ['one' => $best[0]['p']]; }
+    return ['many' => array_map(fn($h) => $h['p'], $best)];
+}
+
 function golpos_day_summary(string $ymd): array {
     $gross = 0.0; $cash = 0.0; $card = 0.0; $count = 0;
     foreach (golpos_sales() as $s) {

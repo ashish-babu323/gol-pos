@@ -24,6 +24,7 @@
 
 declare(strict_types=1);
 require __DIR__ . '/store.php';
+require __DIR__ . '/meta.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -144,6 +145,46 @@ $S = [
     'np' => 'Tyo saman bhettina — naam arkai gari bhannus hernus.',
     'hi' => 'Woh saaman nahi mila — naam doosre tareeke se kahiye.',
     'dev' => 'त्यो सामान भेटिन — नाम अर्कै गरी भन्नुस् हेर्नुस्।'],
+  'week_none' => [
+    'en' => 'No sales recorded in the last 7 days yet — once the register rings, I can analyse the week for you.',
+    'np' => 'Pachhillo 7 din ma ahile samma bikri record chhaina — register ma bikri bhaye pachhi hapta ko hisab herna sakchhu.',
+    'hi' => 'Pichhle 7 din mein abhi tak koi bikri record nahi hai — register par bikri hone ke baad hafte ka analysis dunga.',
+    'dev' => 'पछिल्लो ७ दिनमा अहिलेसम्म बिक्री रेकर्ड छैन — रजिस्टरमा बिक्री भएपछि हप्ताको हिसाब हेर्न सक्छु।'],
+  'week_line' => [
+    'en' => 'This week: %s across %d sales (today %s).',
+    'np' => 'Yo hapta: jamma %s, %d ota sale (aaja %s).',
+    'hi' => 'Is hafte: kul %s, %d sale (aaj %s).',
+    'dev' => 'यो हप्ता: जम्मा %s, %d वटा बिक्री (आज %s)।'],
+  'poster_which' => [
+    'en' => 'Which product should the poster feature? Say its name — e.g. "make an offer poster for Coke".',
+    'np' => 'Poster ma kun saman rakhne? Naam bhannus — jastai "Coke ko offer poster bana".',
+    'hi' => 'Poster mein kaun sa saaman ho? Naam bataiye — jaise "Coke ka offer poster banao".',
+    'dev' => 'पोस्टरमा कुन सामान राख्ने? नाम भन्नुस् — जस्तै "कोकको अफर पोस्टर बनाऊ"।'],
+  'poster_ready' => [
+    'en' => 'Poster ready — preview below. Say "gol" and I\'ll post it to the %s demo feed.',
+    'np' => 'Poster tayar chha — tala preview hernus. "gol" bhannus, ma %s ko demo feed ma haldinchhu.',
+    'hi' => 'Poster taiyaar hai — neeche preview dekhiye. "gol" kahiye, main %s ke demo feed par daal dunga.',
+    'dev' => 'पोस्टर तयार छ — तल प्रिभ्यु हेर्नुस्। "गोल" भन्नुस्, म %s को डेमो फिडमा हाल्दिन्छु।'],
+  'poster_done' => [
+    'en' => 'Posted to the %s demo feed: %s — %s.',
+    'np' => '%s ko demo feed ma post bhayo: %s — %s.',
+    'hi' => '%s ke demo feed par post ho gaya: %s — %s.',
+    'dev' => '%s को डेमो फिडमा पोस्ट भयो: %s — %s।'],
+  'poster_fail' => [
+    'en' => 'I couldn\'t generate the poster just now — the image service didn\'t answer. Try again in a moment.',
+    'np' => 'Ahile poster banauna milena — image service le jawaf diyena. Ekai chhin pachhi feri prayas garnus.',
+    'hi' => 'Abhi poster nahi ban paya — image service ne jawaab nahi diya. Thodi der baad phir koshish kijiye.',
+    'dev' => 'अहिले पोस्टर बनाउन मिलेन — इमेज सेवाले जवाफ दिएन। एकै छिनपछि फेरि प्रयास गर्नुस्।'],
+  'photo_added' => [
+    'en' => 'From your photo, I added %s (%s) to the cart.',
+    'np' => 'Tapai ko photo bata %s (%s) cart ma thapiye.',
+    'hi' => 'Aapki photo se %s (%s) cart mein jod diya.',
+    'dev' => 'तपाईंको फोटोबाट %s (%s) कार्टमा थपियो।'],
+  'photo_saved' => [
+    'en' => 'Photo saved. SAM found %d region(s) for "%s" — nothing in the catalog matched that name, so nothing was added. Say the item name and price if it\'s a new product.',
+    'np' => 'Photo save bhayo. SAM le "%s" ka lagi %d thau bhetyo — suchi ma tyo naam mildaina, kehi thapiyena. Naya saman ho bhane naam ra mulya bhannus.',
+    'hi' => 'Photo save ho gaya. SAM ko "%s" ke liye %d jagah mili — list mein woh naam nahi mila, kuchh joda nahi gaya. Naya saaman hai to naam aur daam bataiye.',
+    'dev' => 'फोटो सेभ भयो। SAM ले "%s" का लागि %d ठाउँ भेट्यो — सूचीमा त्यो नाम मिल्दैन, केही थपिएन। नयाँ सामान हो भने नाम र मूल्य भन्नुस्।'],
   'fallback' => [
     'en' => 'I can add items, quote or change prices (staged as a card), and give today\'s total. Try: "How much is Coke?"',
     'np' => 'Ma saman thapna, mulya sodhna/badalna (card stage garera), ra din ko hisab dina sakchhu. Ek wata prayas garnus: "Coke ko mulya kati?"',
@@ -156,50 +197,52 @@ function t(string $key, ...$args): string {
     return $args ? vsprintf($s, $args) : $s;
 }
 
-// --- PRIMARY BRAIN: Muse via the Meta Model API ------------------------------
+// --- PRIMARY BRAIN: the Muse family via the Meta Model API -------------------
 // Story (owner-locked, Oct 26): MR.STORE was already a platform. Then Muse
 // arrived — and with Muse's APIs, we built Gol, the brain that runs it by
-// chat. So the composed voice of this brain IS Muse Spark (muse-spark-1.3)
-// on Meta's own API. The key stays server-side: an environment variable, or
-// an env file outside the web root (META_API_KEY_FILE, or the house meta.env
-// holding a META_MODEL_API_KEY line). It is never sent to the browser and
-// never logged. Every Muse-reply is grounding-checked by its caller against
-// the exact figure it was given; a reply that drops or changes the figure is
-// rejected and the deterministic template speaks instead.
+// chat. The full Muse family works inside Gol, each with its own job:
+//   Spark  (muse-spark-1.3)  — thinks fast: register-speed composed replies.
+//   Wonder (muse-wonder-1.0) — thinks deep: owner-level analysis & judgment.
+//   SAM    (sam-3.1)         — sees: the photo lane (server/photo.php).
+//   Image  (muse-image-1.0)  — creates: offer posters, staged as cards.
+// The client lives in meta.php; the key stays server-side and is never sent
+// to the browser or logged. Every composed reply is grounding-checked by its
+// caller against the exact figures it was given; a reply that drops or
+// changes a figure is rejected and the deterministic template speaks instead.
 $GLOBALS['golpos_meta'] = ['provider' => 'deterministic', 'model' => null];
 
-function golpos_meta_key(): ?string {
-    $direct = getenv('META_MODEL_API_KEY');
-    if (is_string($direct) && trim($direct) !== '') { return trim($direct); }
-    $files = [];
-    $kf = getenv('META_API_KEY_FILE');
-    if (is_string($kf) && $kf !== '') { $files[] = $kf; }
-    $files[] = dirname(__DIR__, 3) . '/salonbooks-private/meta.env';
-    $files[] = dirname(__DIR__) . '/private/meta.env';
-    foreach ($files as $f) {
-        if (!is_file($f) || !is_readable($f)) { continue; }
-        $raw = trim((string)file_get_contents($f));
-        if ($raw === '') { continue; }
-        if (preg_match('/^META_MODEL_API_KEY\s*=\s*(\S+)\s*$/m', $raw, $m)) { return trim($m[1], "\"'"); }
-        if (preg_match('/^META_API_KEY\s*=\s*(\S+)\s*$/m', $raw, $m)) { return trim($m[1], "\"'"); }
-        if (strpos($raw, '=') === false && strpos($raw, "\n") === false) { return $raw; } // bare-key file
-    }
-    return null;
+function golpos_spark_model(): string {
+    $model = getenv('META_MODEL');
+    return (is_string($model) && trim($model) !== '') ? trim($model) : 'muse-spark-1.3';
+}
+function golpos_wonder_model(): string {
+    $model = getenv('META_MODEL_WONDER');
+    return (is_string($model) && trim($model) !== '') ? trim($model) : 'muse-wonder-1.0';
+}
+function golpos_lang_name(): string {
+    global $L;
+    return ['en'  => 'English',
+            'np'  => 'Romanized Nepali (Latin script)',
+            'hi'  => 'Romanized Hindi (Latin script)',
+            'dev' => 'Nepali (Devanagari script)'][$L] ?? 'English';
 }
 
-// Ask Muse to compose one short reply from grounded facts. Returns null on
-// ANY failure (no key, HTTP error, timeout, empty content) so the caller
-// falls back to the deterministic template — silently, register first.
-function golpos_meta_compose(string $shop, string $facts, string $userMsg): ?string {
-    global $L;
-    $key = golpos_meta_key();
-    if ($key === null || !function_exists('curl_init')) { return null; }
-    $model = getenv('META_MODEL');
-    $model = (is_string($model) && trim($model) !== '') ? trim($model) : 'muse-spark-1.3';
-    $langName = ['en'  => 'English',
-                 'np'  => 'Romanized Nepali (Latin script)',
-                 'hi'  => 'Romanized Hindi (Latin script)',
-                 'dev' => 'Nepali (Devanagari script)'][$L] ?? 'English';
+// Ask a Muse text model to compose one reply from grounded facts. Returns
+// null on ANY failure (no key, HTTP error, timeout, empty content) so the
+// caller falls back — silently, register first. $deep switches to the
+// Wonder analyst framing (a judgment answer, one grounded suggestion).
+function golpos_meta_compose(string $shop, string $facts, string $userMsg, ?string $model = null, bool $deep = false): ?string {
+    $model = $model ?? golpos_spark_model();
+    $langName = golpos_lang_name();
+    if ($deep) {
+        $system = "You are Gol, the AI brain inside the register at {$shop}, a small convenience store. "
+            . "You are the owner's analyst now — think deeply over the week's facts below and answer "
+            . "the owner's judgment question (3-5 sentences) in {$langName} only. Use ONLY these facts: "
+            . "never invent a price, a product, or a figure, and state every figure exactly as given. "
+            . "You may offer ONE practical suggestion, but it must follow from the facts (a slow day, "
+            . "a best seller, a tender pattern) — never generic business advice.\nFacts:\n{$facts}";
+        return golpos_meta_chat($model, $system, $userMsg, 1500, 60);
+    }
     $system = "You are Gol, the AI brain inside the register at {$shop}, a small convenience store. "
         . "You are chatting with the shop owner at the till. Write ONE short, natural reply "
         . "(1-2 sentences) in {$langName} only. Use ONLY the facts below — never invent a price, "
@@ -207,70 +250,47 @@ function golpos_meta_compose(string $shop, string $facts, string $userMsg): ?str
         . "answer the question, say briefly what you can do instead: add items to the cart by "
         . "name, quote a price, stage a price change as a card (it runs only when the owner says "
         . "the confirm word \"gol\"), or give today's total.\nFacts:\n{$facts}";
-    $payload = json_encode([
-        'model' => $model,
-        'messages' => [
-            ['role' => 'system', 'content' => $system],
-            ['role' => 'user', 'content' => $userMsg],
-        ],
-        'max_tokens' => 1500,
-        'reasoning_effort' => 'minimal',
-    ]);
-    $ch = curl_init('https://api.meta.ai/v1/chat/completions');
-    curl_setopt_array($ch, [
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $payload,
-        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . $key],
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => false,
-        CURLOPT_CONNECTTIMEOUT => 4,
-        CURLOPT_TIMEOUT => 12,
-    ]);
-    $raw = curl_exec($ch);
-    $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-    curl_close($ch);
-    if ($raw === false || $code !== 200) { return null; }
-    $j = json_decode((string)$raw, true);
-    $content = trim((string)($j['choices'][0]['message']['content'] ?? ''));
-    if ($content === '') { return null; }
-    $GLOBALS['golpos_meta'] = ['provider' => 'meta-model-api', 'model' => $model];
-    return $content;
+    return golpos_meta_chat($model, $system, $userMsg, 1500, 30);
 }
 
-// --- item resolution: exact name > alias > distinctive token > tie -> clarify
-// A person hears "Coke" and knows the item: the catalog carries the nicknames
-// people actually use, and resolution checks name, aliases, and name tokens.
-function resolve_item(array $products, string $text): array {
-    $t = mb_strtolower($text);
-    $hits = [];
-    foreach ($products as $p) {
-        $name = mb_strtolower($p['name']);
-        if (mb_strpos($t, $name) !== false) { return ['one' => $p]; }
-    }
-    // A nickname shared by several products (chips, beer) is a tie, not a first-match win.
-    $aliasHits = [];
-    foreach ($products as $p) {
-        foreach (($p['aliases'] ?? []) as $a) {
-            if (mb_strpos($t, mb_strtolower((string)$a)) !== false) { $aliasHits[] = $p; break; }
+// The deterministic layer assembles the week's facts for the Wonder lane:
+// per-day totals for the last 7 days, the week aggregate, the tender split,
+// and the top sellers by revenue. Returns [facts string, grounding figures].
+function golpos_week_facts(string $shop, array $products): array {
+    $days = [];
+    for ($i = 6; $i >= 0; $i--) { $days[date('Y-m-d', strtotime("-{$i} days"))] = ['gross' => 0.0, 'txns' => 0]; }
+    $items = []; $weekGross = 0.0; $weekTx = 0; $cash = 0.0; $card = 0.0;
+    foreach (golpos_sales() as $s) {
+        $d = substr((string)($s['at'] ?? ''), 0, 10);
+        if (!isset($days[$d])) { continue; }
+        $tot = (float)($s['total'] ?? 0);
+        $days[$d]['gross'] += $tot; $days[$d]['txns']++;
+        $weekGross += $tot; $weekTx++;
+        if (($s['tender'] ?? '') === 'cash') { $cash += $tot; } else { $card += $tot; }
+        foreach (($s['lines'] ?? []) as $l) {
+            $n = (string)($l['name'] ?? '');
+            if ($n !== '') { $items[$n] = ($items[$n] ?? 0.0) + (float)($l['line_total'] ?? 0); }
         }
     }
-    if (count($aliasHits) === 1) { return ['one' => $aliasHits[0]]; }
-    if (count($aliasHits) > 1) { return ['many' => $aliasHits]; }
-    foreach ($products as $p) {
-        $score = 0;
-        $tokens = preg_split('/[^a-z0-9]+/u', mb_strtolower($p['name'] . ' ' . implode(' ', $p['aliases'] ?? [])));
-        foreach ($tokens as $tok) {
-            $tok = trim((string)$tok);
-            if (mb_strlen($tok) >= 3 && preg_match('/\b' . preg_quote($tok, '/') . '\b/u', $t)) { $score++; }
-        }
-        if ($score > 0) { $hits[] = ['p' => $p, 's' => $score]; }
+    arsort($items);
+    $today = golpos_day_summary(date('Y-m-d'));
+    $lines = ["Shop: {$shop}. Last 7 days (date — total — sales):"];
+    $figures = [money($weekGross), money($today['gross'])];
+    foreach ($days as $d => $v) {
+        $lines[] = "{$d} — " . money($v['gross']) . " — {$v['txns']}";
+        $figures[] = money($v['gross']);
     }
-    if (!$hits) { return ['none' => true]; }
-    usort($hits, fn($a, $b) => $b['s'] <=> $a['s']);
-    $top = $hits[0]['s'];
-    $best = array_values(array_filter($hits, fn($h) => $h['s'] === $top));
-    if (count($best) === 1) { return ['one' => $best[0]['p']]; }
-    return ['many' => array_map(fn($h) => $h['p'], $best)];
+    $lines[] = "Week total: " . money($weekGross) . " across {$weekTx} sales (cash " . money($cash) . ", card " . money($card) . ").";
+    $lines[] = "Today so far: " . money($today['gross']) . " across {$today['txns']} sales.";
+    $top = array_slice($items, 0, 5, true);
+    if ($top) {
+        $lines[] = "Top sellers this week by revenue: " . implode('; ', array_map(
+            fn($n, $v) => $n . ' — ' . money($v), array_keys($top), array_values($top))) . ".";
+        foreach ($top as $v) { $figures[] = money($v); }
+    }
+    $lines[] = "Catalog (" . count($products) . " items, name — price): "
+        . implode('; ', array_map(fn($p) => $p['name'] . ' — ' . money((float)$p['price']), $products));
+    return [implode("\n", $lines), $figures, $weekTx, $weekGross, $today];
 }
 
 if ($msg === '') { out(['reply' => t('empty')]); }
@@ -298,7 +318,53 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
         golpos_clear_pending();
         out(['reply' => t('item_added', $card['name'], money((float)$card['price'])), 'done' => $card]);
     }
+    // A poster card publishes only on "gol" — into the demo store's feed
+    // (fictional Sunrise Mart content only; never a real store, never live).
+    if ($card['type'] === 'poster') {
+        $feed = golpos_read('feed.json', []);
+        $feed[] = ['id' => 'feed_' . substr(sha1(uniqid('', true)), 0, 8),
+                   'kind' => 'poster', 'image' => $card['image'], 'caption' => $card['caption'],
+                   'name' => $card['name'], 'price' => $card['price'], 'at' => date('c')];
+        golpos_write('feed.json', $feed);
+        golpos_clear_pending();
+        out(['reply' => t('poster_done', $shop, $card['name'], money((float)$card['price'])), 'done' => $card]);
+    }
+    // A photo card: a matched catalog item goes into the cart; an unmatched
+    // read is only logged as a photo — SAM never silently invents an item.
+    if ($card['type'] === 'photo_read') {
+        $photos = golpos_read('photos.json', []);
+        $photos[] = ['image' => $card['image'], 'prompt' => $card['prompt'],
+                     'regions' => $card['regions'], 'match_sku' => $card['match_sku'] ?? null, 'at' => date('c')];
+        golpos_write('photos.json', $photos);
+        golpos_clear_pending();
+        if (!empty($card['match_sku'])) {
+            out(['reply' => t('photo_added', $card['match_name'], money((float)$card['match_price'])),
+                 'action' => ['type' => 'add', 'sku' => $card['match_sku']], 'done' => $card]);
+        }
+        out(['reply' => t('photo_saved', (int)($card['regions'] ?? 0), $card['prompt']), 'done' => $card]);
+    }
     out(['reply' => t('card_fail')]);
+}
+
+// --- analysis / advice: the DEEP-THINK lane (Muse Wonder) --------------------
+// Judgment questions leave the register floor and go to Wonder: why was
+// today slow, how was the week, what should I do. The deterministic layer
+// assembles the week's facts; Wonder composes the judgment; Spark composes
+// if Wonder is unreachable; the template speaks if neither answers. Same
+// grounding law: a reply is accepted only if it carries a real figure.
+if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|kasto|kina|hapta|हप्ता|week|month|suggest|advice|sujhab|sujhav|sallah|slow|trend|improv)/iu', $msg)) {
+    [$facts, $figures, $weekTx, $weekGross, $todaySum] = golpos_week_facts($shop, $products);
+    if ($weekTx === 0) { out(['reply' => t('week_none')]); }
+    $grounded = function (?string $reply) use ($figures): bool {
+        if ($reply === null) { return false; }
+        foreach ($figures as $f) { if (strpos($reply, $f) !== false) { return true; } }
+        return false;
+    };
+    $reply = golpos_meta_compose($shop, $facts, $msg, golpos_wonder_model(), true);
+    if ($grounded($reply)) { out(['reply' => $reply]); }
+    $reply = golpos_meta_compose($shop, $facts, $msg);
+    if ($grounded($reply)) { out(['reply' => $reply]); }
+    out(['reply' => t('week_line', money($weekGross), $weekTx, money($todaySum['gross']))]);
 }
 
 // --- day total / close -------------------------------------------------------
@@ -373,6 +439,35 @@ if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप)/iu', $m
         out(['reply' => t('new_card_offer', money((float)$m[1]))]);
     }
     out(['reply' => t('not_found_add')]);
+}
+
+// --- offer poster: the CREATE lane (Muse Image) -------------------------------
+// "Make an offer poster for Coke" — Muse Image generates it, the chat shows
+// the preview, and the poster stages as a card. Nothing publishes until the
+// owner says "gol"; then it lands in the DEMO store's feed only — fictional
+// Sunrise Mart branding, never a real store's data or pages.
+if (preg_match('/(poster|banner)/iu', $msg) ||
+    preg_match('/(make|bana|banau|generate|बना).*(image|photo|picture)/iu', $msg)) {
+    $r = resolve_item($products, $msg);
+    if (empty($r['one'])) { out(['reply' => t('poster_which')]); }
+    $p = $r['one'];
+    $price = (float)$p['price'];
+    if (preg_match('/\$\s*(\d+(?:\.\d{1,2})?)/', $msg, $pm)) { $price = (float)$pm[1]; }
+    $imgPrompt = "Retail offer poster for {$shop}, a small convenience store (fictional demo store). "
+        . "Feature one product prominently: {$p['name']}. Big clear readable text: \"OFFER\", "
+        . "\"{$p['name']}\" and the price \"" . money($price) . "\". Bright blue accents (#3F80F5), "
+        . "clean modern design, appetising product photography style, portrait poster.";
+    @set_time_limit(240);
+    $png = golpos_meta_image($imgPrompt);
+    if ($png === null) { out(['reply' => t('poster_fail')]); }
+    $dir = dirname(__DIR__) . '/web/uploads/posters';
+    if (!is_dir($dir)) { mkdir($dir, 0775, true); }
+    $file = 'poster-' . date('Ymd-His') . '-' . substr(sha1(uniqid('', true)), 0, 6) . '.png';
+    file_put_contents($dir . '/' . $file, $png);
+    $card = golpos_stage(['type' => 'poster', 'image' => 'uploads/posters/' . $file,
+                          'name' => $p['name'], 'price' => $price,
+                          'caption' => '🔥 OFFER at ' . $shop . ': ' . $p['name'] . ' — ' . money($price) . '! Grab yours today 🎉']);
+    out(['reply' => t('poster_ready', $shop), 'card' => $card]);
 }
 
 // --- free-form: Muse composes from the shop's own live pack ------------------

@@ -45,6 +45,8 @@ button.ghost { background: transparent; }
 .msg.me { background: #3F80F5; color: #fff; align-self: flex-end; }
 .msg.card { background: #fff7e6; border: 1px solid #f0c96a; align-self: flex-start; }
 .msg.card button { margin-top: 8px; background: #3F80F5; color: #fff; border-color: #3F80F5; font-weight: 700; }
-.chat-form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #dbe5f5; }
+.chat-form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #dbe5f5; align-items: center; }
 .chat-form input { flex: 1; padding: 12px; font-size: 16px; border: 1px solid #c9d6ee; border-radius: 10px; }
 .chat-form button { background: #3F80F5; color: #fff; border-color: #3F80F5; font-weight: 700; padding: 0 20px; }
+.chat-form .photo-btn { font-size: 22px; cursor: pointer; padding: 6px 8px; border: 1px solid #c9d6ee; border-radius: 10px; background: #eaf1fe; line-height: 1; }
+.msg.card img { max-width: 100%; border-radius: 10px; display: block; margin: 8px 0; }

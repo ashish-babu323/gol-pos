@@ -24,6 +24,12 @@ if ($method === 'GET' && isset($_GET['pending'])) {
     echo json_encode(golpos_pending() ?? new stdClass(), JSON_UNESCAPED_UNICODE);
     exit;
 }
+if ($method === 'GET' && isset($_GET['feed'])) {
+    // The demo store's social feed — posters Gol staged and the owner
+    // confirmed with "gol". Fictional demo content only.
+    echo json_encode(golpos_read('feed.json', []), JSON_UNESCAPED_UNICODE);
+    exit;
+}
 if ($method === 'POST') {
     $in = json_decode(file_get_contents('php://input') ?: '{}', true) ?: [];
     $sale = $in['sale'] ?? null;

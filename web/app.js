@@ -89,18 +89,43 @@ function chatMsg(text, who) {
 function chatCard(card) {
   const d = document.createElement('div');
   d.className = 'msg card';
-  const label = card.type === 'price_change'
-    ? `${card.name}: ${money(card.old_price)} → ${money(card.new_price)}`
-    : `New item: ${card.name} — ${money(card.price)}`;
+  let label;
+  if (card.type === 'price_change') {
+    label = `${card.name}: ${money(card.old_price)} → ${money(card.new_price)}`;
+  } else if (card.type === 'poster') {
+    label = `Poster: ${card.name} — ${money(card.price)}<br><img src="${card.image}" alt="Offer poster preview">`;
+  } else if (card.type === 'photo_read') {
+    const found = card.regions === null || card.regions === undefined
+      ? 'SAM gave no read on this photo'
+      : `SAM found ${card.regions} region(s) for "${card.prompt}"`;
+    const matchLine = card.match_sku ? `<br>Matches: ${card.match_name} (${money(card.match_price)}) → cart on "gol"` : '';
+    label = `<img src="${card.image}" alt="Your photo"><br>${found}${matchLine}`;
+  } else {
+    label = `New item: ${card.name} — ${money(card.price)}`;
+  }
   d.innerHTML = `<b>Staged</b> ${label}<br><button type="button">Confirm — "gol"</button>`;
   d.querySelector('button').addEventListener('click', async () => {
     const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirm: true }) });
     const r = await res.json();
-    chatMsg(r.reply, 'gol'); loadCatalog();
+    chatMsg(r.reply, 'gol');
+    if (r.action && r.action.type === 'add') { addToCart(r.action.sku); }
+    loadCatalog();
   });
   $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
 }
+// --- photo lane: upload -> SAM reads it -> staged card ------------------------
+async function sendPhoto(file, promptText) {
+  chatMsg('📷 Photo sent' + (promptText ? ' — "' + promptText + '"' : ''), 'me');
+  const fd = new FormData();
+  fd.append('photo', file);
+  if (promptText) { fd.append('prompt', promptText); }
+  const res = await fetch('../server/photo.php', { method: 'POST', body: fd });
+  const r = await res.json();
+  if (r.reply) { chatMsg(r.reply, 'gol'); }
+  if (r.card) { chatCard(r.card); }
+}
+
 async function sendChat(text) {
   chatMsg(text, 'me');
   const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -132,13 +157,29 @@ $('chatForm').addEventListener('submit', (e) => {
   const v = $('chatInput').value.trim();
   if (v) { $('chatInput').value = ''; sendChat(v); }
 });
+$('photoInput').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (!f) { return; }
+  // Whatever the owner typed with the photo is the concept SAM looks for.
+  const hint = $('chatInput').value.trim();
+  $('chatInput').value = '';
+  $('chatDrawer').classList.remove('hidden');
+  sendPhoto(f, hint);
+  e.target.value = '';
+});
 $('ownerBtn').addEventListener('click', async () => {
   $('ownerPanel').classList.remove('hidden');
   const res = await fetch(API + '?summary'); const s = await res.json();
   const pres = await fetch(API + '?pending'); const p = await pres.json();
+  const fres = await fetch(API + '?feed'); const feed = await fres.json();
+  const feedHtml = Array.isArray(feed) && feed.length
+    ? `<p><b>Demo feed (${feed.length})</b></p>` + feed.slice().reverse().map(f =>
+        `<p>🖼️ ${f.caption || (f.name + ' — ' + money(f.price))}</p>`).join('')
+    : '<p>Demo feed is empty — ask Gol to "make an offer poster".</p>';
   $('ownerBody').innerHTML =
     `<p>Gross ${money(s.gross)} · Cash ${money(s.cash)} · Card ${money(s.card)} · Sales ${s.txns}</p>` +
-    (p && p.type ? `<p>Staged card waiting: ${p.type} — ${p.name || ''}</p>` : '<p>No staged cards waiting.</p>');
+    (p && p.type ? `<p>Staged card waiting: ${p.type} — ${p.name || ''}</p>` : '<p>No staged cards waiting.</p>') +
+    feedHtml;
 });
 $('ownerClose').addEventListener('click', () => $('ownerPanel').classList.add('hidden'));
 
