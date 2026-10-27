@@ -205,16 +205,111 @@ $S = [
     'np' => 'Photo save bhayo. SAM le "%s" ka lagi %d thau bhetyo — suchi ma tyo naam mildaina, kehi thapiyena. Naya saman ho bhane naam ra mulya bhannus.',
     'hi' => 'Photo save ho gaya. SAM ko "%s" ke liye %d jagah mili — list mein woh naam nahi mila, kuchh joda nahi gaya. Naya saaman hai to naam aur daam bataiye.',
     'dev' => 'फोटो सेभ भयो। SAM ले "%s" का लागि %d ठाउँ भेट्यो — सूचीमा त्यो नाम मिल्दैन, केही थपिएन। नयाँ सामान हो भने नाम र मूल्य भन्नुस्।'],
+  'settings_head' => [
+    'en' => 'Receipt print settings:',
+    'np' => 'Receipt ko print settings yesto chha:',
+    'hi' => 'Receipt print settings ye hain:',
+    'dev' => 'रसिद प्रिन्ट सेटिङहरू:'],
+  'setting_done' => [
+    'en' => 'Done — %s is now %s.',
+    'np' => 'Bhayo — %s aba %s chha.',
+    'hi' => 'Ho gaya — %s ab %s hai.',
+    'dev' => 'भयो — %s अब %s छ।'],
+  'setting_same' => [
+    'en' => '%s is already %s — nothing to change.',
+    'np' => '%s pahile nai %s chha — badalna kehi chhaina.',
+    'hi' => '%s pehle se hi %s hai — kuchh badalna nahi.',
+    'dev' => '%s पहिल्यै %s छ — बदल्नु केही छैन।'],
+  'setting_ask_footer' => [
+    'en' => 'What should the receipt footer say? Give me the exact words — e.g. footer "Thank you, visit again".',
+    'np' => 'Receipt footer ma ke lekhne? Thik shabda bhannus — jastai footer "Dhanyabad, feri aaunuhos".',
+    'hi' => 'Receipt footer mein kya likhoon? Sahi shabd bataiye — jaise footer "Dhanyavaad, phir aaiye".',
+    'dev' => 'रसिद फुटरमा के लेख्ने? ठ्याक्कै शब्द भन्नुस् — जस्तै footer "धन्यवाद, फेरि आउनुस्"।'],
+  'setting_ask_copies' => [
+    'en' => 'Copies can be 1, 2 or 3 — how many should I print?',
+    'np' => 'Copy 1, 2 wa 3 matra milchha — kati ota print garne?',
+    'hi' => 'Copies 1, 2 ya 3 hi ho sakti hain — kitni print karoon?',
+    'dev' => 'प्रति १, २ वा ३ मात्र मिल्छ — कति वटा छाप्ने?'],
   'fallback' => [
-    'en' => 'I can add items, quote or change prices (staged as a card), and give today\'s total. Try: "How much is Coke?"',
-    'np' => 'Ma saman thapna, mulya sodhna/badalna (card stage garera), ra din ko hisab dina sakchhu. Ek wata prayas garnus: "Coke ko mulya kati?"',
-    'hi' => 'Main saaman jod sakta hoon, daam bata ya badal sakta hoon (card stage karke), aur aaj ka hisaab de sakta hoon. Koshish kijiye: "Coke ka daam kitna hai?"',
-    'dev' => 'म सामान थप्न, मूल्य सोध्न/बदल्न (कार्ड स्टेज गरेर), र दिनको हिसाब दिन सक्छु। एउटा प्रयास गर्नुस्: "कोकको मूल्य कति?"'],
+    'en' => 'I can add items, quote or change prices (staged as a card), give today\'s total, and run the receipt print settings. Try: "print settings" or "How much is Coke?"',
+    'np' => 'Ma saman thapna, mulya sodhna/badalna (card stage garera), din ko hisab dina, ra receipt print settings chalauna sakchhu. Prayas garnus: "print settings ke chha?"',
+    'hi' => 'Main saaman jod sakta hoon, daam bata ya badal sakta hoon (card stage karke), aaj ka hisaab de sakta hoon, aur receipt print settings chala sakta hoon. Koshish kijiye: "print settings".',
+    'dev' => 'म सामान थप्न, मूल्य सोध्न/बदल्न (कार्ड स्टेज गरेर), दिनको हिसाब दिन, र रसिद प्रिन्ट सेटिङ चलाउन सक्छु। प्रयास गर्नुस्: "प्रिन्ट सेटिङ के छ?"'],
 ];
 function t(string $key, ...$args): string {
     global $S, $L;
     $s = $S[$key][$L] ?? $S[$key]['en'];
     return $args ? vsprintf($s, $args) : $s;
+}
+
+// --- receipt print settings: chat door ---------------------------------------
+// The settings live in ONE store (store.php golpos_settings); the owner
+// panel's form is the manual door to the same values. Here they are read on
+// ask and changed by staged card — old -> new, executed only on "gol".
+function golpos_onoff(bool $b): string {
+    global $L;
+    return $b ? ['en' => 'on', 'np' => 'on', 'hi' => 'on', 'dev' => 'खुला'][$L]
+              : ['en' => 'off', 'np' => 'bandha (off)', 'hi' => 'band (off)', 'dev' => 'बन्द'][$L];
+}
+function golpos_shown(bool $b): string {
+    global $L;
+    return $b ? ['en' => 'shown', 'np' => 'dekhine', 'hi' => 'dikhega', 'dev' => 'देखिने'][$L]
+              : ['en' => 'hidden', 'np' => 'lukeko', 'hi' => 'chhupa hua', 'dev' => 'लुकेको'][$L];
+}
+function golpos_setting_label(string $key): string {
+    global $L;
+    $map = [
+      'store_name'   => ['en' => 'Store name', 'np' => 'Pasal ko naam', 'hi' => 'Dukaan ka naam', 'dev' => 'पसलको नाम'],
+      'address'      => ['en' => 'Address', 'np' => 'Address (thegana)', 'hi' => 'Address (pata)', 'dev' => 'ठेगाना'],
+      'show_address' => ['en' => 'Address line', 'np' => 'Address line', 'hi' => 'Address line', 'dev' => 'ठेगाना लाइन'],
+      'phone'        => ['en' => 'Phone', 'np' => 'Phone', 'hi' => 'Phone', 'dev' => 'फोन'],
+      'show_phone'   => ['en' => 'Phone line', 'np' => 'Phone line', 'hi' => 'Phone line', 'dev' => 'फोन लाइन'],
+      'logo'         => ['en' => 'Logo on receipt', 'np' => 'Receipt ma logo', 'hi' => 'Receipt par logo', 'dev' => 'रसिदमा लोगो'],
+      'footer'       => ['en' => 'Footer message', 'np' => 'Footer message', 'hi' => 'Footer message', 'dev' => 'फुटर सन्देश'],
+      'copies'       => ['en' => 'Copies', 'np' => 'Copy sankhya', 'hi' => 'Copies', 'dev' => 'प्रति संख्या'],
+      'paper_width'  => ['en' => 'Paper width', 'np' => 'Paper width', 'hi' => 'Paper width', 'dev' => 'कागज चौडाइ'],
+      'show_tax'     => ['en' => 'Tax line', 'np' => 'Tax line', 'hi' => 'Tax line', 'dev' => 'कर लाइन'],
+      'auto_open'    => ['en' => 'Receipt after each sale', 'np' => 'Harek sale pachhi receipt', 'hi' => 'Har sale ke baad receipt', 'dev' => 'हरेक बिक्रीपछि रसिद'],
+    ];
+    return $map[$key][$L] ?? $map[$key]['en'] ?? $key;
+}
+function golpos_setting_display(string $key, $v): string {
+    if (in_array($key, ['show_address', 'show_phone', 'show_tax'], true)) { return golpos_shown((bool)$v); }
+    if (in_array($key, ['logo', 'auto_open'], true)) { return golpos_onoff((bool)$v); }
+    if ($key === 'copies') { return (string)(int)$v; }
+    return (string)$v;
+}
+function golpos_settings_read_reply(): string {
+    $s = golpos_settings();
+    $lines = [t('settings_head')];
+    $lines[] = '• ' . golpos_setting_label('store_name') . ': ' . $s['store_name'];
+    $lines[] = '• ' . golpos_setting_label('address') . ': ' . $s['address'] . ' (' . golpos_shown((bool)$s['show_address']) . ')';
+    $lines[] = '• ' . golpos_setting_label('phone') . ': ' . $s['phone'] . ' (' . golpos_shown((bool)$s['show_phone']) . ')';
+    $lines[] = '• ' . golpos_setting_label('logo') . ': ' . golpos_onoff((bool)$s['logo']);
+    $lines[] = '• ' . golpos_setting_label('footer') . ': "' . $s['footer'] . '"';
+    $lines[] = '• ' . golpos_setting_label('copies') . ': ' . (int)$s['copies'];
+    $lines[] = '• ' . golpos_setting_label('paper_width') . ': ' . $s['paper_width'];
+    $lines[] = '• ' . golpos_setting_label('show_tax') . ': ' . golpos_shown((bool)$s['show_tax']);
+    $lines[] = '• ' . golpos_setting_label('auto_open') . ': ' . golpos_onoff((bool)$s['auto_open']);
+    return implode("\n", $lines);
+}
+// Stage one settings change as a card (old -> new). A value that already
+// matches is answered, not staged — a no-op never earns a card.
+function golpos_stage_setting(string $key, $new): void {
+    $old = golpos_settings()[$key] ?? null;
+    if ($old === $new) {
+        out(['reply' => t('setting_same', golpos_setting_label($key), golpos_setting_display($key, $new))]);
+    }
+    $card = golpos_stage(['type' => 'setting_change', 'setting' => $key,
+                          'label' => golpos_setting_label($key), 'old' => $old, 'new' => $new]);
+    out(['reply' => t('card_staged'), 'card' => $card]);
+}
+// Toggle polarity from the owner's words: true = wants it OFF, false = ON,
+// null = no toggle verb present (the message is setting a value instead).
+function golpos_wants_off(string $msg): ?bool {
+    if (preg_match('/(hide|bandha|lukau|hata|बन्द|लुकाउ|हटाउ)/iu', $msg) || preg_match('/\boff\b/iu', $msg)) { return true; }
+    if (preg_match('/(show|khola|dekha|खोल|देखाउ)/iu', $msg) || preg_match('/\bon\b/iu', $msg)) { return false; }
+    return null;
 }
 
 // --- PRIMARY BRAIN: the Muse family via the Meta Model API -------------------
@@ -363,7 +458,100 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
         }
         out(['reply' => t('photo_saved', (int)($card['regions'] ?? 0), $card['prompt']), 'done' => $card]);
     }
+    // A print-settings card: apply the one change (plus any paired change,
+    // e.g. setting a phone number also shows the phone line) to the ONE
+    // settings store the owner panel also writes.
+    if ($card['type'] === 'setting_change') {
+        $settings = golpos_settings();
+        $settings[$card['setting']] = $card['new'];
+        foreach (($card['also'] ?? []) as $k => $v) { $settings[$k] = $v; }
+        golpos_save_settings($settings);
+        golpos_clear_pending();
+        out(['reply' => t('setting_done', golpos_setting_label($card['setting']),
+                          golpos_setting_display($card['setting'], $card['new'])), 'done' => $card]);
+    }
     out(['reply' => t('card_fail')]);
+}
+
+// --- receipt print settings: read + staged changes ---------------------------
+// The POS keeps only its selling screen — print settings are run from this
+// chat (and from the owner panel's form, the manual door to the same store).
+// "print settings" / "receipt settings ke chha?" reads them back; a change
+// is staged as an old -> new card and executes only on "gol".
+if (preg_match('/(receipt|print|bill|paper).{0,30}settings|settings.{0,30}(receipt|print|bill)|settings\s+(ke|kasto)/iu', $msg)) {
+    out(['reply' => golpos_settings_read_reply()]);
+}
+$msgN = golpos_norm_digits($msg);
+if (preg_match('/(receipt|bill|print|paper|footer|logo|tax|auto|cop(y|ies)|phone|address|store name|फोन|ठेगाना|लोगो|कर)/iu', $msg)) {
+    // paper width — "paper 58mm gara"
+    if (preg_match('/\b(58|80)\s*mm\b/iu', $msgN, $wm)) {
+        golpos_stage_setting('paper_width', $wm[1] . 'mm');
+    }
+    // copies — "bill 2 copy print gara"
+    if (preg_match('/cop(y|ies)/iu', $msg)) {
+        if (preg_match('/\b([123])\b/', $msgN, $cm)) { golpos_stage_setting('copies', (int)$cm[1]); }
+        out(['reply' => t('setting_ask_copies')]);
+    }
+    // footer text — quoted words win; otherwise the words left after the
+    // command words are stripped. No words -> Gol asks; a footer is never
+    // invented.
+    if (preg_match('/footer/iu', $msg)) {
+        $val = '';
+        if (preg_match('/["\'“”](.+?)["\'“”]/u', $msg, $qm)) { $val = trim($qm[1]); }
+        if ($val === '') {
+            $val = preg_replace('/(receipt|bill|print|footer|message|ma|मा|rakha|rakh|set|gara|gar|change|to|lekha|लेख|राख)/iu', ' ', $msg);
+            $val = trim(preg_replace('/\s+/u', ' ', preg_replace('/[:"\'“”]/u', ' ', (string)$val)));
+        }
+        if ($val === '') { out(['reply' => t('setting_ask_footer')]); }
+        golpos_stage_setting('footer', $val);
+    }
+    // phone — a number in the message sets the line (and shows it); a bare
+    // show/hide verb toggles the line.
+    if (preg_match('/(phone|फोन)/iu', $msg)) {
+        if (preg_match('/(\+?\d[\d\s\-()]{6,}\d)/', $msgN, $pm)) {
+            $card = golpos_stage(['type' => 'setting_change', 'setting' => 'phone',
+                                  'label' => golpos_setting_label('phone'),
+                                  'old' => golpos_settings()['phone'], 'new' => trim($pm[1]),
+                                  'also' => ['show_phone' => true]]);
+            out(['reply' => t('card_staged'), 'card' => $card]);
+        }
+        $off = golpos_wants_off($msg);
+        if ($off !== null) { golpos_stage_setting('show_phone', !$off); }
+    }
+    // address — quoted text sets it (and shows it); a bare verb toggles it.
+    if (preg_match('/(address|ठेगाना)/iu', $msg)) {
+        if (preg_match('/["\'“”](.+?)["\'“”]/u', $msg, $qm)) {
+            $card = golpos_stage(['type' => 'setting_change', 'setting' => 'address',
+                                  'label' => golpos_setting_label('address'),
+                                  'old' => golpos_settings()['address'], 'new' => trim($qm[1]),
+                                  'also' => ['show_address' => true]]);
+            out(['reply' => t('card_staged'), 'card' => $card]);
+        }
+        $off = golpos_wants_off($msg);
+        if ($off !== null) { golpos_stage_setting('show_address', !$off); }
+    }
+    // logo on/off
+    if (preg_match('/(logo|लोगो)/iu', $msg)) {
+        $off = golpos_wants_off($msg);
+        if ($off !== null) { golpos_stage_setting('logo', !$off); }
+    }
+    // tax line show/hide
+    if (preg_match('/(tax|कर)/iu', $msg)) {
+        $off = golpos_wants_off($msg);
+        if ($off !== null) { golpos_stage_setting('show_tax', !$off); }
+    }
+    // auto-open receipt after each sale, on/off
+    if (preg_match('/(auto)/iu', $msg)) {
+        $off = golpos_wants_off($msg);
+        if ($off !== null) { golpos_stage_setting('auto_open', !$off); }
+    }
+    // store name line (quoted text)
+    if (preg_match('/(store name|receipt name)/iu', $msg) &&
+        preg_match('/["\'“”](.+?)["\'“”]/u', $msg, $qm)) {
+        golpos_stage_setting('store_name', trim($qm[1]));
+    }
+    // A settings-flavoured message no parser claimed falls through to the
+    // normal intents below — never a dead end.
 }
 
 // --- analysis / advice: the DEEP-THINK lane (Muse Wonder) --------------------

@@ -321,3 +321,48 @@ button { font: inherit; cursor: pointer; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
   .chat-drawer { width: 100vw; }
 }
+
+/* ---------- receipt print settings + owner panel doors ---------- */
+/* The receipt card takes the paper width the settings name (58mm / 80mm);
+   in print, the named @page gives the printer the same width. */
+.receipt-card.w80 { width: 80mm; max-width: 94vw; page: receipt80; }
+.receipt-card.w58 { width: 58mm; max-width: 94vw; page: receipt58; }
+@page receipt58 { size: 58mm auto; margin: 2mm; }
+@page receipt80 { size: 80mm auto; margin: 3mm; }
+.receipt-logo { display: block; width: 52px; height: 52px; margin: 2px auto 4px; }
+.receipt-card h3 { text-align: center; }
+.toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 60;
+  background: #12233f; color: #eaf2ff; padding: 10px 18px; border-radius: 999px;
+  font-size: 14px; box-shadow: 0 12px 30px rgba(2,10,30,.4); max-width: 92vw; text-align: center; }
+.owner h3 { font-size: 14px; margin: 16px 0 8px; }
+.owner h3 small { color: var(--dim); font-weight: 400; }
+.os-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 14px; margin-bottom: 10px; }
+.os-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.os-grid label.os-chk { flex-direction: row; align-items: center; gap: 8px; }
+.os-grid input[type="text"], .os-grid select { padding: 7px 9px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; }
+#osSave, #repClose { border-radius: 10px; padding: 9px 15px; font-weight: 700; border: none;
+  background: linear-gradient(135deg, #5b93ff, #2563eb); color: #fff; cursor: pointer; }
+#repClose.armed { background: #b91c1c; }
+#osSaved { font-size: 13px; color: var(--dim); }
+.rep-tabs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.rep-tabs button { border-radius: 999px; padding: 7px 13px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 13px; }
+.rep-tabs button.on { outline: 2px solid #3f80f5; font-weight: 700; }
+.rep-tabs input[type="date"] { padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
+.rep-row { display: flex; gap: 12px; align-items: baseline; padding: 5px 0;
+  border-bottom: 1px dashed var(--line); font-size: 14px; flex-wrap: wrap; }
+.rep-row b { min-width: 74px; }
+.rep-total { font-size: 15px; }
+.rep-closed { color: #34d399; font-style: normal; font-weight: 700; }
+#reportBody #repClose { margin-top: 10px; }
+
+/* Printing a receipt: only the receipt card reaches the paper. */
+@media print {
+  body * { visibility: hidden; }
+  #receiptModal, #receiptModal * { visibility: visible; }
+  #receiptModal { position: absolute; inset: 0; background: #fff; display: block; }
+  #receiptModal .receipt-card { box-shadow: none; margin: 0 auto; }
+  #receiptModal button { display: none !important; }
+}

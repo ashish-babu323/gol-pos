@@ -54,13 +54,29 @@
 <section class="owner hidden" id="ownerPanel">
   <h2>Owner — today</h2>
   <div id="ownerBody">Loading…</div>
+  <div id="ownerSettings"></div>
+  <div class="owner-reports">
+    <h3>Reports</h3>
+    <div class="rep-tabs" role="group" aria-label="Report period">
+      <button type="button" data-report="today">Today</button>
+      <button type="button" data-report="yesterday">Yesterday</button>
+      <button type="button" data-report="week">This week</button>
+      <input type="date" id="reportDate" aria-label="Pick a date">
+    </div>
+    <div id="reportBody">Pick a period.</div>
+  </div>
   <button id="ownerClose" type="button" class="ghost">Close</button>
 </section>
 
 <div class="receipt hidden" id="receiptModal"><div class="receipt-card">
-  <h3>Receipt</h3><pre id="receiptBody"></pre>
+  <h3 id="receiptTitle">Receipt</h3>
+  <img id="receiptLogo" class="receipt-logo" src="assets/gol-ring-blue.png" alt="Gol">
+  <pre id="receiptBody"></pre>
+  <button id="receiptPrint" type="button">Print</button>
   <button id="receiptClose" type="button">New sale</button>
 </div></div>
+
+<div id="toast" class="toast hidden" role="status"></div>
 
 <div class="chat-drawer hidden" id="chatDrawer">
   <div class="chat-head">

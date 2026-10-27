@@ -98,3 +98,23 @@ One entry per day; the git history carries the same dates.
   reproduced and all test state rolled back byte-for-byte. Full
   case-by-case results: `gate2-battery-results-2026-10-26.md` in the
   hackathon pack.
+- **Receipt print settings — one store, two doors** (late Oct 26). Print
+  settings moved out of any menu and into Gol's two doors: the chat (read
+  on "print settings"; changes staged as old -> new cards, executed only on
+  "gol") and the owner panel (an editable form over the SAME
+  `data/settings.json` — `golpos_settings()`/`golpos_save_settings()` in
+  store.php, `?settings` + POST in api.php). Settings: store name, address
+  (+show), phone (+show), Gol ring logo, footer, copies 1-3, paper width
+  58/80mm, tax line, auto-open receipt. The register renders every receipt
+  from them (header/footer lines, copies with cut marks, width classes +
+  named @page print rules, logo toggle, auto-open toast), and the receipt
+  modal gained a Print button. The owner panel also gained the manual
+  Reports card: Today / Yesterday / This week / date picker over the same
+  day-summary data the chat speaks (`?report`), close records shown marked
+  Closed, and a Close-the-day button running the chat's own close path
+  behind a tap-confirm. Settings battery S1-S10 + manual-door M1-M3:
+  **13/13** against the live preview; Gate-2 re-run after the build:
+  58 clean passes + 2 host-503 cases re-verified by hand — no assertion
+  failed, battery definition untouched. All test state restored
+  byte-identical (catalog == seed, settings = defaults). Full results:
+  `pos-print-settings-battery-2026-10-26.md` in the hackathon pack.

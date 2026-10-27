@@ -4,6 +4,10 @@
 // POST {sale:{lines,tender}}-> records the sale, returns it with totals
 // GET  ?summary             -> today's summary
 // GET  ?pending             -> the staged card, if any
+// GET  ?settings            -> receipt print settings (one store, two doors)
+// POST {settings:{...}}     -> owner panel form save, same store
+// GET  ?report&date= | ?report&week -> Reports card data (+ close record)
+// POST {close_day:true}     -> manual close, same path as the chat
 
 declare(strict_types=1);
 require __DIR__ . '/store.php';
@@ -36,8 +40,50 @@ if ($method === 'GET' && isset($_GET['feed'])) {
     echo json_encode(golpos_read('feed.json', []), JSON_UNESCAPED_UNICODE);
     exit;
 }
+if ($method === 'GET' && isset($_GET['settings'])) {
+    // Receipt print settings — the ONE store both doors (Gol chat and the
+    // owner panel form) read and write.
+    echo json_encode(golpos_settings(), JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($method === 'GET' && isset($_GET['report'])) {
+    // Manual Reports card data — the same day-summary figures the Gol chat
+    // speaks, for a picked date or the last 7 days, plus the saved close
+    // record for a date when one exists (the frozen truth for that day).
+    if (isset($_GET['week'])) {
+        $days = []; $tot = ['gross' => 0.0, 'cash' => 0.0, 'card' => 0.0, 'txns' => 0];
+        for ($i = 6; $i >= 0; $i--) {
+            $d = date('Y-m-d', strtotime("-{$i} days"));
+            $s = golpos_day_summary($d);
+            $s['closed'] = golpos_close_record($d) !== null;
+            $days[] = $s;
+            $tot['gross'] += $s['gross']; $tot['cash'] += $s['cash'];
+            $tot['card'] += $s['card']; $tot['txns'] += $s['txns'];
+        }
+        $tot = ['gross' => round($tot['gross'], 2), 'cash' => round($tot['cash'], 2),
+                'card' => round($tot['card'], 2), 'txns' => $tot['txns']];
+        echo json_encode(['days' => $days, 'totals' => $tot], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $d = (string)($_GET['date'] ?? date('Y-m-d'));
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) { $d = date('Y-m-d'); }
+    echo json_encode(['date' => $d, 'summary' => golpos_day_summary($d),
+                      'close' => golpos_close_record($d)], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 if ($method === 'POST') {
     $in = json_decode(file_get_contents('php://input') ?: '{}', true) ?: [];
+    if (isset($in['settings']) && is_array($in['settings'])) {
+        // Owner panel form save — same store the Gol chat stages into.
+        echo json_encode(golpos_save_settings($in['settings']), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if (!empty($in['close_day'])) {
+        // The panel's manual Close-the-day button — the exact close path
+        // the Gol chat's close branch runs (the panel confirms by tap first).
+        echo json_encode(golpos_close_day(date('Y-m-d')), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     $sale = $in['sale'] ?? null;
     if (is_array($sale) && !empty($sale['lines'])) {
         $catalog = golpos_catalog();

@@ -141,3 +141,58 @@ function golpos_day_summary(string $ymd): array {
     return ['date' => $ymd, 'gross' => round($gross, 2), 'cash' => round($cash, 2),
             'card' => round($card, 2), 'txns' => $count];
 }
+
+// The saved close record for one date, if the day was closed (chat or panel).
+function golpos_close_record(string $ymd): ?array {
+    foreach (golpos_read('closes.json', []) as $c) {
+        if (($c['date'] ?? '') === $ymd) { return $c; }
+    }
+    return null;
+}
+
+// --- receipt print settings: ONE store, TWO doors ----------------------------
+// The Gol chat stages changes as cards (executed on "gol"); the owner panel
+// edits the same fields in a form. Both read and write THIS one settings
+// store, so the two doors can never disagree — there is no settings menu
+// anywhere else. The receipt view renders from these values.
+function golpos_settings_defaults(): array {
+    return [
+        'store_name'   => 'Sunrise Mart (demo)',
+        'address'      => '123 Demo Street, Cleveland, OH 44113',
+        'show_address' => true,
+        'phone'        => '(216) 555-0100',
+        'show_phone'   => true,
+        'logo'         => true,
+        'footer'       => 'Thank you — visit again!',
+        'copies'       => 1,
+        'paper_width'  => '80mm',
+        'show_tax'     => true,
+        'auto_open'    => true,
+    ];
+}
+
+function golpos_settings(): array {
+    $saved = golpos_read('settings.json', []);
+    return array_merge(golpos_settings_defaults(), is_array($saved) ? $saved : []);
+}
+
+// Whitelist + validate, then persist. Unknown keys and out-of-range values
+// are ignored rather than stored — a settings file is never a junk drawer.
+function golpos_save_settings(array $in): array {
+    $cur = golpos_settings();
+    foreach (['show_address', 'show_phone', 'logo', 'show_tax', 'auto_open'] as $k) {
+        if (array_key_exists($k, $in)) { $cur[$k] = (bool)$in[$k]; }
+    }
+    foreach (['store_name' => 60, 'address' => 120, 'phone' => 40, 'footer' => 120] as $k => $max) {
+        if (isset($in[$k]) && is_string($in[$k])) { $cur[$k] = mb_substr(trim($in[$k]), 0, $max); }
+    }
+    if (isset($in['copies'])) {
+        $c = (int)$in['copies'];
+        if ($c >= 1 && $c <= 3) { $cur['copies'] = $c; }
+    }
+    if (isset($in['paper_width']) && in_array($in['paper_width'], ['58mm', '80mm'], true)) {
+        $cur['paper_width'] = $in['paper_width'];
+    }
+    golpos_write('settings.json', $cur);
+    return $cur;
+}
