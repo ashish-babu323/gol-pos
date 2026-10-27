@@ -94,6 +94,21 @@ button { font: inherit; cursor: pointer; }
 .receipt-card { background: var(--surface); color: var(--ink); border-radius: var(--panel-radius); padding: 20px; width: min(360px, 92vw); box-shadow: var(--cart-shadow); }
 .receipt-card pre { font-family: ui-monospace, monospace; white-space: pre-wrap; margin: 10px 0 14px; }
 .receipt-card button { border-radius: 10px; padding: 10px 16px; font-weight: 700; border: none; background: linear-gradient(135deg, #5b93ff, #2563eb); color: #fff; }
+.cash-pay { position: fixed; inset: 0; background: rgba(6,12,26,.62); display: flex; align-items: center; justify-content: center; z-index: 45; padding: 18px; }
+.cash-card { background: var(--surface); color: var(--ink); border-radius: var(--panel-radius); padding: 22px; width: min(390px, 94vw); box-shadow: var(--cart-shadow); }
+.cash-card h3 { font-size: 20px; margin-bottom: 16px; }
+.cash-row { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 10px 0; font-size: 16px; }
+.cash-row b { font-family: var(--num); font-variant-numeric: tabular-nums; font-size: 25px; }
+.cash-due { border-bottom: 1px dashed var(--line); }
+.cash-change { border-top: 1px dashed var(--line); margin-top: 12px; }
+.cash-label { display: flex; flex-direction: column; gap: 7px; font-weight: 700; margin-top: 8px; }
+.cash-label input { width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--field-bg); color: var(--ink); font: inherit; font-size: 20px; font-weight: 800; }
+.cash-quick { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.cash-quick button { border: 1px solid var(--line); background: var(--field-bg); color: var(--ink); border-radius: 999px; padding: 8px 11px; font-weight: 700; }
+.cash-actions { display: flex; gap: 9px; margin-top: 16px; }
+.cash-actions button { flex: 1; border: none; border-radius: 12px; padding: 13px 12px; font-weight: 800; background: linear-gradient(135deg, #14b981, #0b7a55); color: #fff; }
+.cash-actions button.ghost { flex: .55; background: transparent; color: var(--dim); border: 1px solid var(--line); }
+.cash-actions button:disabled { opacity: .42; cursor: not-allowed; }
 
 /* ---------- chat drawer (Gol panel) ---------- */
 .chat-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 100vw); z-index: 50; display: flex; flex-direction: column; background: var(--chat-bg); border-left: 1px solid var(--chat-line); box-shadow: -18px 0 44px rgba(2,6,18,.45); }

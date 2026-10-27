@@ -76,6 +76,28 @@
   <button id="receiptClose" type="button">New sale</button>
 </div></div>
 
+<div class="cash-pay hidden" id="cashModal"><div class="cash-card">
+  <h3>Cash payment</h3>
+  <div class="cash-row cash-due"><span>Total due</span><b id="cashDue">$0.00</b></div>
+  <label class="cash-label">Cash received
+    <input id="cashReceived" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off">
+  </label>
+  <div class="cash-quick" aria-label="Add cash">
+    <button type="button" data-cash-add="1">+$1</button>
+    <button type="button" data-cash-add="5">+$5</button>
+    <button type="button" data-cash-add="10">+$10</button>
+    <button type="button" data-cash-add="20">+$20</button>
+    <button type="button" data-cash-add="50">+$50</button>
+    <button type="button" id="cashExact">Exact</button>
+    <button type="button" id="cashClear">Clear</button>
+  </div>
+  <div class="cash-row cash-change"><span id="cashChangeLabel">Change due</span><b id="cashChange">$0.00</b></div>
+  <div class="cash-actions">
+    <button type="button" id="cashBack" class="ghost">Back</button>
+    <button type="button" id="cashComplete">Complete cash sale</button>
+  </div>
+</div></div>
+
 <div id="toast" class="toast hidden" role="status"></div>
 
 <div class="chat-drawer hidden" id="chatDrawer">

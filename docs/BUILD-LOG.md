@@ -118,3 +118,21 @@ One entry per day; the git history carries the same dates.
   failed, battery definition untouched. All test state restored
   byte-identical (catalog == seed, settings = defaults). Full results:
   `pos-print-settings-battery-2026-10-26.md` in the hackathon pack.
+
+## Day 2 — Tue Oct 27, 2026
+- **Cash tender step completed (Oct 28 register-core gate, pulled a day early).**
+  The Cash button no longer records a blind sale: it opens a cash panel with
+  the total due, a cash-received field, quick-add chips (+$1/$5/$10/$20/$50,
+  Exact, Clear) and a live change-due / still-needed readout; the sale can
+  only complete when the tender covers the total. The server repeats the
+  check — a cash sale records `tendered` + `change_due`, an under-tendered
+  sale is refused (422) and records nothing, and a sale with no valid
+  catalog lines is refused instead of recording $0. The receipt now prints
+  "Cash given" and "Change" lines from the recorded values. Cart totals are
+  rounded to cents in the UI so the panel, the display and the server agree
+  to the penny. QA on a throwaway copy (never the demo data): scan barcode
+  049000000443 -> Coca-Cola 20oz; 2x Coke + 1x Pringles = $6.67 + $0.53 tax
+  = $7.20; tendered $10 -> change_due $2.80; under-tender $5 -> 422, nothing
+  recorded; invalid-SKU-only sale -> 422; card sale + summary split verified
+  ($9.57 gross = $7.20 cash + $2.37 card, 2 txns). JS node --check clean,
+  PHP -l clean, every DOM id the new panel uses is present in index.html.

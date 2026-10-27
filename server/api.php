@@ -1,7 +1,9 @@
 <?php
 // Gol POS — register API.
 // GET  ?products            -> catalog
-// POST {sale:{lines,tender}}-> records the sale, returns it with totals
+// POST {sale:{lines,tender,tendered?}} -> records the sale, returns totals
+// Cash sales may carry the amount tendered; the server calculates change
+// and refuses an under-tendered sale instead of recording a false total.
 // GET  ?summary             -> today's summary
 // GET  ?pending             -> the staged card, if any
 // GET  ?settings            -> receipt print settings (one store, two doors)
@@ -98,12 +100,32 @@ if ($method === 'POST') {
             $subtotal += $lineTotal;
             $lines[] = ['sku' => $p['sku'], 'name' => $p['name'], 'price' => $p['price'], 'qty' => $qty, 'line_total' => $lineTotal];
         }
+        if (!$lines) {
+            http_response_code(422);
+            echo json_encode(['error' => 'sale has no valid catalog lines']);
+            exit;
+        }
         $taxRate = (float)($catalog['store']['tax_rate'] ?? 0.0);
         $tax = round($subtotal * $taxRate, 2);
-        $record = golpos_append_sale([
+        $total = round($subtotal + $tax, 2);
+        $tender = ($sale['tender'] ?? 'cash') === 'card' ? 'card' : 'cash';
+        $recordData = [
             'lines' => $lines, 'subtotal' => round($subtotal, 2), 'tax' => $tax,
-            'total' => round($subtotal + $tax, 2), 'tender' => ($sale['tender'] ?? 'cash') === 'card' ? 'card' : 'cash',
-        ]);
+            'total' => $total, 'tender' => $tender,
+        ];
+        if ($tender === 'cash') {
+            // No tendered amount from an older client means exact cash; an
+            // explicit amount must cover the total before anything records.
+            $tendered = isset($sale['tendered']) ? round((float)$sale['tendered'], 2) : $total;
+            if ($tendered < $total) {
+                http_response_code(422);
+                echo json_encode(['error' => 'cash tendered is less than the total', 'total' => $total, 'tendered' => $tendered]);
+                exit;
+            }
+            $recordData['tendered'] = $tendered;
+            $recordData['change_due'] = round($tendered - $total, 2);
+        }
+        $record = golpos_append_sale($recordData);
         echo json_encode($record, JSON_UNESCAPED_UNICODE);
         exit;
     }

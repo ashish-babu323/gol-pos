@@ -47,6 +47,7 @@ tickClock(); setInterval(tickClock, 20000);
 
 let catalog = { store: {}, products: [] };
 let cart = new Map(); // sku -> qty
+let cartTotals = { subtotal: 0, tax: 0, total: 0 };
 let activeCat = 'All';
 
 async function loadCatalog() {
@@ -101,8 +102,10 @@ function renderCart() {
       const q = cart.get(b.dataset.dec) - 1;
       q <= 0 ? cart.delete(b.dataset.dec) : cart.set(b.dataset.dec, q); renderCart();
     }));
-  const sub = lines.reduce((s, l) => s + l.total, 0);
-  const tax = sub * (catalog.store.tax_rate || 0);
+  const roundMoney = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+  const sub = roundMoney(lines.reduce((s, l) => s + l.total, 0));
+  const tax = roundMoney(sub * (catalog.store.tax_rate || 0));
+  cartTotals = { subtotal: sub, tax, total: roundMoney(sub + tax) };
   $('subTotal').textContent = money(sub);
   $('taxTotal').textContent = money(tax);
   $('grandTotal').textContent = money(sub + tax);
@@ -122,8 +125,11 @@ function receiptText(sale) {
   rows.push(...sale.lines.map(l => `${l.name} x${l.qty}  ${money(l.line_total)}`));
   rows.push(sep, `Subtotal  ${money(sale.subtotal)}`);
   if (st.show_tax !== false) { rows.push(`Tax       ${money(sale.tax)}`); }
-  rows.push(`TOTAL     ${money(sale.total)}`, `Paid by ${sale.tender}`,
-            new Date(sale.at || Date.now()).toLocaleString('en-US'));
+  rows.push(`TOTAL     ${money(sale.total)}`, `Paid by ${sale.tender}`);
+  if (sale.tender === 'cash' && sale.tendered !== undefined && sale.tendered !== null) {
+    rows.push(`Cash given ${money(sale.tendered)}`, `Change    ${money(sale.change_due || 0)}`);
+  }
+  rows.push(new Date(sale.at || Date.now()).toLocaleString('en-US'));
   if (st.footer) { rows.push(sep, st.footer); }
   const block = rows.join('\n');
   const n = Math.min(3, Math.max(1, parseInt(st.copies, 10) || 1));
@@ -132,12 +138,18 @@ function receiptText(sale) {
   for (let i = 1; i <= n; i++) { parts.push(`— copy ${i} of ${n} —\n` + block); }
   return parts.join('\n\n✂ - - - - - - - - - - - -\n\n');
 }
-async function tender(kind) {
-  if (!cart.size) { return; }
+async function tender(kind, tendered) {
+  if (!cart.size) { return false; }
   const lines = [...cart.entries()].map(([sku, qty]) => ({ sku, qty }));
+  const salePayload = { lines, tender: kind };
+  if (kind === 'cash') { salePayload.tendered = Number(Number(tendered || 0).toFixed(2)); }
   const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sale: { lines, tender: kind } }) });
+    body: JSON.stringify({ sale: salePayload }) });
   const sale = await res.json();
+  if (!res.ok || sale.error) {
+    showToast(sale.error || 'The sale could not be recorded — the cart is unchanged.');
+    return false;
+  }
   await loadSettings();
   const st = receiptSettings || {};
   $('receiptLogo').style.display = st.logo ? 'block' : 'none';
@@ -153,6 +165,38 @@ async function tender(kind) {
   } else {
     $('receiptModal').classList.remove('hidden');
   }
+  return true;
+}
+// Cash is a register step, not a blind button: the cashier sees the total,
+// enters or taps the cash handed over, and sees the change before the sale
+// can complete. The server repeats the same calculation and refuses a
+// short tender, so the recorded receipt can never invent change.
+function updateCashPanel() {
+  const total = cartTotals.total;
+  const received = parseFloat($('cashReceived').value || '0') || 0;
+  const change = received - total;
+  $('cashDue').textContent = money(total);
+  if (change >= 0) {
+    $('cashChangeLabel').textContent = 'Change due';
+    $('cashChange').textContent = money(change);
+    $('cashComplete').disabled = false;
+  } else {
+    $('cashChangeLabel').textContent = 'Still needed';
+    $('cashChange').textContent = money(Math.abs(change));
+    $('cashComplete').disabled = true;
+  }
+}
+function openCashPanel() {
+  if (!cart.size) { return; }
+  $('cashReceived').value = cartTotals.total.toFixed(2);
+  updateCashPanel();
+  $('cashModal').classList.remove('hidden');
+  $('cashReceived').focus(); $('cashReceived').select();
+}
+async function completeCashSale() {
+  const tendered = parseFloat($('cashReceived').value || '0') || 0;
+  if (tendered < cartTotals.total) { updateCashPanel(); return; }
+  if (await tender('cash', tendered)) { $('cashModal').classList.add('hidden'); }
 }
 async function refreshToday() {
   const res = await fetch(API + '?summary');
@@ -232,7 +276,18 @@ $('scanInput').addEventListener('keydown', (e) => {
   if (p) { addToCart(p.sku); $('scanInput').value = ''; }
   else { chatMsg('Barcode ' + code + ' not found — tell Gol the name and I\'ll add it.', 'gol'); $('chatDrawer').classList.remove('hidden'); }
 });
-$('cashBtn').addEventListener('click', () => tender('cash'));
+$('cashBtn').addEventListener('click', openCashPanel);
+$('cashBack').addEventListener('click', () => $('cashModal').classList.add('hidden'));
+$('cashComplete').addEventListener('click', completeCashSale);
+$('cashReceived').addEventListener('input', updateCashPanel);
+$('cashExact').addEventListener('click', () => { $('cashReceived').value = cartTotals.total.toFixed(2); updateCashPanel(); });
+$('cashClear').addEventListener('click', () => { $('cashReceived').value = ''; updateCashPanel(); $('cashReceived').focus(); });
+document.querySelectorAll('[data-cash-add]').forEach(b =>
+  b.addEventListener('click', () => {
+    const cur = parseFloat($('cashReceived').value || '0') || 0;
+    $('cashReceived').value = (cur + parseFloat(b.dataset.cashAdd)).toFixed(2);
+    updateCashPanel();
+  }));
 $('cardBtn').addEventListener('click', () => tender('card'));
 $('clearBtn').addEventListener('click', () => { cart.clear(); renderCart(); });
 $('receiptClose').addEventListener('click', () => $('receiptModal').classList.add('hidden'));
