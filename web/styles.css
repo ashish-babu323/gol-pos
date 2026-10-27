@@ -115,7 +115,11 @@ button { font: inherit; cursor: pointer; }
 .msg.card .sc-new { color: var(--staged-new); font-size: 27px; font-weight: 800; }
 .msg.card .sc-line { margin-top: 6px; font-size: 13.5px; }
 .msg.card img { max-width: 100%; border-radius: 10px; display: block; margin: 8px 0; }
-.msg.card button { margin-top: 10px; width: 100%; border: none; color: #fff; font-weight: 800; padding: 12px; border-radius: 12px; font-size: 14.5px; background: linear-gradient(135deg, #5b93ff, #2563eb); box-shadow: 0 8px 18px rgba(37,99,235,.4); }
+.msg.card button { margin-top: 10px; width: 100%; min-height: 52px; border: none; color: #fff; font-weight: 800; padding: 14px 12px; border-radius: 12px; font-size: 15.5px; background: linear-gradient(135deg, #5b93ff, #2563eb); box-shadow: 0 8px 18px rgba(37,99,235,.4); }
+.chat-chips { display: flex; gap: 8px; padding: 10px 12px; overflow-x: auto; flex: none; background: var(--form-bg); border-top: 1px solid var(--form-line); scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.chat-chips::-webkit-scrollbar { display: none; }
+.chat-chips button { flex: none; min-height: 48px; padding: 10px 15px; border-radius: 999px; font-size: 14px; font-weight: 700; white-space: nowrap; background: var(--chip-bg); border: 1px solid var(--chip-line); color: var(--chip-ink); }
+.chat-chips button:active { transform: scale(.97); }
 .chat-form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--form-line); align-items: center; background: var(--form-bg); }
 .chat-form input { flex: 1; padding: 12px 13px; font: inherit; font-size: 15px; border: 1px solid var(--input-line); border-radius: 12px; color: var(--ink); background: var(--input-bg); min-width: 0; }
 .chat-form input::placeholder { color: var(--faint); }
@@ -147,6 +151,7 @@ button { font: inherit; cursor: pointer; }
   --staged-ink: #eaf1ff; --badge-bg: linear-gradient(135deg, #93c5fd, #60a5fa); --badge-ink: #0a1428;
   --staged-old: #7188b3; --staged-arrow: #7fb0ff; --staged-new: #fff;
   --form-line: #1a2b50; --form-bg: transparent; --input-bg: #0b1730; --input-line: #21355f; --photo-bg: #10203f;
+  --chip-bg: #10203f; --chip-line: #2a4480; --chip-ink: #cfe0ff;
 }
 [data-theme="midnight"] body {
   background:
@@ -206,6 +211,7 @@ button { font: inherit; cursor: pointer; }
   --staged-ink: #16283f; --badge-bg: #3f80f5; --badge-ink: #fff;
   --staged-old: #9db1cc; --staged-arrow: #3f80f5; --staged-new: #1d4ed8;
   --form-line: #dfeaf9; --form-bg: #ffffff; --input-bg: #fbfdff; --input-line: #d5e4f8; --photo-bg: #f0f6ff;
+  --chip-bg: #eaf2ff; --chip-line: #cbdefc; --chip-ink: #1d4ed8;
 }
 [data-theme="clean"] body { background: linear-gradient(180deg, #f7faff 0%, #eff5fe 100%); background-color: #eff5fe; }
 [data-theme="clean"] .topbar { background: #fff; box-shadow: 0 1px 0 #e3edfb, 0 10px 26px rgba(31,78,160,.06); }
@@ -259,6 +265,7 @@ button { font: inherit; cursor: pointer; }
   --staged-ink: #13294d; --badge-bg: #0b2a6b; --badge-ink: #fff;
   --staged-old: #9db1cc; --staged-arrow: #3f80f5; --staged-new: #1d4ed8;
   --form-line: #e4eeff; --form-bg: #ffffff; --input-bg: #f8fbff; --input-line: #dce8fd; --photo-bg: #eff5ff;
+  --chip-bg: #e3eeff; --chip-line: #c7dbfe; --chip-ink: #1d4ed8;
 }
 [data-theme="bold"] body {
   background:

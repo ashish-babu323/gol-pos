@@ -133,7 +133,7 @@ function chatCard(card) {
   } else {
     body = `<div class="sc-what">New item — ${card.name} · ${money(card.price)}</div>`;
   }
-  d.innerHTML = `<span class="sc-badge">STAGED</span>${body}<button type="button">Confirm — say "gol"</button>`;
+  d.innerHTML = `<span class="sc-badge">STAGED</span>${body}<button type="button">✓ Confirm — Gol</button>`;
   d.querySelector('button').addEventListener('click', async () => {
     const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirm: true }) });
@@ -182,6 +182,9 @@ $('clearBtn').addEventListener('click', () => { cart.clear(); renderCart(); });
 $('receiptClose').addEventListener('click', () => $('receiptModal').classList.add('hidden'));
 $('golBtn').addEventListener('click', () => { $('chatDrawer').classList.remove('hidden'); $('chatInput').focus(); });
 $('chatClose').addEventListener('click', () => $('chatDrawer').classList.add('hidden'));
+// --- quick-ask chips: one tap sends the everyday asks — no typing at the till.
+document.querySelectorAll('[data-chip]').forEach(b =>
+  b.addEventListener('click', () => sendChat(b.dataset.chip)));
 $('chatForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const v = $('chatInput').value.trim();
