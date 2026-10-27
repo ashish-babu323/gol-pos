@@ -5,6 +5,29 @@ const BRAIN = '../server/brain.php';
 const $ = (id) => document.getElementById(id);
 const money = (n) => '$' + Number(n).toFixed(2);
 
+// --- themes (presentation only — Midnight default, owner picks on device) -----
+const THEMES = ['midnight', 'clean', 'bold'];
+const THEME_LABELS = { midnight: 'Midnight Register', clean: 'Clean Counter', bold: 'Bold Blue' };
+function applyTheme(name, save) {
+  if (!THEMES.includes(name)) { name = 'midnight'; }
+  document.documentElement.dataset.theme = name;
+  if (save) { try { localStorage.setItem('golpos_theme', name); } catch (e) { /* private mode */ } }
+  document.querySelectorAll('[data-set-theme]').forEach(b =>
+    b.classList.toggle('on', b.dataset.setTheme === name));
+  const tn = $('themeName');
+  if (tn) { tn.textContent = THEME_LABELS[name]; }
+}
+document.querySelectorAll('[data-set-theme]').forEach(b =>
+  b.addEventListener('click', () => applyTheme(b.dataset.setTheme, true)));
+applyTheme(document.documentElement.dataset.theme || 'midnight', false);
+
+// --- header clock -------------------------------------------------------------
+function tickClock() {
+  const el = $('clock');
+  if (el) { el.textContent = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
+}
+tickClock(); setInterval(tickClock, 20000);
+
 let catalog = { store: {}, products: [] };
 let cart = new Map(); // sku -> qty
 let activeCat = 'All';
@@ -22,6 +45,9 @@ function renderCats() {
   $('catRow').querySelectorAll('button').forEach(b =>
     b.addEventListener('click', () => { activeCat = b.dataset.cat; renderCats(); renderGrid(); }));
 }
+function artClass(p) {
+  return 'art-' + String(p.category || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
 function renderGrid() {
   const q = $('searchInput').value.trim().toLowerCase();
   const items = catalog.products.filter(p =>
@@ -29,6 +55,7 @@ function renderGrid() {
     (!q || p.name.toLowerCase().includes(q) || p.barcode.includes(q)));
   $('grid').innerHTML = items.map(p =>
     `<button type="button" class="tile" data-sku="${p.sku}">
+       <span class="tile-art ${artClass(p)}">${(p.name || 'G').trim().charAt(0).toUpperCase()}</span>
        <span class="tile-name">${p.name}</span><span class="tile-price">${money(p.price)}</span>
      </button>`).join('') || '<p class="empty">No products match.</p>';
   $('grid').querySelectorAll('.tile').forEach(t =>
@@ -44,10 +71,12 @@ function renderCart() {
     return { p, qty, total: p.price * qty };
   });
   $('cartLines').innerHTML = lines.length ? lines.map(({ p, qty, total }) =>
-    `<div class="line"><span>${p.name} × ${qty}</span><b>${money(total)}</b>
-       <button type="button" data-dec="${p.sku}">−</button>
-       <button type="button" data-inc="${p.sku}">+</button></div>`).join('')
+    `<div class="line"><div class="line-info"><div class="line-name">${p.name}</div><div class="line-sub">${money(p.price)} each</div></div>
+       <div class="stepper"><button type="button" data-dec="${p.sku}">−</button><b>${qty}</b><button type="button" data-inc="${p.sku}">+</button></div>
+       <div class="line-total">${money(total)}</div></div>`).join('')
     : '<p class="empty">Cart is empty — tap a product or scan.</p>';
+  const count = lines.reduce((s, l) => s + l.qty, 0);
+  $('cartCount').textContent = count ? count + (count === 1 ? ' item' : ' items') : '';
   $('cartLines').querySelectorAll('[data-inc]').forEach(b =>
     b.addEventListener('click', () => { cart.set(b.dataset.inc, cart.get(b.dataset.inc) + 1); renderCart(); }));
   $('cartLines').querySelectorAll('[data-dec]').forEach(b =>
@@ -89,21 +118,22 @@ function chatMsg(text, who) {
 function chatCard(card) {
   const d = document.createElement('div');
   d.className = 'msg card';
-  let label;
+  let body;
   if (card.type === 'price_change') {
-    label = `${card.name}: ${money(card.old_price)} → ${money(card.new_price)}`;
+    body = `<div class="sc-what">Price change — ${card.name}</div>` +
+      `<div class="sc-prices"><span class="sc-old">${money(card.old_price)}</span><span class="sc-arrow">→</span><span class="sc-new">${money(card.new_price)}</span></div>`;
   } else if (card.type === 'poster') {
-    label = `Poster: ${card.name} — ${money(card.price)}<br><img src="${card.image}" alt="Offer poster preview">`;
+    body = `<div class="sc-what">Poster — ${card.name} · ${money(card.price)}</div><img src="${card.image}" alt="Offer poster preview">`;
   } else if (card.type === 'photo_read') {
     const found = card.regions === null || card.regions === undefined
       ? 'SAM gave no read on this photo'
       : `SAM found ${card.regions} region(s) for "${card.prompt}"`;
-    const matchLine = card.match_sku ? `<br>Matches: ${card.match_name} (${money(card.match_price)}) → cart on "gol"` : '';
-    label = `<img src="${card.image}" alt="Your photo"><br>${found}${matchLine}`;
+    const matchLine = card.match_sku ? `<div class="sc-line">Matches: ${card.match_name} (${money(card.match_price)}) → cart on "gol"</div>` : '';
+    body = `<img src="${card.image}" alt="Your photo"><div class="sc-line">${found}</div>${matchLine}`;
   } else {
-    label = `New item: ${card.name} — ${money(card.price)}`;
+    body = `<div class="sc-what">New item — ${card.name} · ${money(card.price)}</div>`;
   }
-  d.innerHTML = `<b>Staged</b> ${label}<br><button type="button">Confirm — "gol"</button>`;
+  d.innerHTML = `<span class="sc-badge">STAGED</span>${body}<button type="button">Confirm — say "gol"</button>`;
   d.querySelector('button').addEventListener('click', async () => {
     const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirm: true }) });

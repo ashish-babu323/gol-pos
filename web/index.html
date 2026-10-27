@@ -1,16 +1,25 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="midnight">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Gol POS — Register</title>
+<script>try{var t=localStorage.getItem('golpos_theme');if(['midnight','clean','bold'].indexOf(t)<0)t='midnight';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='midnight';}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="ring">G</span> Gol POS <span class="store-name" id="storeName">Register</span></div>
-  <div class="top-actions">
-    <span class="today" id="todayTotal">Today: $0.00</span>
+  <span class="gol-mark gol-mark-lg"><img class="gol-mark-img" src="https://itacademy.com.np/img/brand/gol-logo-open-ring-blue.png" alt="Gol"><i class="gol-mark-dot"></i></span>
+  <div class="brand">Gol POS<small id="themeName">Midnight Register</small></div>
+  <div class="store-pill"><span class="status-dot"></span><span id="storeName">Register</span><span class="store-open">&nbsp;· Register open</span></div>
+  <div class="top-right">
+    <span class="clock" id="clock"></span>
+    <span class="today-chip" id="todayTotal">Today: $0.00</span>
+    <div class="theme-switch" role="group" aria-label="Register theme">
+      <button type="button" data-set-theme="midnight"><span class="sw sw-midnight"></span>Midnight</button>
+      <button type="button" data-set-theme="clean"><span class="sw sw-clean"></span>Clean</button>
+      <button type="button" data-set-theme="bold"><span class="sw sw-bold"></span>Bold</button>
+    </div>
     <button id="ownerBtn" type="button">Owner</button>
     <button id="golBtn" type="button" class="gol-btn">Talk to Gol</button>
   </div>
@@ -27,11 +36,11 @@
   </section>
 
   <aside class="cart">
-    <h2>Current sale</h2>
+    <h2>Current sale <em id="cartCount"></em></h2>
     <div id="cartLines" class="cart-lines"><p class="empty">Cart is empty — tap a product or scan.</p></div>
     <div class="totals">
-      <div><span>Subtotal</span><b id="subTotal">$0.00</b></div>
-      <div><span>Tax</span><b id="taxTotal">$0.00</b></div>
+      <div class="row"><span>Subtotal</span><b id="subTotal">$0.00</b></div>
+      <div class="row"><span>Tax</span><b id="taxTotal">$0.00</b></div>
       <div class="grand"><span>Total</span><b id="grandTotal">$0.00</b></div>
     </div>
     <div class="tender">
@@ -54,7 +63,11 @@
 </div></div>
 
 <div class="chat-drawer hidden" id="chatDrawer">
-  <div class="chat-head"><span class="ring">G</span> Gol <button id="chatClose" type="button" aria-label="Close">×</button></div>
+  <div class="chat-head">
+    <span class="gol-mark"><img class="gol-mark-img" src="https://itacademy.com.np/img/brand/gol-logo-open-ring-blue.png" alt="Gol"><i class="gol-mark-dot"></i></span>
+    <div class="chat-title"><b>Gol</b><small>Your store brain · online</small></div>
+    <button id="chatClose" type="button" aria-label="Close">×</button>
+  </div>
   <div class="chat-body" id="chatBody">
     <div class="msg gol">Hi, I'm Gol. Add an item, ask a price, or say "today's total".</div>
   </div>
