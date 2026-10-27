@@ -20,6 +20,12 @@ if ($method === 'GET' && isset($_GET['summary'])) {
     echo json_encode(golpos_day_summary(date('Y-m-d')), JSON_UNESCAPED_UNICODE);
     exit;
 }
+if ($method === 'GET' && isset($_GET['closes'])) {
+    // Day-close records — one per date, written when the owner closes the
+    // day in the Gol chat; the owner view reads them back here.
+    echo json_encode(golpos_read('closes.json', []), JSON_UNESCAPED_UNICODE);
+    exit;
+}
 if ($method === 'GET' && isset($_GET['pending'])) {
     echo json_encode(golpos_pending() ?? new stdClass(), JSON_UNESCAPED_UNICODE);
     exit;

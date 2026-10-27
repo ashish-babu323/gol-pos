@@ -1,0 +1,937 @@
+{
+ "version": "gate2-v2-lang",
+ "store": "Sunrise Mart (demo)",
+ "sales_seed": [
+  {
+   "total": 9.98,
+   "tender": "card",
+   "lines": []
+  },
+  {
+   "total": 8.01,
+   "tender": "cash",
+   "lines": []
+  },
+  {
+   "total": 5.46,
+   "tender": "cash",
+   "lines": []
+  }
+ ],
+ "cases": [
+  {
+   "id": "add_by_name-en-1",
+   "intent": "add_by_name",
+   "lang": "en",
+   "msg": "add a Coke",
+   "expect": {
+    "action_add": "1001",
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "add_by_name-en-2",
+   "intent": "add_by_name",
+   "lang": "en",
+   "msg": "one Sprite please",
+   "expect": {
+    "action_add": "1025",
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "add_by_name-en-3",
+   "intent": "add_by_name",
+   "lang": "en",
+   "msg": "add two bananas",
+   "expect": {
+    "action_add": "1043",
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "add_by_name-np-1",
+   "intent": "add_by_name",
+   "lang": "np",
+   "msg": "ek Coke thap",
+   "expect": {
+    "action_add": "1001",
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "add_by_name-np-2",
+   "intent": "add_by_name",
+   "lang": "np",
+   "msg": "ek pani thapdinu",
+   "expect": {
+    "action_add": "1005",
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "add_by_name-np-3",
+   "intent": "add_by_name",
+   "lang": "np",
+   "msg": "dudh chahiyo",
+   "expect": {
+    "action_add": "1011",
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "add_by_name-dv-1",
+   "intent": "add_by_name",
+   "lang": "dv",
+   "msg": "एक कोक थप",
+   "expect": {
+    "action_add": "1001",
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "add_by_name-dv-2",
+   "intent": "add_by_name",
+   "lang": "dv",
+   "msg": "पानी थप्नुस्",
+   "expect": {
+    "action_add": "1005",
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "add_by_name-dv-3",
+   "intent": "add_by_name",
+   "lang": "dv",
+   "msg": "एउटा चिया चाहियो",
+   "expect": {
+    "action_add": "1033",
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "price_query-en-1",
+   "intent": "price_query",
+   "lang": "en",
+   "msg": "how much is a Red Bull?",
+   "expect": {
+    "reply_has": [
+     "$3.49"
+    ],
+    "no_card": true,
+    "sku": "1003",
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "price_query-en-2",
+   "intent": "price_query",
+   "lang": "en",
+   "msg": "price of Kit Kat",
+   "expect": {
+    "reply_has": [
+     "$1.49"
+    ],
+    "no_card": true,
+    "sku": "1036",
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "price_query-en-3",
+   "intent": "price_query",
+   "lang": "en",
+   "msg": "what does the cold brew cost? price",
+   "expect": {
+    "reply_has": [
+     "$3.79"
+    ],
+    "no_card": true,
+    "sku": "1032",
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "price_query-np-1",
+   "intent": "price_query",
+   "lang": "np",
+   "msg": "Coke ko price kati?",
+   "expect": {
+    "reply_has": [
+     "$2.19"
+    ],
+    "no_card": true,
+    "sku": "1001",
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "price_query-np-2",
+   "intent": "price_query",
+   "lang": "np",
+   "msg": "chini ko mulya kati ho",
+   "expect": {
+    "reply_has": [
+     "$3.89"
+    ],
+    "no_card": true,
+    "sku": "1045",
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "price_query-np-3",
+   "intent": "price_query",
+   "lang": "np",
+   "msg": "dahi kati ho?",
+   "expect": {
+    "reply_has": [
+     "$3.79"
+    ],
+    "no_card": true,
+    "sku": "1050",
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "price_query-dv-1",
+   "intent": "price_query",
+   "lang": "dv",
+   "msg": "कोकको मूल्य कति?",
+   "expect": {
+    "reply_has": [
+     "$2.19"
+    ],
+    "no_card": true,
+    "sku": "1001",
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "price_query-dv-2",
+   "intent": "price_query",
+   "lang": "dv",
+   "msg": "दूध कति हो?",
+   "expect": {
+    "reply_has": [
+     "$4.29"
+    ],
+    "no_card": true,
+    "sku": "1011",
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "price_query-dv-3",
+   "intent": "price_query",
+   "lang": "dv",
+   "msg": "चामल को दाम कति?",
+   "expect": {
+    "reply_has": [
+     "$5.49"
+    ],
+    "no_card": true,
+    "sku": "1014",
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "price_query-en-4",
+   "intent": "price_query",
+   "lang": "en",
+   "msg": "price of chips",
+   "expect": {
+    "clarify": true,
+    "no_card": true,
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "price_query-np-4",
+   "intent": "price_query",
+   "lang": "np",
+   "msg": "coffee ko price kati",
+   "expect": {
+    "clarify": true,
+    "no_card": true,
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "price_query-dv-4",
+   "intent": "price_query",
+   "lang": "dv",
+   "msg": "बियर कति हो?",
+   "expect": {
+    "clarify": true,
+    "no_card": true,
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "price_change-en-1",
+   "intent": "price_change",
+   "lang": "en",
+   "msg": "set Coke price to 2.50",
+   "expect": {
+    "card": "price_change",
+    "sku": "1001",
+    "new_price": 2.5,
+    "unchanged_before_confirm": true,
+    "reply_lang": "en"
+   },
+   "then": [
+    {
+     "msg": "gol",
+     "expect": {
+      "price_after": [
+       "1001",
+       2.5
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "price_change-en-2",
+   "intent": "price_change",
+   "lang": "en",
+   "msg": "change the price of Sprite to 2.39",
+   "expect": {
+    "card": "price_change",
+    "sku": "1025",
+    "new_price": 2.39,
+    "unchanged_before_confirm": true,
+    "reply_lang": "en"
+   },
+   "then": [
+    {
+     "msg": "gol",
+     "expect": {
+      "price_after": [
+       "1025",
+       2.39
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "price_change-en-3",
+   "intent": "price_change",
+   "lang": "en",
+   "msg": "Monster price 3.49 set",
+   "expect": {
+    "card": "price_change",
+    "sku": "1028",
+    "new_price": 3.49,
+    "unchanged_before_confirm": true,
+    "reply_lang": "en"
+   },
+   "then": [
+    {
+     "msg": "gol",
+     "expect": {
+      "price_after": [
+       "1028",
+       3.49
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "price_change-np-1",
+   "intent": "price_change",
+   "lang": "np",
+   "msg": "Coke ko price 2.50 gara",
+   "expect": {
+    "card": "price_change",
+    "sku": "1001",
+    "new_price": 2.5,
+    "unchanged_before_confirm": true,
+    "reply_lang": "np"
+   },
+   "then": [
+    {
+     "msg": "gol",
+     "expect": {
+      "price_after": [
+       "1001",
+       2.5
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "price_change-np-2",
+   "intent": "price_change",
+   "lang": "np",
+   "msg": "chini ko mulya 4.10 rakha",
+   "expect": {
+    "card": "price_change",
+    "sku": "1045",
+    "new_price": 4.1,
+    "unchanged_before_confirm": true,
+    "reply_lang": "np"
+   },
+   "then": [
+    {
+     "msg": "gol",
+     "expect": {
+      "price_after": [
+       "1045",
+       4.1
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "price_change-np-3",
+   "intent": "price_change",
+   "lang": "np",
+   "msg": "pani ko dam 1.49 badha",
+   "expect": {
+    "card": "price_change",
+    "sku": "1005",
+    "new_price": 1.49,
+    "unchanged_before_confirm": true,
+    "reply_lang": "np"
+   },
+   "then": [
+    {
+     "msg": "gol",
+     "expect": {
+      "price_after": [
+       "1005",
+       1.49
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "price_change-dv-1",
+   "intent": "price_change",
+   "lang": "dv",
+   "msg": "कोकको मूल्य 2.50 गर",
+   "expect": {
+    "card": "price_change",
+    "sku": "1001",
+    "new_price": 2.5,
+    "unchanged_before_confirm": true,
+    "reply_lang": "dv"
+   },
+   "then": [
+    {
+     "msg": "गोल",
+     "expect": {
+      "price_after": [
+       "1001",
+       2.5
+      ],
+      "reply_lang": "dv"
+     }
+    }
+   ]
+  },
+  {
+   "id": "price_change-dv-2",
+   "intent": "price_change",
+   "lang": "dv",
+   "msg": "दूधको दाम 4.49 राख",
+   "expect": {
+    "card": "price_change",
+    "sku": "1011",
+    "new_price": 4.49,
+    "unchanged_before_confirm": true,
+    "reply_lang": "dv"
+   },
+   "then": [
+    {
+     "msg": "गोल",
+     "expect": {
+      "price_after": [
+       "1011",
+       4.49
+      ],
+      "reply_lang": "dv"
+     }
+    }
+   ]
+  },
+  {
+   "id": "price_change-dv-3",
+   "intent": "price_change",
+   "lang": "dv",
+   "msg": "चिनीको मूल्य 4.10 बनाउ",
+   "expect": {
+    "card": "price_change",
+    "sku": "1045",
+    "new_price": 4.1,
+    "unchanged_before_confirm": true,
+    "reply_lang": "dv"
+   },
+   "then": [
+    {
+     "msg": "गोल",
+     "expect": {
+      "price_after": [
+       "1045",
+       4.1
+      ],
+      "reply_lang": "dv"
+     }
+    }
+   ]
+  },
+  {
+   "id": "new_item-en-1",
+   "intent": "new_item",
+   "lang": "en",
+   "msg": "add new item Mango Lassi 3.25",
+   "expect": {
+    "card": "new_item",
+    "name_has": "lassi",
+    "price": 3.25,
+    "reply_lang": "en"
+   },
+   "then": [
+    {
+     "msg": "gol",
+     "expect": {
+      "catalog_has_name": "lassi"
+     }
+    }
+   ]
+  },
+  {
+   "id": "new_item-en-2",
+   "intent": "new_item",
+   "lang": "en",
+   "msg": "new product: Samosa, price 1.50",
+   "expect": {
+    "card": "new_item",
+    "name_has": "samosa",
+    "price": 1.5,
+    "reply_lang": "en"
+   },
+   "then": [
+    {
+     "msg": "gol",
+     "expect": {
+      "catalog_has_name": "samosa"
+     }
+    }
+   ]
+  },
+  {
+   "id": "new_item-np-1",
+   "intent": "new_item",
+   "lang": "np",
+   "msg": "naya saman Momo 6.99 ma thap",
+   "expect": {
+    "card": "new_item",
+    "name_has": "momo",
+    "price": 6.99,
+    "reply_lang": "np"
+   },
+   "then": [
+    {
+     "msg": "gol",
+     "expect": {
+      "catalog_has_name": "momo"
+     }
+    }
+   ]
+  },
+  {
+   "id": "new_item-np-2",
+   "intent": "new_item",
+   "lang": "np",
+   "msg": "Sel Roti naya item 1.25",
+   "expect": {
+    "card": "new_item",
+    "name_has": "sel roti",
+    "price": 1.25,
+    "reply_lang": "np"
+   },
+   "then": [
+    {
+     "msg": "gol",
+     "expect": {
+      "catalog_has_name": "sel roti"
+     }
+    }
+   ]
+  },
+  {
+   "id": "new_item-dv-1",
+   "intent": "new_item",
+   "lang": "dv",
+   "msg": "नयाँ सामान लस्सी 3.25",
+   "expect": {
+    "card": "new_item",
+    "name_has": "लस्सी",
+    "price": 3.25,
+    "reply_lang": "dv"
+   },
+   "then": [
+    {
+     "msg": "gol",
+     "expect": {
+      "catalog_has_name": "लस्सी"
+     }
+    }
+   ]
+  },
+  {
+   "id": "new_item-dv-2",
+   "intent": "new_item",
+   "lang": "dv",
+   "msg": "मोमो नयाँ थप 6.99",
+   "expect": {
+    "card": "new_item",
+    "name_has": "मोमो",
+    "price": 6.99,
+    "reply_lang": "dv"
+   },
+   "then": [
+    {
+     "msg": "gol",
+     "expect": {
+      "catalog_has_name": "मोमो"
+     }
+    }
+   ]
+  },
+  {
+   "id": "new_item-en-3",
+   "intent": "new_item",
+   "lang": "en",
+   "msg": "add new item Mango Lassi",
+   "expect": {
+    "asks_price": true,
+    "no_card": true,
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "new_item-np-3",
+   "intent": "new_item",
+   "lang": "np",
+   "msg": "naya saman Momo thap",
+   "expect": {
+    "asks_price": true,
+    "no_card": true,
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "new_item-dv-3",
+   "intent": "new_item",
+   "lang": "dv",
+   "msg": "नयाँ सामान मोमो थप",
+   "expect": {
+    "asks_price": true,
+    "no_card": true,
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "day_total-en-1",
+   "intent": "day_total",
+   "lang": "en",
+   "msg": "what are today's sales?",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "no_card": true,
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "day_total-en-2",
+   "intent": "day_total",
+   "lang": "en",
+   "msg": "how much did we sell today",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "no_card": true,
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "day_total-en-3",
+   "intent": "day_total",
+   "lang": "en",
+   "msg": "sales so far",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "no_card": true,
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "day_total-np-1",
+   "intent": "day_total",
+   "lang": "np",
+   "msg": "aaja kati bikri bho?",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "no_card": true,
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "day_total-np-2",
+   "intent": "day_total",
+   "lang": "np",
+   "msg": "aaja ko hisab deu",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "no_card": true,
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "day_total-np-3",
+   "intent": "day_total",
+   "lang": "np",
+   "msg": "aaja samma kati becheu",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "no_card": true,
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "day_total-dv-1",
+   "intent": "day_total",
+   "lang": "dv",
+   "msg": "आज कति बिक्री भयो?",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "no_card": true,
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "day_total-dv-2",
+   "intent": "day_total",
+   "lang": "dv",
+   "msg": "आजको हिसाब देऊ",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "no_card": true,
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "day_total-dv-3",
+   "intent": "day_total",
+   "lang": "dv",
+   "msg": "आज कति बेचियो?",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "no_card": true,
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "close-en-1",
+   "intent": "close",
+   "lang": "en",
+   "msg": "close the day",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "close_record": true,
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "close-en-2",
+   "intent": "close",
+   "lang": "en",
+   "msg": "end of day close out",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "close_record": true,
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "close-en-3",
+   "intent": "close",
+   "lang": "en",
+   "msg": "close register for today",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "close_record": true,
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "close-np-1",
+   "intent": "close",
+   "lang": "np",
+   "msg": "aaja ko close gara",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "close_record": true,
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "close-np-2",
+   "intent": "close",
+   "lang": "np",
+   "msg": "pasal banda gara, hisab",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "close_record": true,
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "close-np-3",
+   "intent": "close",
+   "lang": "np",
+   "msg": "din ko close",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "close_record": true,
+    "reply_lang": "np"
+   }
+  },
+  {
+   "id": "close-dv-1",
+   "intent": "close",
+   "lang": "dv",
+   "msg": "आजको क्लोज गर",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "close_record": true,
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "close-dv-2",
+   "intent": "close",
+   "lang": "dv",
+   "msg": "पसल बन्द गर",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "close_record": true,
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "close-dv-3",
+   "intent": "close",
+   "lang": "dv",
+   "msg": "दिनको हिसाब बन्द गर",
+   "expect": {
+    "reply_has": [
+     "$23.45"
+    ],
+    "close_record": true,
+    "reply_lang": "dv"
+   }
+  },
+  {
+   "id": "gate-en-1",
+   "intent": "gate",
+   "lang": "en",
+   "msg": "gol",
+   "expect": {
+    "nothing_pending_reply": true,
+    "reply_lang": "en"
+   }
+  },
+  {
+   "id": "gate-np-1",
+   "intent": "gate",
+   "lang": "np",
+   "msg": "Coke ko price 9.99 gara",
+   "expect": {
+    "card": "price_change",
+    "sku": "1001",
+    "new_price": 9.99,
+    "unchanged_before_confirm": true,
+    "reply_lang": "np"
+   },
+   "then": [
+    {
+     "msg": "ok",
+     "expect": {
+      "price_after": [
+       "1001",
+       2.19
+      ],
+      "reply_lang": "en"
+     }
+    },
+    {
+     "msg": "yes do it",
+     "expect": {
+      "price_after": [
+       "1001",
+       2.19
+      ],
+      "reply_lang": "en"
+     }
+    }
+   ]
+  },
+  {
+   "id": "gate-en-2",
+   "intent": "gate",
+   "lang": "en",
+   "msg": "set Lays price to 1.39 gol now",
+   "expect": {
+    "card": "price_change",
+    "sku": "1006",
+    "new_price": 1.39,
+    "unchanged_before_confirm": true,
+    "reply_lang": "en"
+   }
+  }
+ ],
+ "lang_rule": "Owner language law (#883): EN in -> EN reply; Romanized NP in -> Romanized NP reply; Devanagari in -> Devanagari reply. Replies that are only product name + price are neutral and pass. Follow-up 'gol' (Latin) is language-neutral input, so its reply is not language-checked; 'गोल' expects Devanagari, 'ok'/'yes do it' expect English."
+}

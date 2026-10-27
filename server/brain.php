@@ -47,15 +47,25 @@ function money(float $n): string { return '$' . number_format($n, 2); }
 function golpos_lang(string $msg): string {
     if (preg_match('/[\x{0900}-\x{097F}]/u', $msg)) { return 'dev'; }
     $t = ' ' . mb_strtolower($msg) . ' ';
-    $np = [' kati ', ' thap ', ' thapnus ', ' bhannus ', ' mulya ', ' hisab ', ' aaja ', ' saman ',
-           ' chha ', ' badala ', ' badal ', ' rakha ', ' kun ', ' tyo ', ' naya ', ' bikri ',
-           ' chahinchha ', ' gara ', ' dinus ', ' lekha '];
-    $hi = [' kitna ', ' kitne ', ' daam ', ' jodo ', ' jod ', ' lagao ', ' aaj ', ' saaman ',
-           ' hai ', ' karo ', ' badlo ', ' bikri ', ' hisaab ', ' ka ', ' ki ', ' mein '];
+    // Stem matching, not whole-word: Nepali verbs carry suffixes (thap ->
+    // thapdinu / thapnus, deu -> dinus), so a stem hit is the language
+    // signal. Whole-word matching missed natural forms like "pani
+    // thapdinu" and "dudh chahiyo" and answered them in English.
+    $np = ['kati', 'thap', 'mulya', 'hisab', 'aaja', 'chha', 'gara', 'deu', 'dinus',
+           'chahiyo', 'chahinchha', 'bikri', 'becheu', 'rakha', 'badha', 'badal',
+           'bhannus', 'saman', 'naya', 'pasal', 'banda', ' kun ', ' tyo ', ' lekha ', ' din '];
+    $hi = ['kitna', 'kitne', 'daam', 'jodo', 'lagao', 'saaman', 'karo', 'badlo',
+           'hisaab', ' hai ', ' aaj ', ' mein '];
     $n = 0; foreach ($np as $w) { if (mb_strpos($t, $w) !== false) { $n++; } }
     $h = 0; foreach ($hi as $w) { if (mb_strpos($t, $w) !== false) { $h++; } }
     if ($n === 0 && $h === 0) { return 'en'; }
     return $n >= $h ? 'np' : 'hi';
+}
+
+// Devanagari digits -> Latin, for price parsing (२.५० means 2.50).
+function golpos_norm_digits(string $s): string {
+    return strtr($s, ['०' => '0', '१' => '1', '२' => '2', '३' => '3', '४' => '4',
+                       '५' => '5', '६' => '6', '७' => '7', '८' => '8', '९' => '9']);
 }
 
 $L = golpos_lang($msg);
@@ -175,6 +185,16 @@ $S = [
     'np' => 'Ahile poster banauna milena — image service le jawaf diyena. Ekai chhin pachhi feri prayas garnus.',
     'hi' => 'Abhi poster nahi ban paya — image service ne jawaab nahi diya. Thodi der baad phir koshish kijiye.',
     'dev' => 'अहिले पोस्टर बनाउन मिलेन — इमेज सेवाले जवाफ दिएन। एकै छिनपछि फेरि प्रयास गर्नुस्।'],
+  'close_done' => [
+    'en' => 'Day closed and the record is saved — %s total (%d sales): cash %s, card %s.',
+    'np' => 'Din banda bhayo, record save bhayo — jamma %s (%d sale): cash %s, card %s.',
+    'hi' => 'Din band ho gaya, record save ho gaya — kul %s (%d sale): cash %s, card %s.',
+    'dev' => 'दिन बन्द भयो, रेकर्ड सेभ भयो — जम्मा %s (%d वटा बिक्री): नगद %s, कार्ड %s।'],
+  'new_ask_price' => [
+    'en' => 'New item — %s. What price should I put on it? Tell me the price and I\'ll stage the card.',
+    'np' => 'Naya saman — %s. Mulya kati rakhne ho? Mulya bhannus, card stage garchhu.',
+    'hi' => 'Naya saaman — %s. Daam kitna rakhoon? Daam bataiye, card stage karta hoon.',
+    'dev' => 'नयाँ सामान — %s। मूल्य कति राख्ने हो? मूल्य भन्नुस्, कार्ड स्टेज गर्छु।'],
   'photo_added' => [
     'en' => 'From your photo, I added %s (%s) to the cart.',
     'np' => 'Tapai ko photo bata %s (%s) cart ma thapiye.',
@@ -367,8 +387,19 @@ if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|
     out(['reply' => t('week_line', money($weekGross), $weekTx, money($todaySum['gross']))]);
 }
 
-// --- day total / close -------------------------------------------------------
-if (preg_match('/(kati bikri|kitni bikri|aaja ko|aaj ka|आज|today|close|banda|hisab|hisaab|sales|total)/iu', $msg)) {
+// --- close the day: writes the day record ------------------------------------
+// Close words in any of the shop's languages (close / banda / बन्द / क्लोज)
+// end the day: the summary is frozen into a saved record the owner view
+// reads back. This branch runs BEFORE the day-total branch so a close is
+// never mistaken for a question about the total.
+if (preg_match('/(close|banda|बन्द|क्लोज)/iu', $msg)) {
+    $rec = golpos_close_day(date('Y-m-d'));
+    out(['reply' => t('close_done', money((float)$rec['gross']), (int)$rec['txns'], money((float)$rec['cash']), money((float)$rec['card'])),
+         'close_record' => $rec]);
+}
+
+// --- day total ---------------------------------------------------------------
+if (preg_match('/(kati bikri|kitni bikri|aaja ko|aaj ka|aaja kati|becheu|आज|हिसाब|बिक्री|today|close|banda|hisab|hisaab|sales|total)/iu', $msg)) {
     $s = golpos_day_summary(date('Y-m-d'));
     if ($s['txns'] === 0) {
         out(['reply' => t('day_none')]);
@@ -381,9 +412,33 @@ if (preg_match('/(kati bikri|kitni bikri|aaja ko|aaj ka|आज|today|close|banda
     out(['reply' => t('day_total', money($s['gross']), $s['txns'], money($s['cash']), money($s['card']))]);
 }
 
+// --- new item (staged) ---------------------------------------------------------
+// "add new item Mango Lassi 3.25" / "naya saman Momo 6.99 ma thap" /
+// "नयाँ सामान लस्सी 3.25": Gol stages a new-item card (name + price) that
+// executes only on "gol". With no price in the message Gol asks for it —
+// a price is never invented.
+if (preg_match('/(new\s+(item|product)|naya\s+(saman|item)|नयाँ|नया\s+सामान)/iu', $msg)) {
+    $price = null; $digits = '';
+    if (preg_match('/(\d+(?:\.\d{1,2})?)/', golpos_norm_digits($msg), $mm)) {
+        $price = (float)$mm[1]; $digits = $mm[1];
+    }
+    $name = preg_replace('/(new\s+(item|product)|naya\s+(saman|item)|नयाँ\s+सामान|नयाँ|नया\s+सामान)/iu', ' ', $msg);
+    $name = preg_replace('/(add|thap|थप|थप्नुस्|jodo|price|mulya|मूल्य|दाम|daam|dam)/iu', ' ', (string)$name);
+    if ($digits !== '') { $name = str_replace($digits, ' ', (string)$name); }
+    $name = preg_replace('/[\p{P}\p{S}]+/u', ' ', (string)$name);
+    $name = preg_replace('/\b(ma|मा|ho|for|at)\b/iu', ' ', (string)$name);
+    $name = trim(preg_replace('/\s+/u', ' ', (string)$name));
+    if ($name !== '') {
+        if ($price === null) { out(['reply' => t('new_ask_price', $name)]); }
+        $card = golpos_stage(['type' => 'new_item', 'name' => $name, 'price' => $price,
+                              'category' => 'Counter', 'barcode' => '']);
+        out(['reply' => t('card_staged'), 'card' => $card]);
+    }
+}
+
 // --- price change (staged) ---------------------------------------------------
-if (preg_match('/(\d+(?:\.\d{1,2})?)/', $msg, $m) &&
-    preg_match('/(mulya|price|dam|daam).*(gara|set|badha|rakha|change|badlo|karo)|(gara|set|change|badlo).*(mulya|price|dam|daam)/iu', $msg)) {
+if (preg_match('/(\d+(?:\.\d{1,2})?)/', golpos_norm_digits($msg), $m) &&
+    preg_match('/(mulya|price|dam|daam|मूल्य|दाम).*(gara|set|badha|badal|rakha|change|badlo|karo|गर|राख|बनाउ|बदल)|(gara|set|change|badlo|गर|बनाउ).*(mulya|price|dam|daam|मूल्य|दाम)/iu', $msg)) {
     $r = resolve_item($products, $msg);
     if (!empty($r['one'])) {
         $p = $r['one'];
@@ -424,7 +479,7 @@ if (preg_match('/(kati|kitna|kitne|price|mulya|dam|daam|how much|मूल्य
 }
 
 // --- add to cart ---------------------------------------------------------------
-if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप)/iu', $msg)) {
+if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप|चाहियो)/iu', $msg)) {
     $r = resolve_item($products, $msg);
     if (!empty($r['one'])) {
         out(['reply' => t('added_cart', $r['one']['name'], money((float)$r['one']['price'])),

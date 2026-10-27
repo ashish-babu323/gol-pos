@@ -84,3 +84,17 @@ One entry per day; the git history carries the same dates.
     Note: heavy scripted curl from the build machine trips the host's
     bot-check page after several calls — late checks were run over SSH
     loopback instead; real browsers are unaffected.
+- **Gate-2 brain battery: 60/60** (late Oct 26). Grok's battery set
+  (`docs/brain-battery.gate2.json`, six intents × EN / Romanized NP /
+  Devanagari + the reply-language rule) scored 29/60 against the morning
+  brain. The brain lane closed the five gaps in the deterministic layer —
+  Devanagari intents (price-change verbs, चाहियो, Devanagari digits), a
+  real new-item intent that stages cards (price asked, never invented),
+  a close branch that writes the day record (`closes.json`, readable at
+  `api.php?closes`), widened day-total phrasings, word-start alias
+  matching — plus stem-based reply-language detection. Rerun against the
+  live preview: baseline 30/60 → 59/60 → **60/60** on the final full run,
+  with the Day-1 spot check (Coke $2.19 → staged 2.50 → "gol" executes)
+  reproduced and all test state rolled back byte-for-byte. Full
+  case-by-case results: `gate2-battery-results-2026-10-26.md` in the
+  hackathon pack.

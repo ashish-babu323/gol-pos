@@ -85,7 +85,17 @@ function resolve_item(array $products, string $text): array {
     $aliasHits = [];
     foreach ($products as $p) {
         foreach (($p['aliases'] ?? []) as $a) {
-            if (mb_strpos($t, mb_strtolower((string)$a)) !== false) { $aliasHits[] = $p; break; }
+            $a = (string)$a;
+            if ($a === '') { continue; }
+            // Latin aliases match at a word start, so "pani" never fires
+            // inside "company" and "dew" never inside "dewalt"; a trailing
+            // plural s still counts ("bananas"). Devanagari aliases stay
+            // substring matches — postpositions attach to the word
+            // (कोकको) and must still resolve.
+            $hit = preg_match('/[\x{0900}-\x{097F}]/u', $a)
+                ? (mb_strpos($t, mb_strtolower($a)) !== false)
+                : (preg_match('/\b' . preg_quote(mb_strtolower($a), '/') . '(?:s|es)?\b/u', $t) === 1);
+            if ($hit) { $aliasHits[] = $p; break; }
         }
     }
     if (count($aliasHits) === 1) { return ['one' => $aliasHits[0]]; }
@@ -105,6 +115,19 @@ function resolve_item(array $products, string $text): array {
     $best = array_values(array_filter($hits, fn($h) => $h['s'] === $top));
     if (count($best) === 1) { return ['one' => $best[0]['p']]; }
     return ['many' => array_map(fn($h) => $h['p'], $best)];
+}
+
+// The day-close record: closing the day freezes the summary into ONE saved
+// record per date (a re-close refreshes it) that the owner view reads back.
+function golpos_close_day(string $ymd): array {
+    $rec = golpos_day_summary($ymd);
+    $rec['closed_at'] = date('c');
+    $closes = golpos_read('closes.json', []);
+    $out = [];
+    foreach ($closes as $c) { if (($c['date'] ?? '') !== $ymd) { $out[] = $c; } }
+    $out[] = $rec;
+    golpos_write('closes.json', $out);
+    return $rec;
 }
 
 function golpos_day_summary(string $ymd): array {
