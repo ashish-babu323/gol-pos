@@ -1205,6 +1205,10 @@ function golpos_is_credit_ask(string $msg): bool {
     // The employee chat door names no credit word at all ("Ram le
     // redeem garna khojchha") — it is a credit ask by shape.
     if (golpos_parse_credit_attach($msg) !== null) { return true; }
+    // A calendar shape is never a credit ask (seam catch, Oct 28:
+    // "Test Bim ko calendar ma ke chha?" landed here asking for a
+    // phone number — the calendar lane owns those sentences).
+    if (golpos_cal_parse_read($msg) !== null || golpos_cal_parse_create($msg) !== null) { return false; }
     if (!preg_match('/(credit|points?|क्रेडिट|पोइन्ट)/iu', $msg)) { return false; }
     $hasPhone = preg_match('/\d{7,}/', golpos_norm_digits($msg)) === 1;
     if (preg_match('/\bcard\b/iu', $msg) && !$hasPhone) { return false; }
@@ -1640,6 +1644,100 @@ function golpos_is_sale_add_ask(string $msg): bool {
     if (preg_match('/(report|kati|kitna|how|total|hisab|hisaab|हिसाब|कति)/iu', $msg)) { return false; }
     return preg_match('/(\badd\b|\brecord\b|\bentry\b|\bhal|\bhaal|\bthap|राख|हाल|थप)/iu', $msg) === 1;
 }
+// --- AI Calendar + AI Notes: the register's shapes -------------------------
+// A calendar READ: "<Name> ko calendar / bholi", "mero calendar ma ke
+// chha?", a bare store-calendar ask. Scope rides the day words.
+function golpos_cal_parse_read(string $msg): ?array {
+    $scope = 'week';
+    if (preg_match('/(bholi|tomorrow|भोलि)/iu', $msg)) { $scope = 'tomorrow'; }
+    elseif (preg_match('/(aaja|today|आज)/iu', $msg)) { $scope = 'today'; }
+    if (preg_match('/^(.+?)\s+ko\s+(calendar|calender)\b/iu', $msg, $m)
+        || preg_match('/^(.+?)\s+ko\s+(bholi|bholiko|aaja|hapta)\b/iu', $msg, $m)) {
+        $name = trim($m[1]);
+        if ($name !== '' && !preg_match('/(mero|store|pasal|hamro|hamra)/iu', $name)) {
+            return ['who' => $name, 'scope' => $scope];
+        }
+        return ['who' => 'self', 'scope' => $scope];
+    }
+    if (preg_match('/(calendar|calender|पात्रो)/iu', $msg)
+        && preg_match('/(ke chha|ke ke|dekha|show|what|mero|my|list|herau|aaja|bholi|hapta|week)/iu', $msg)
+        && !preg_match('/(rakha|gara|lekha|add|save|bana|halnu|hala)/iu', $msg)) {
+        return ['who' => preg_match('/(mero|my)/iu', $msg) ? 'self' : 'store', 'scope' => $scope];
+    }
+    return null;
+}
+
+// A calendar CREATE: an explicit date, or a relative day + a calendar
+// verb, in a STATEMENT (a dated question is a read, never a create).
+// Returns the staged card's fields or null.
+function golpos_cal_parse_create(string $msg): ?array {
+    if (preg_match('/(kati|kun|how|why|kina|ke\s+ho|ke\s+chha|\?)/iu', $msg)) { return null; }
+    $hasNoteVerb = (bool)preg_match('/(note\s*(gara|rakha|lekha|gar|rakh|garna|rakhna)|नोट)/iu', $msg);
+    $hasCalVerb = (bool)preg_match('/(calendar\s*ma|meeting|remind|samjhau|samjha|appointment|entry\s*gara)/iu', $msg);
+    $explicitDate = (bool)(preg_match('/\b\d{4}-\d{2}-\d{2}\b/', $msg)
+        || preg_match('/\b\d{1,2}\/\d{1,2}(\/\d{2,4})?\b/', $msg)
+        || preg_match('/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b/i', $msg)
+        || preg_match('/\b\d{1,2}(st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i', $msg));
+    $isStatement = (bool)preg_match('/(chha|cha|huncha|hunchha|aauchha|aaunchha)\s*[.!]?\s*$/iu', trim($msg));
+    $date = golpos_cal_parse_date($msg);
+    if ($date === null) { return null; }
+    if (!(($explicitDate && ($hasNoteVerb || $hasCalVerb || $isStatement)) || $hasCalVerb)) { return null; }
+    $persona = '';
+    if (preg_match('/^(.+?)\s+ko\s+calendar\s+ma\b/iu', $msg, $m)) { $persona = trim($m[1]); }
+    elseif (preg_match('/([A-Za-z][A-Za-z]*(?:\s+[A-Za-z][A-Za-z]*)?)\s+(?:ko\s+lagi|lai)\b/u', $msg, $m)) { $persona = trim($m[1]); }
+    elseif (preg_match('/\bfor\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/', $msg, $m)) { $persona = trim($m[1]); }
+    if ($persona !== '' && preg_match('/(mero|store|pasal|hamro|calendar)/iu', $persona)) { $persona = ''; }
+    $time = golpos_parse_time($msg, '') ?? '';
+    /* golpos_parse_time will happily read the day-of-month as a time on
+       a date-only sentence ("Nov 5 ma meeting" -> 05:00) — only trust
+       it when an am/pm or an HH:MM shape is actually present. */
+    if (!preg_match('/(\d{1,2}:\d{2}|\d{1,2}\s*(am|pm))/iu', $msg)) { $time = ''; }
+    $title = golpos_cal_strip_date($msg);
+    $title = (string)preg_replace('/\b\d{1,2}(:\d{2})?\s*(am|pm)\b/i', ' ', $title);
+    $title = (string)preg_replace('/(note\s*(gara|rakha|lekha|gar|rakh|garna|rakhna)|calendar\s+ma\s*(rakha|hala|add)?|remind\s*(gara|garna)?|samjhau|samjha|entry\s*gara)\b/iu', ' ', $title);
+    if ($persona !== '') {
+        $title = (string)preg_replace('/' . preg_quote($persona, '/') . '\s+(ko\s+lagi|lai|ko\s+calendar\s+ma)\b/iu', ' ', $title);
+        $title = (string)preg_replace('/\bfor\s+' . preg_quote($persona, '/') . '\b/i', ' ', $title);
+    }
+    $title = trim((string)preg_replace('/\s+/', ' ', $title), " \t.,:;-");
+    $title = trim((string)preg_replace('/^(ma|on|at)\s+/iu', '', $title));
+    if ($title === '') { return null; }
+    if (preg_match('/\s(chha|cha)$/iu', $title)) { $title = trim((string)preg_replace('/\s+(chha|cha)$/iu', '', $title)); }
+    $title = mb_strtoupper(mb_substr($title, 0, 1)) . mb_substr($title, 1);
+    $type = 'other'; $duty = '';
+    if (preg_match('/(delivery|truck|rep\b|vendor)/iu', $title)) { $type = 'vendor'; $duty = 'delivery'; }
+    elseif (preg_match('/(bill|invoice)/iu', $title)) { $type = 'books'; $duty = 'bills'; }
+    elseif (preg_match('/(close|report|\bz\b)/iu', $title)) { $type = 'books'; $duty = 'close'; }
+    elseif (preg_match('/(count|ginti|stock)/iu', $title)) { $type = 'other'; $duty = 'stock'; }
+    elseif (preg_match('/(meeting|staff)/iu', $title)) { $type = 'staff'; }
+    return ['date' => $date, 'time' => $time, 'title' => $title,
+            'persona' => $persona, 'duty_group' => $duty, 'etype' => $type];
+}
+
+// An undated NOTE create: "note rakha: X" / "note gara — X". A dated
+// sentence took the calendar branch; relative words inside stay part
+// of the note. Questions never create.
+function golpos_note_parse_create(string $msg): ?string {
+    if (preg_match('/(kati|kun|how|why|kina|\?)/iu', $msg)) { return null; }
+    if (!preg_match('/(note\s*(rakha|gara|lekha|gar|rakh|garna|rakhna)|नोट)/iu', $msg)) { return null; }
+    if (golpos_cal_parse_create($msg) !== null) { return null; } // dated -> calendar owns it
+    $body = (string)preg_replace('/.*?(note\s*(rakha|gara|lekha|gar|rakh|garna|rakhna))\s*[:\-]?\s*/iu', '', $msg, 1);
+    if ($body === $msg) { $body = trim((string)preg_replace('/\b(note|नोट)\b/iu', ' ', $msg)); }
+    $body = trim($body, " \t.,:;-");
+    return $body !== '' ? $body : null;
+}
+
+// Note lines tagged to an item — appended to that item's stock/count
+// answers (AI Notes are alive: they resurface where they matter).
+function golpos_cal_notes_tail(string $itemName): string {
+    $lines = [];
+    foreach (golpos_cal_item_notes($itemName) as $n) {
+        $lines[] = '📝 Note (' . (string)($n['item'] ?? $itemName) . '): '
+            . mb_substr(trim((string)($n['body'] ?? '')), 0, 120);
+    }
+    return $lines ? implode("\n", array_slice($lines, 0, 3)) : '';
+}
+
 // Small talk (owner catch, Oct 28): a greeting carrying a how-are-you
 // tail — "Hi how are you today", "namaste, kasto cha" — is a GREETING,
 // never a hisab ask. The day-total lane matches any message containing
@@ -1716,6 +1814,13 @@ function golpos_card_summary(array $card): string {
                 . (($card['field'] ?? '') === 'delivery_day' ? 'delivery day' : 'rep day')
                 . ': ' . (is_array($card['new'] ?? null)
                     ? golpos_day_names($card['new']) : golpos_day_name((string)($card['new'] ?? '')));
+        case 'cal_entry':
+            $forC = (($card['for_name'] ?? 'store') !== 'store') ? ' for ' . $card['for_name'] : '';
+            $timeC = !empty($card['time']) ? ', ' . $card['time'] : '';
+            return 'calendar — ' . ($card['title'] ?? '') . ' on ' . ($card['date'] ?? '') . $timeC . $forC;
+        case 'note_add':
+            $reC = !empty($card['item']) ? ' (re: ' . $card['item'] . ')' : '';
+            return 'note — "' . ($card['body'] ?? '') . '"' . $reC;
         case 'employee_remove':
             return 'remove employee — ' . ($card['email'] ?? '');
         case 'poster':
@@ -2518,6 +2623,22 @@ function golpos_unlock_greeting(array $actor, bool $firstUnlock = false, ?string
             $lines[] = "Today's shape:";
             foreach (array_slice($shape, 0, 4) as $sh) { $lines[] = '• ' . $sh; }
         }
+        // (2b) HER CALENDAR — the entries whose moment arrived while
+        // she was away (marked missed) plus today's, fanned out to her
+        // persona. This is the buzz at the till: shown once per
+        // audience (marks), never dug for, never repeated.
+        try {
+            $calAll = golpos_cal_all_events(date('Y-m-d', strtotime('-7 days')),
+                                            date('Y-m-d', strtotime('+7 days')));
+            $hers = golpos_cal_for_persona($calAll, (string)$actor['name'],
+                ($actor['record'] ?? null) !== null ? golpos_cal_duty_groups_for($actor['record']) : []);
+            [$dueCal, $calMarks] = golpos_cal_due_for($hers, 'persona:' . golpos_name_key((string)$actor['name']));
+            if ($dueCal) {
+                golpos_cal_mark_shown($calMarks, $email);
+                $lines[] = '📅 Calendar:';
+                foreach (array_slice($dueCal, 0, 4) as $ce) { $lines[] = golpos_cal_line($ce); }
+            }
+        } catch (Throwable $e) {}
         // (3) Her task list, duty-shaped kinds first (report before
         // counts before the rest), then the owner's words in order.
         $items = golpos_open_items_for($email);
@@ -3161,6 +3282,35 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
     // can never spend twice). The card type is deliberately absent
     // from golpos_needs_admin's list: attaching a customer's own credit
     // in her presence is cashier-domain work.
+    if ($card['type'] === 'cal_entry') {
+        /* the ONE write: the shared KV store (link) or the local
+           pack (standalone) — the entry exists once, owned by the
+           person or the store, exactly as the card showed */
+        $rec = ['title' => (string)$card['title'], 'date' => (string)$card['date'],
+                'time' => (string)($card['time'] ?? ''), 'type' => (string)($card['etype'] ?? 'other'),
+                'note' => (string)$card['title'], 'owner' => (string)($card['for_name'] ?? 'store'),
+                'duty_group' => (string)($card['duty_group'] ?? ''), 'item' => ''];
+        if (($card['for_name'] ?? 'store') !== 'store') {
+            $rec['who'] = [['id' => (string)($card['for_email'] ?? ''), 'name' => (string)$card['for_name']]];
+        }
+        $ok = golpos_cal_add_event($rec, (string)($card['by_email'] ?? ''));
+        golpos_clear_pending();
+        if (!$ok) { out(['reply' => t('card_fail')]); }
+        $forTxt = ($card['for_name'] ?? 'store') !== 'store' ? ' (for ' . $card['for_name'] . ')' : '';
+        out(['reply' => 'Calendar saved: ' . golpos_cal_fmt_day((string)$card['date']) . ' · '
+            . $card['title'] . $forTxt . ' — Gol will show it on the day.', 'done' => $card]);
+    }
+    if ($card['type'] === 'note_add') {
+        $ok = golpos_cal_add_note(['body' => (string)$card['body'], 'title' => '',
+            'owner' => (string)($card['for_name'] ?? 'store'), 'item' => (string)($card['item'] ?? ''),
+            'by' => (string)($card['by_email'] ?? '')], $shop, (string)($card['by_email'] ?? ''));
+        golpos_clear_pending();
+        if (!$ok) { out(['reply' => t('card_fail')]); }
+        $tail = ($card['item'] ?? '') !== ''
+            ? ' It will come back whenever ' . $card['item'] . ' is stocked, counted or asked about.'
+            : '';
+        out(['reply' => 'Note saved: ' . $card['body'] . $tail, 'done' => $card]);
+    }
     if ($card['type'] === 'credit_attach') {
         golpos_clear_pending();
         if (empty(golpos_settings()['credit_redeem'])) {
@@ -3280,8 +3430,11 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
         $fmt = static fn($v) => $v === null ? '—' : rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
         $var = ($card['variance'] ?? null) === null ? '—'
             : (((float)$card['variance'] > 0 ? '+' : '') . $fmt($card['variance']));
-        out(['reply' => t('count_done', (string)$card['name'], $fmt($card['counted'] ?? null),
-                          $fmt($card['system'] ?? null), $var), 'done' => $card]);
+        $reply = t('count_done', (string)$card['name'], $fmt($card['counted'] ?? null),
+                          $fmt($card['system'] ?? null), $var);
+        $tail = golpos_cal_notes_tail((string)$card['name']);
+        if ($tail !== '') { $reply .= "\n" . $tail; }
+        out(['reply' => $reply, 'done' => $card]);
     }
     // A vendor bill card: the executor lands the creates first, records
     // the purchase once, receives every line through the one receive
@@ -3708,11 +3861,31 @@ if (preg_match('/^\s*(good\s*(morning|afternoon|evening)|namaste|namaskar|hello|
     // else — the boss buzz for v1 (audit ruling S5).
     $sessNow = golpos_session((string)($GLOBALS['golpos_session_id'] ?? ''));
     $teamLine = !empty($sessNow['admin']) ? golpos_team_line() : '';
-    if ($teamLine !== '') {
+    // The owner's calendar buzz at the till: store-owned entries whose
+    // moment arrived (missed ones included), shown once per audience.
+    $calLine = '';
+    if (!empty($sessNow['admin'])) {
+        try {
+            $storeEvts = array_values(array_filter(
+                golpos_cal_all_events(date('Y-m-d', strtotime('-7 days')), date('Y-m-d', strtotime('+1 day'))),
+                static fn($e) => ($e['owner'] ?? 'store') === 'store'));
+            [$calDueEvts, $calDueMarks] = golpos_cal_due_for($storeEvts, 'store');
+            if ($calDueEvts) {
+                golpos_cal_mark_shown($calDueMarks);
+                $calLines = ['📅 Calendar:'];
+                foreach (array_slice($calDueEvts, 0, 4) as $ce) { $calLines[] = golpos_cal_line($ce); }
+                $calLine = implode("\n", $calLines);
+            }
+        } catch (Throwable $e) {}
+    }
+    if ($teamLine !== '' || $calLine !== '') {
         $rep = $waiting ? t('morning_due',
             implode(' + ', array_map(static fn($v) => (string)$v['name'], $waiting)),
             (string)$waiting[0]['name']) : '';
-        out(['reply' => t('morning_plain') . "\n" . $teamLine . ($rep !== '' ? "\n" . $rep : '')]);
+        out(['reply' => t('morning_plain')
+            . ($teamLine !== '' ? "\n" . $teamLine : '')
+            . ($calLine !== '' ? "\n" . $calLine : '')
+            . ($rep !== '' ? "\n" . $rep : '')]);
     }
     if ($waiting) {
         out(['reply' => t('morning_due',
@@ -3797,6 +3970,124 @@ if (preg_match('/(mero|my)\s+(duty|duties|job|kartabya|कर्तव्य)/iu
     foreach ($pack as $i => $d) { $lines[] = ($i + 1) . '. ' . $d; }
     out(['reply' => implode("\n", $lines)]);
 }
+// --- AI Calendar + AI Notes: read / create, both domains -------------------
+// Her own calendar and notes are cashier domain (the gate has already
+// run: a by-name read or a for-someone-else create arrived here only
+// with admin elevation). Creates stage a card; "gol" writes once into
+// the ONE store (MR.STORE KV in link mode, the local pack standalone).
+$calRead = golpos_cal_parse_read($msg);
+if ($calRead !== null) {
+    $actor = golpos_actor();
+    $scope = $calRead['scope'];
+    $todayD = date('Y-m-d');
+    [$rFrom, $rTo] = $scope === 'today' ? [$todayD, $todayD]
+        : ($scope === 'tomorrow' ? [date('Y-m-d', strtotime('+1 day')), date('Y-m-d', strtotime('+1 day'))]
+        : [$todayD, date('Y-m-d', strtotime('+7 days'))]);
+    $all = golpos_cal_all_events(date('Y-m-d', strtotime('-7 days')), $rTo);
+    $inRange = static fn(array $evs) => array_values(array_filter($evs,
+        static fn($e) => ($e['date'] ?? '') >= $rFrom && ($e['date'] ?? '') <= $rTo));
+    $scopeWord = ['today' => 'today', 'tomorrow' => 'tomorrow (bholi)', 'week' => 'next 7 days'][$scope];
+    /* owned entries lead; computed system faces (rep/delivery days)
+       ride below and can never push a real entry out of the answer */
+    $composeCal = static function (array $view) use ($scopeWord): array {
+        $real = array_values(array_filter($view, static fn($e) => ($e['source'] ?? '') !== 'system'));
+        $sys = array_values(array_filter($view, static fn($e) => ($e['source'] ?? '') === 'system'));
+        $lines = [];
+        foreach (array_slice($real, 0, 10) as $e) { $lines[] = golpos_cal_line($e); }
+        foreach (array_slice($sys, 0, 5) as $e) { $lines[] = golpos_cal_line($e); }
+        if (!$lines) { $lines[] = 'Nothing in this scope.'; }
+        return $lines;
+    };
+    if (($calRead['who'] === 'store' || $calRead['who'] === 'self')
+        && ($actor === null || ($actor['role'] ?? '') !== 'employee')) {
+        /* admin asking "mero calendar" means the store's own book */
+        $lines = array_merge(['📅 ' . $shop . ' calendar — ' . $scopeWord . ':'],
+                             $composeCal($inRange($all)));
+        out(['reply' => implode("\n", $lines)]);
+    }
+    /* an employee asking for "the calendar" gets HER OWN view —
+       one persona, her dated world, never the store's whole book */
+    $empRec = null; $empName = ''; $empGroups = [];
+    if ($calRead['who'] === 'self' || $calRead['who'] === 'store') {
+        if ($actor === null || ($actor['role'] ?? '') !== 'employee' || ($actor['record'] ?? null) === null) {
+            out(['reply' => t('note_ask_identity')]);
+        }
+        $empRec = $actor['record']; $empName = (string)$actor['name'];
+    } else {
+        $emp = golpos_employee_resolve($calRead['who']);
+        if ($emp === null) { out(['reply' => t('roster_miss', $calRead['who'])]); }
+        $empRec = $emp; $empName = golpos_display_name($emp);
+    }
+    $empGroups = golpos_cal_duty_groups_for($empRec);
+    $view = $inRange(golpos_cal_for_persona($all, $empName, $empGroups));
+    $lines = array_merge(['📅 ' . $empName . ' — calendar, ' . $scopeWord . ':'],
+                         $composeCal($view));
+    out(['reply' => implode("\n", $lines)]);
+}
+$calCreate = golpos_cal_parse_create($msg);
+if ($calCreate !== null) {
+    $actor = golpos_actor();
+    if ($actor === null) { out(['reply' => t('note_ask_identity')]); }
+    $forName = 'store'; $forEmail = '';
+    if (($actor['role'] ?? '') === 'employee') {
+        /* her own calendar — a name she says can only be herself */
+        if ($calCreate['persona'] !== ''
+            && golpos_name_key($calCreate['persona']) !== golpos_name_key((string)$actor['name'])) {
+            out(['reply' => 'That entry names ' . $calCreate['persona'] . ' — calendar entries for someone else are the boss\'s to add. I can add it to YOUR calendar if you say so.']);
+        }
+        $forName = (string)$actor['name']; $forEmail = (string)$actor['email'];
+    } elseif ($calCreate['persona'] !== '') {
+        $emp = golpos_employee_resolve($calCreate['persona']);
+        if ($emp === null) { out(['reply' => t('roster_miss', $calCreate['persona'])]); }
+        $forName = golpos_display_name($emp); $forEmail = (string)$emp['email'];
+    }
+    $card = golpos_stage(['type' => 'cal_entry', 'date' => $calCreate['date'],
+        'time' => $calCreate['time'], 'title' => $calCreate['title'],
+        'for_name' => $forName, 'for_email' => $forEmail,
+        'duty_group' => $calCreate['duty_group'], 'etype' => $calCreate['etype'],
+        'by_email' => (string)($actor['email'] ?? ''), 'by_name' => (string)($actor['name'] ?? '')]);
+    out(['reply' => t('card_staged'), 'card' => $card]);
+}
+$noteBody = golpos_note_parse_create($msg);
+if ($noteBody !== null) {
+    $actor = golpos_actor();
+    if ($actor === null) { out(['reply' => t('note_ask_identity')]); }
+    $forName = ($actor['role'] ?? '') === 'employee' ? (string)$actor['name'] : 'store';
+    $itemName = '';
+    $ri = resolve_item($products, $noteBody);
+    if (!empty($ri['one'])) { $itemName = (string)($ri['one']['mr_name'] ?? $ri['one']['name']); }
+    $card = golpos_stage(['type' => 'note_add', 'body' => $noteBody,
+        'for_name' => $forName, 'item' => $itemName,
+        'by_email' => (string)($actor['email'] ?? ''), 'by_name' => (string)($actor['name'] ?? '')]);
+    out(['reply' => t('card_staged'), 'card' => $card]);
+}
+if (preg_match('/\bnotes?\b/iu', $msg)
+    && preg_match('/(dekha|show|list|ke ke|ke chha|herau|read)/iu', $msg)
+    && !preg_match('/(rakha|gara|lekha|add|save|bana)/iu', $msg)) {
+    $actor = golpos_actor();
+    if ($actor === null) { out(['reply' => t('note_ask_identity')]); }
+    $notes = golpos_cal_stored_notes();
+    if (($actor['role'] ?? '') === 'employee') {
+        $mine = array_values(array_filter($notes, static fn($n) =>
+            golpos_name_key((string)($n['owner'] ?? 'store')) === golpos_name_key((string)$actor['name'])));
+        if (!$mine) { out(['reply' => '📝 Your notes: none yet. Say "note rakha: <kura>" and I will keep it.']); }
+        $lines = ['📝 Your notes (' . count($mine) . '):'];
+        foreach (array_slice($mine, -10) as $n) {
+            $lines[] = '• ' . mb_substr(trim((string)($n['body'] ?? '')), 0, 120)
+                . ((string)($n['item'] ?? '') !== '' ? ' (re: ' . $n['item'] . ')' : '');
+        }
+        out(['reply' => implode("\n", $lines)]);
+    }
+    if (!$notes) { out(['reply' => '📝 ' . $shop . ' notes: none yet. Say "note rakha: <kura>" and I will keep it.']); }
+    $lines = ['📝 ' . $shop . ' notes (' . count($notes) . '):'];
+    foreach (array_slice($notes, -12) as $n) {
+        $body = trim((string)($n['body'] ?? '')) !== '' ? (string)$n['body'] : (string)($n['title'] ?? '');
+        $lines[] = '• [' . (string)($n['owner'] ?? 'store') . '] ' . mb_substr($body, 0, 120)
+            . ((string)($n['item'] ?? '') !== '' ? ' (re: ' . $n['item'] . ')' : '');
+    }
+    out(['reply' => implode("\n", $lines)]);
+}
+
 // A done mark claims ONLY an ordinal or a named open task item — the
 // same words ("sakiyo") in a shelf statement belong to the What's Out
 // lane below, never to a task the employee didn't name.
@@ -4194,11 +4485,17 @@ if (preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khatam|restock|received|d
             $st = mrstore_stock_of((string)($p['mr_name'] ?? $p['name']));
             if ($st === null) { out(['reply' => t('stock_link_down')]); }
             if ($st['onHand'] === null) { out(['reply' => t('stock_untracked', $st['name'])]); }
-            out(['reply' => t('stock_one', $st['name'], $fmtq($st['onHand']))]);
+            $reply = t('stock_one', $st['name'], $fmtq($st['onHand']));
+            $tail = golpos_cal_notes_tail($st['name']);
+            if ($tail !== '') { $reply .= "\n" . $tail; }
+            out(['reply' => $reply]);
         }
         $oh = $onHandOf($p);
         if ($oh === null) { out(['reply' => t('stock_untracked_local', $p['name'])]); }
-        out(['reply' => t('stock_one_local', $p['name'], $fmtq($oh))]);
+        $reply = t('stock_one_local', $p['name'], $fmtq($oh));
+        $tail = golpos_cal_notes_tail((string)$p['name']);
+        if ($tail !== '') { $reply .= "\n" . $tail; }
+        out(['reply' => $reply]);
     }
     if (!empty($r['many'])) {
         $list = implode(', ', array_map(fn($p) => $p['name'], $r['many']));
@@ -4534,6 +4831,21 @@ function golpos_needs_admin(string $msg, array $in): bool {
     if (golpos_parse_note_ask($msg) !== null || golpos_is_progress_ask($msg)) { return true; }
     $presenceWhoGate = golpos_parse_presence_ask($msg);
     if ($presenceWhoGate !== null && golpos_employee_resolve($presenceWhoGate) !== null) { return true; }
+    // AI Calendar + Notes: her OWN calendar and notes (read, create,
+    // undated note) are cashier-domain, like her tasks and her note
+    // back; a calendar read naming another person, or a create naming
+    // one, is the boss's domain — persona surfaces belong to their
+    // sessions, and the wall is the owner's PIN.
+    if (preg_match('/(mero|my)\s+(calendar|calender|notes?\b)/iu', $msg)) { return false; }
+    if (preg_match('/\bnotes?\s*(haru\s+)?(dekha|show|list)\b/iu', $msg)) { return false; }
+    if (preg_match('/(note\s*(rakha|gara|lekha))\b/iu', $msg)
+        && golpos_cal_parse_create($msg) === null) { return false; }
+    $calGate = golpos_cal_parse_read($msg);
+    if ($calGate !== null && !in_array($calGate['who'], ['self', 'store'], true)
+        && golpos_employee_resolve($calGate['who']) !== null) { return true; }
+    $calCreateGate = golpos_cal_parse_create($msg);
+    if ($calCreateGate !== null && ($calCreateGate['persona'] ?? '') !== ''
+        && golpos_employee_resolve($calCreateGate['persona']) !== null) { return true; }
     // Small talk is never an admin ask — "how is your day" greets, it
     // does not request a report (the shared matcher rules the dispatch
     // with the same shape).

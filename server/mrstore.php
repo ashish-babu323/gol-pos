@@ -842,6 +842,79 @@ function mrstore_customer_add(string $phone, float $amount, string $kind, array 
     return cust_add($c['dir'], $c['store'], $phone, $amount, $kind, $extra);
 }
 
+// --- AI Calendar + AI Notes (Oct 28) ----------------------------------
+// In link mode the register's calendar and notes live in MR.STORE's
+// ONE KV store (store-api/gol-calnotes.php): the same packs the Floor
+// shows and the store Gol reads — the bridge calls that lib in-process,
+// exactly like the customer ledger above. Writes fenced to the QA
+// store by mrstore_write_allowed(), like every other bridge write.
+
+function mrstore_calnotes_lib(): bool {
+    static $ok = null;
+    if ($ok !== null) { return $ok; }
+    $ok = false;
+    $cfg = golpos_link_config();
+    $lib = rtrim((string)$cfg['api_dir'], '/') . '/gol-calnotes.php';
+    if (is_file($lib)) {
+        require_once $lib;
+        $ok = function_exists('golcal_events');
+    }
+    return $ok;
+}
+
+function mrstore_cal_store(): ?string {
+    if (!golpos_link_on() || !mrstore_calnotes_lib()) { return null; }
+    $cfg = golpos_link_config();
+    return (string)$cfg['store_id'];
+}
+
+/* Stored entries + dated-note faces + waiting-bill faces, merged. */
+function mrstore_cal_events(): array {
+    $sid = mrstore_cal_store();
+    if ($sid === null) { return []; }
+    $events = golcal_events($sid);
+    $have = [];
+    foreach ($events as $e) { $have[(string)$e['id']] = 1; }
+    foreach (golcal_system_bill_events($sid) as $se) {
+        if (!isset($have[(string)$se['id']])) { $events[] = $se; }
+    }
+    usort($events, static fn($a, $b) => [$a['date'], $a['time']] <=> [$b['date'], $b['time']]);
+    return $events;
+}
+
+function mrstore_cal_notes(): array {
+    $sid = mrstore_cal_store();
+    return $sid === null ? [] : golcal_notes($sid);
+}
+
+function mrstore_cal_add_event(array $ev, string $byEmail = ''): ?array {
+    $sid = mrstore_cal_store();
+    if ($sid === null || !mrstore_write_allowed()) { return null; }
+    return golcal_add_event($sid, $byEmail, $ev);
+}
+
+function mrstore_cal_add_note(array $note, string $storeName, string $byEmail = ''): ?array {
+    $sid = mrstore_cal_store();
+    if ($sid === null || !mrstore_write_allowed()) { return null; }
+    return golcal_add_note($sid, $storeName, $byEmail, $note);
+}
+
+function mrstore_cal_due(array $events, string $audienceKey): array {
+    $sid = mrstore_cal_store();
+    return $sid === null ? [[], []] : golcal_due($events, $sid, $audienceKey);
+}
+
+function mrstore_cal_mark_shown(array $marks, string $byEmail = ''): void {
+    $sid = mrstore_cal_store();
+    if ($sid === null || !mrstore_write_allowed()) { return; }
+    golcal_mark_shown($sid, $byEmail, $marks);
+}
+
+function mrstore_cal_item_notes(string $itemName): array {
+    $sid = mrstore_cal_store();
+    return $sid === null ? [] : golcal_item_notes($sid, $itemName);
+}
+
 // Append-only evidence trail on the POS side: every stock movement the
 // bridge makes, so a simulation can be cross-checked line by line.
 function golpos_link_log(array $entry): void {

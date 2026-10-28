@@ -2561,6 +2561,357 @@ function golpos_next_due(string $email): ?array {
     return $cands[0];
 }
 
+// --- AI Calendar + AI Notes (owner directive, Oct 28) ----------------------
+// One calendar, one notes store, per-person owners — the register is a
+// DOOR onto them, never a fork. In link mode the store is MR.STORE's
+// KV packs, read and written through the bridge (mrstore_cal_* calls
+// store-api/gol-calnotes.php in-process — the same packs the Floor
+// shows and the store Gol reads). Standing alone, the same shapes live
+// in data/calnotes_local.json. Vendor rep/delivery days and dated open
+// tasks are calendar FACES computed at read time from their own single
+// stores (vendors.json, tasks.json) — one fact, two faces, no copies.
+
+// Checklist group -> the calendar duty-group tag it fans out by. An
+// entry whose duty_group matches a group she holds lands in her
+// calendar; the groups come from HER checked pack, never her preset.
+function golpos_cal_group_tags(): array {
+    return ['Counter & Register' => ['counter'], 'Money & Close' => ['close'],
+            'Bills & Deliveries' => ['bills', 'delivery'], 'Stock & Shelf' => ['stock'],
+            'Store Care' => ['care'], 'Notes & Messages' => ['notes']];
+}
+
+function golpos_cal_duty_groups_for(array $empRecord): array {
+    $pres = golpos_presence_for($empRecord);
+    $pack = array_map(static fn($d) => golpos_bill_name_key((string)$d),
+                      (array)($pres['job_pack']['items'] ?? []));
+    $tags = [];
+    foreach (golpos_persona_data()['checklist'] as $group => $items) {
+        foreach ($items as $duty) {
+            if (in_array(golpos_bill_name_key((string)$duty), $pack, true)) {
+                foreach (golpos_cal_group_tags()[$group] ?? [] as $t) { $tags[$t] = 1; }
+                break;
+            }
+        }
+    }
+    return array_keys($tags);
+}
+
+function golpos_cal_local(): array {
+    $d = golpos_read('calnotes_local.json', null);
+    if (!is_array($d)) { $d = []; }
+    return ['events' => array_values(array_filter((array)($d['events'] ?? []), 'is_array')),
+            'notes' => array_values(array_filter((array)($d['notes'] ?? []), 'is_array')),
+            'shown' => (array)($d['shown'] ?? [])];
+}
+
+function golpos_cal_local_save(array $d): void {
+    golpos_write('calnotes_local.json', $d);
+}
+
+function golpos_cal_stored_events(): array {
+    if (golpos_link_on()) { return mrstore_cal_events(); }
+    $out = [];
+    foreach (golpos_cal_local()['events'] as $e) {
+        $e += ['owner' => 'store', 'duty_group' => '', 'item' => '', 'source' => 'chat',
+               'time' => '', 'type' => 'other', 'note' => '', 'who' => []];
+        $out[] = $e;
+    }
+    return $out;
+}
+
+function golpos_cal_stored_notes(): array {
+    if (golpos_link_on()) { return mrstore_cal_notes(); }
+    return golpos_cal_local()['notes'];
+}
+
+// Vendor system entries for a range: a rep day and a delivery day per
+// vendor occurrence, computed from the pack's own cadence rules (the
+// same parity golpos_vendor_due_on applies to rep days).
+function golpos_cal_vendor_events(string $from, string $to): array {
+    $out = [];
+    $cur = strtotime($from); $end = strtotime($to);
+    if ($cur === false || $end === false || $end < $cur || ($end - $cur) > 40 * 86400) { return []; }
+    while ($cur <= $end) {
+        $ymd = date('Y-m-d', $cur);
+        $dow = strtolower(date('D', $cur));
+        foreach (golpos_vendors_due($ymd) as $v) {
+            $out[] = ['id' => 'sys-rep-' . (string)$v['id'] . '-' . $ymd,
+                      'title' => (string)$v['name'] . ' — rep day', 'date' => $ymd, 'time' => '',
+                      'type' => 'vendor', 'note' => 'order prep day', 'owner' => 'store',
+                      'duty_group' => 'delivery', 'source' => 'system', 'item' => '', 'who' => []];
+        }
+        foreach (golpos_vendors() as $v) {
+            $dd = strtolower(substr((string)($v['delivery_day'] ?? ''), 0, 3));
+            if ($dd === '' || $dd !== $dow) { continue; }
+            if ((string)($v['cadence'] ?? 'weekly') === 'biweekly') {
+                $anchor = (string)($v['anchor'] ?? '');
+                if ($anchor !== '' && strtotime($anchor) !== false) {
+                    $weeks = (int)floor(($cur - strtotime($anchor)) / 604800);
+                    if ((($weeks % 2) + 2) % 2 !== 0) { continue; }
+                }
+            }
+            $out[] = ['id' => 'sys-del-' . (string)$v['id'] . '-' . $ymd,
+                      'title' => (string)$v['name'] . ' — delivery', 'date' => $ymd, 'time' => '',
+                      'type' => 'delivery', 'note' => '', 'owner' => 'store',
+                      'duty_group' => 'delivery', 'source' => 'system', 'item' => '', 'who' => []];
+        }
+        $cur += 86400;
+    }
+    return $out;
+}
+
+// A task with a date IS a calendar entry under her name: the calendar
+// face of the lane's own open, due-stamped tasks.
+function golpos_cal_task_events(): array {
+    $out = [];
+    foreach (golpos_tasks() as $t) {
+        if (($t['status'] ?? '') === 'superseded' || golpos_task_status($t) === 'done') { continue; }
+        $due = (string)($t['due'] ?? '');
+        if ($due === '' || strtotime($due) === false) { continue; }
+        $firstOpen = '';
+        foreach ((array)($t['items'] ?? []) as $it) {
+            if (empty($it['done'])) { $firstOpen = (string)($it['text'] ?? ''); break; }
+        }
+        if ($firstOpen === '') { continue; }
+        $out[] = ['id' => 'task-' . (string)($t['id'] ?? ''), 'title' => $firstOpen,
+                  'date' => date('Y-m-d', strtotime($due)),
+                  'time' => preg_match('/[T ](\d{2}:\d{2})/', $due, $mm) ? $mm[1] : '',
+                  'type' => 'other', 'note' => (string)($t['reason'] ?? ''),
+                  'owner' => (string)($t['employee_name'] ?? 'store'),
+                  'duty_group' => '', 'source' => 'task', 'item' => '', 'who' => []];
+    }
+    return $out;
+}
+
+function golpos_cal_all_events(string $from, string $to): array {
+    $byId = [];
+    $put = static function (array $e) use (&$byId, $from, $to): void {
+        $id = (string)($e['id'] ?? '');
+        if ($id === '' || isset($byId[$id])) { return; }
+        $d = (string)($e['date'] ?? '');
+        if ($d < $from || $d > $to) { return; }
+        $byId[$id] = $e;
+    };
+    foreach (golpos_cal_stored_events() as $e) { $put($e); }
+    foreach (golpos_cal_vendor_events($from, $to) as $e) { $put($e); }
+    foreach (golpos_cal_task_events() as $e) { $put($e); }
+    $out = array_values($byId);
+    usort($out, static fn($a, $b) => [$a['date'], $a['time'] ?? ''] <=> [$b['date'], $b['time'] ?? '']);
+    return $out;
+}
+
+// One persona's view — the same rule the shared lib applies store-side:
+// her own entries, entries naming her in who, shared store types
+// (staff/promo), and store entries in a duty group she holds.
+function golpos_cal_for_persona(array $events, string $name, array $dutyGroups): array {
+    $nk = golpos_name_key($name);
+    if ($nk === '') { return []; }
+    $out = [];
+    foreach ($events as $e) {
+        $owner = trim((string)($e['owner'] ?? 'store'));
+        if ($owner !== 'store' && golpos_name_key($owner) === $nk) { $out[] = $e; continue; }
+        $hit = false;
+        foreach ((array)($e['who'] ?? []) as $w) {
+            $wn = is_array($w) ? (string)($w['name'] ?? '') : (string)$w;
+            if (golpos_name_key($wn) === $nk) { $hit = true; break; }
+        }
+        if ($hit) { $out[] = $e; continue; }
+        if ($owner === 'store') {
+            if (in_array((string)($e['type'] ?? ''), ['staff', 'promo'], true)) { $out[] = $e; continue; }
+            $g = (string)($e['duty_group'] ?? '');
+            if ($g !== '' && in_array($g, $dutyGroups, true)) { $out[] = $e; continue; }
+        }
+    }
+    return $out;
+}
+
+function golpos_cal_add_event(array $ev, string $byEmail = ''): bool {
+    if (golpos_link_on()) {
+        return mrstore_cal_add_event($ev + ['source' => 'chat'], $byEmail) !== null;
+    }
+    $d = golpos_cal_local();
+    $ev += ['owner' => 'store', 'duty_group' => '', 'item' => '', 'source' => 'chat',
+            'time' => '', 'type' => 'other', 'note' => '', 'who' => []];
+    if ((string)($ev['id'] ?? '') === '') {
+        $ev['id'] = 'ce' . base_convert((string)time(), 10, 36) . bin2hex(random_bytes(3));
+    }
+    foreach ($d['events'] as $old) {
+        if ((string)($old['id'] ?? '') === (string)$ev['id']) { return true; } // write once
+    }
+    $d['events'][] = $ev;
+    golpos_cal_local_save($d);
+    return true;
+}
+
+function golpos_cal_add_note(array $note, string $storeName, string $byEmail = ''): bool {
+    if (golpos_link_on()) {
+        return mrstore_cal_add_note($note, $storeName, $byEmail) !== null;
+    }
+    $d = golpos_cal_local();
+    $note += ['owner' => 'store', 'item' => '', 'title' => '', 'date' => ''];
+    if ((string)($note['id'] ?? '') === '') {
+        $note['id'] = 'cn' . base_convert((string)time(), 10, 36) . bin2hex(random_bytes(3));
+    }
+    $note['at'] = (int)(microtime(true) * 1000);
+    foreach ($d['notes'] as $old) {
+        if ((string)($old['id'] ?? '') === (string)$note['id']) { return true; }
+    }
+    $d['notes'][] = $note;
+    golpos_cal_local_save($d);
+    return true;
+}
+
+// What Gol SHOWS unprompted for one audience: missed (<= 7 days back)
+// and today's entries whose moment has arrived, minus what this
+// audience was already shown. Mirrors golcal_due store-side; system
+// faces never buzz. Returns [dueEvents, marks].
+function golpos_cal_due_for(array $events, string $audienceKey): array {
+    $today = date('Y-m-d');
+    $mins = ((int)date('G')) * 60 + (int)date('i');
+    $floor = date('Y-m-d', strtotime('-7 days'));
+    if (golpos_link_on()) {
+        $sid = mrstore_cal_store();
+        if ($sid !== null) {
+            /* the lib's own marks live KV-side; feed it the events */
+            [$due, $marks] = golcal_due($events, $sid, $audienceKey);
+            return [$due, $marks];
+        }
+    }
+    $shown = golpos_cal_local()['shown'];
+    $due = []; $marks = [];
+    foreach ($events as $e) {
+        if (($e['source'] ?? '') === 'system') { continue; }
+        $dd = (string)($e['date'] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dd)) { continue; }
+        $isDue = false;
+        if ($dd < $today && $dd >= $floor) { $isDue = true; }
+        elseif ($dd === $today) {
+            $t = trim((string)($e['time'] ?? ''));
+            if ($t === '') { $isDue = true; }
+            elseif (preg_match('/^(\d{1,2}):(\d{2})/', $t, $mm)) {
+                if ($mins >= ((int)$mm[1]) * 60 + (int)$mm[2] - 80) { $isDue = true; }
+            } else { $isDue = true; }
+        }
+        if (!$isDue) { continue; }
+        $mark = (string)($e['id'] ?? '') . '|' . $audienceKey . '|' . $dd;
+        if (isset($shown[$mark])) { continue; }
+        $e['_missed'] = $dd < $today;
+        $due[] = $e; $marks[] = $mark;
+    }
+    usort($due, static fn($a, $b) => [$a['date'], $a['time'] ?? ''] <=> [$b['date'], $b['time'] ?? '']);
+    return [$due, $marks];
+}
+
+function golpos_cal_mark_shown(array $marks, string $byEmail = ''): void {
+    if (!$marks) { return; }
+    if (golpos_link_on() && mrstore_cal_store() !== null) {
+        mrstore_cal_mark_shown($marks, $byEmail);
+        return;
+    }
+    $d = golpos_cal_local();
+    foreach ($marks as $m) { $d['shown'][(string)$m] = time(); }
+    golpos_cal_local_save($d);
+}
+
+// Word tokens of a product name with the shelf's one brand fold
+// (Coca-Cola is sold as "Coke") — the same rule the shared lib
+// applies in link mode, so a note resurfaces identically both ways.
+function golpos_cal_item_tokens(string $s): array {
+    $s = str_replace(['coca-cola', 'coca cola', 'cocacola'], 'coke', mb_strtolower($s));
+    $parts = preg_split('/[^a-z0-9]+/iu', $s) ?: [];
+    $out = [];
+    foreach ($parts as $p) {
+        if ($p === '') { continue; }
+        $out[$p] = 1;
+    }
+    return array_keys($out);
+}
+
+function golpos_cal_item_notes(string $itemName): array {
+    if (golpos_link_on()) { return mrstore_cal_item_notes($itemName); }
+    $want = golpos_name_key($itemName);
+    if (strlen($want) < 4) { return []; }
+    $wantTok = golpos_cal_item_tokens($itemName);
+    $out = [];
+    foreach (golpos_cal_local()['notes'] as $n) {
+        $tag = golpos_name_key((string)($n['item'] ?? ''));
+        if ($tag === '') { continue; }
+        if ($tag === $want || (strlen($tag) >= 4 && strpos($want, $tag) !== false)
+            || (strlen($want) >= 4 && strpos($tag, $want) !== false)) { $out[] = $n; continue; }
+        $tagTok = golpos_cal_item_tokens((string)($n['item'] ?? ''));
+        if ($tagTok && $wantTok) {
+            $small = count($tagTok) <= count($wantTok) ? $tagTok : $wantTok;
+            $big = count($tagTok) <= count($wantTok) ? $wantTok : $tagTok;
+            if (!array_diff($small, $big)) { $out[] = $n; }
+        }
+    }
+    return $out;
+}
+
+// FORWARD-looking date parse for calendar creates (the next
+// occurrence of a named day — a create never means last year).
+function golpos_cal_parse_date(string $text): ?string {
+    $today = date('Y-m-d');
+    $low = mb_strtolower($text);
+    if (preg_match('/\b(bholi|tomorrow|भोलि)\b/u', $low)) { return date('Y-m-d', strtotime('+1 day')); }
+    if (preg_match('/\b(parsi|day after tomorrow)\b/u', $low)) { return date('Y-m-d', strtotime('+2 days')); }
+    if (preg_match('/\b(aaja|aja|today|आज)\b/u', $low)) { return $today; }
+    if (preg_match('/\b(hijo|yesterday|हिजो)\b/u', $low)) { return date('Y-m-d', strtotime('-1 day')); }
+    if (preg_match('/\b(\d{4})-(\d{2})-(\d{2})\b/', $text, $m)) { return $m[1] . '-' . $m[2] . '-' . $m[3]; }
+    if (preg_match('/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/', $text, $m)) {
+        $y = isset($m[3]) && $m[3] !== '' ? (int)$m[3] : (int)date('Y');
+        if ($y < 100) { $y += 2000; }
+        $dt = sprintf('%04d-%02d-%02d', $y, (int)$m[1], (int)$m[2]);
+        if (!isset($m[3]) && $dt < $today) { $dt = sprintf('%04d-%02d-%02d', $y + 1, (int)$m[1], (int)$m[2]); }
+        return $dt;
+    }
+    $months = ['jan' => 1, 'feb' => 2, 'mar' => 3, 'apr' => 4, 'may' => 5, 'jun' => 6,
+               'jul' => 7, 'aug' => 8, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12];
+    $mon = implode('|', array_keys($months));
+    $y = (int)date('Y');
+    if (preg_match('/\b(' . $mon . ')[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/i', $low, $m)) {
+        $dt = sprintf('%04d-%02d-%02d', $y, $months[strtolower($m[1])], (int)$m[2]);
+    } elseif (preg_match('/\b(\d{1,2})(?:st|nd|rd|th)?\s+(' . $mon . ')[a-z]*\b/i', $low, $m)) {
+        $dt = sprintf('%04d-%02d-%02d', $y, $months[strtolower($m[2])], (int)$m[1]);
+    } else { return null; }
+    if ($dt < $today) { $dt = sprintf('%04d-%02d-%02d', $y + 1, (int)substr($dt, 5, 2), (int)substr($dt, 8, 2)); }
+    return $dt;
+}
+
+function golpos_cal_strip_date(string $text): string {
+    $out = (string)preg_replace('/\b(\d{4})-(\d{2})-(\d{2})\b/', ' ', $text);
+    $out = (string)preg_replace('/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/', ' ', $out);
+    $mon = 'jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec';
+    $out = (string)preg_replace('/\b(' . $mon . ')[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/i', ' ', $out);
+    $out = (string)preg_replace('/\b(\d{1,2})(?:st|nd|rd|th)?\s+(' . $mon . ')[a-z]*\b/i', ' ', $out);
+    $out = (string)preg_replace('/\b(bholi|parsi|aaja|aja|hijo|tomorrow|yesterday|today|day after tomorrow|भोलि|आज|हिजो)\b/iu', ' ', $out);
+    return trim((string)preg_replace('/\s+/', ' ', $out));
+}
+
+function golpos_cal_fmt_day(string $d): string {
+    $today = date('Y-m-d');
+    if ($d === $today) { return 'Today (' . date('D, M j', strtotime($d)) . ')'; }
+    if ($d === date('Y-m-d', strtotime('+1 day'))) { return 'Tomorrow (' . date('D, M j', strtotime($d)) . ')'; }
+    return date('D, M j', strtotime($d));
+}
+
+function golpos_cal_line(array $e): string {
+    $s = '• ' . golpos_cal_fmt_day((string)($e['date'] ?? ''));
+    $t = trim((string)($e['time'] ?? ''));
+    if (preg_match('/^(\d{1,2}):(\d{2})/', $t, $mm)) {
+        $s .= ' · ' . date('g:i A', mktime((int)$mm[1], (int)$mm[2]));
+    }
+    $s .= ' · ' . (string)($e['title'] ?? '');
+    $note = trim((string)($e['note'] ?? ''));
+    if ($note !== '' && golpos_name_key($note) !== golpos_name_key((string)($e['title'] ?? ''))) {
+        $s .= ' — ' . mb_substr($note, 0, 80);
+    }
+    $owner = trim((string)($e['owner'] ?? 'store'));
+    if ($owner !== 'store') { $s .= ' (for ' . $owner . ')'; }
+    if (!empty($e['_missed'])) { $s .= ' — missed, still open'; }
+    return $s;
+}
+
 // --- Counter frames (Register Watch, owner directive, Oct 28) ----------------
 // One frame per cash sale, saved beside the till data as
 // data/frames/<txn>.<ext> — the store's own record on the store's own
