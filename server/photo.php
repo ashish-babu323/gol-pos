@@ -15,6 +15,11 @@
 // A photo the owner marks as a bill (prompt "bill" / "invoice", or mode=bill)
 // takes the bill branch instead: Spark reads the printed lines and the bill
 // lane matches them to the catalog (see golpos_bill_process in store.php).
+//
+// Two more riders (Oct 28): mode=sense is the Register Watch counter
+// question (one frame, one answer, nothing staged), and a pair_token
+// field marks a scan-by-phone upload — the token binds the photo to the
+// REGISTER's session and the answer also lands in that session's inbox.
 
 declare(strict_types=1);
 require __DIR__ . '/store.php';
@@ -57,6 +62,56 @@ if ($prompt === '') { $prompt = 'product'; }
 $sessionId = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($_POST['session'] ?? ''));
 if ($sessionId === '') { $sessionId = 'anon'; }
 
+// Scan-by-phone pairing: an upload carrying a pair_token was taken on a
+// phone acting as THIS register's camera. The token — minted by the
+// register (pair.php), bound to its session, dead after ~10 minutes —
+// decides the session, whatever the phone claimed: the bill's price
+// wait then waits in the register's own chat. The lane's answer ALSO
+// lands in that session's inbox, which the register polls and renders.
+// An unknown or expired token refuses plainly and processes nothing.
+$paired = false;
+$pairToken = trim((string)($_POST['pair_token'] ?? ''));
+if ($pairToken !== '') {
+    $rec = golpos_pair_lookup($pairToken);
+    if ($rec === null) {
+        pout(['reply' => 'That scan link has expired or is not recognized — ask the register for a fresh "Scan with phone" link, then take the photo again. Nothing was read or staged.']);
+    }
+    $sessionId = (string)$rec['session'];
+    $paired = true;
+}
+$inboxPush = static function (array $out) use ($paired, $sessionId): void {
+    if (!$paired) { return; }
+    $entry = ['reply' => (string)($out['reply'] ?? '')];
+    if (isset($out['card'])) { $entry['card'] = $out['card']; }
+    golpos_inbox_push($sessionId, $entry);
+};
+
+// Customer sensing (Register Watch): the owner asks "counter ma
+// customer chha?" and the register sends one frame with mode=sense.
+// ONE question, one composed reply — the frame never enters the bill,
+// catalog or purchase lanes and nothing is ever staged from it.
+if ((string)($_POST['mode'] ?? '') === 'sense') {
+    $sense = golpos_meta_sense_counter('data:' . $mime . ';base64,' . base64_encode($bytes));
+    if ($sense === null) {
+        $out = ['reply' => "Photo saved — my eyes didn't answer just now, so I can't say who's at the counter. Ask me again in a moment."];
+        $inboxPush($out);
+        pout($out);
+    }
+    $people = (int)$sense['people'];
+    if (!empty($sense['customer_present'])) {
+        $reply = 'Yes — I can see ' . $people . ($people === 1 ? ' person' : ' people')
+            . ' in view, with a customer at the counter.';
+    } elseif ($people > 0) {
+        $reply = 'No customer at the counter right now — I can see ' . $people
+            . ($people === 1 ? ' person' : ' people') . ' in view, none at the counter.';
+    } else {
+        $reply = 'No customer at the counter right now — the counter looks empty.';
+    }
+    $out = ['reply' => $reply, 'sense' => $sense];
+    $inboxPush($out);
+    pout($out);
+}
+
 // A vendor bill is a different read from a product photo: Spark reads the
 // printed lines (name / qty / unit cost / barcode) and the bill lane
 // (store.php golpos_bill_process) matches them to the catalog — matched
@@ -68,12 +123,15 @@ $isBill = (string)($_POST['mode'] ?? '') === 'bill'
 if ($isBill) {
     $read = golpos_meta_read_bill('data:' . $mime . ';base64,' . base64_encode($bytes));
     if ($read === null) {
-        pout(['reply' => "Photo saved — my eyes didn't answer just now, so there's no bill read on it. "
-            . 'Nothing was staged or entered; try the bill photo again.']);
+        $out = ['reply' => "Photo saved — my eyes didn't answer just now, so there's no bill read on it. "
+            . 'Nothing was staged or entered; try the bill photo again.'];
+        $inboxPush($out);
+        pout($out);
     }
     $r = golpos_bill_process($read, $imagePath, $sessionId);
     $out = ['reply' => $r['reply']];
     if (isset($r['card'])) { $out['card'] = $r['card']; }
+    $inboxPush($out);
     pout($out);
 }
 
@@ -99,9 +157,11 @@ $card = golpos_stage([
 ]);
 
 if ($sam === null) {
-    pout(['reply' => "Photo received and saved — my eyes (SAM) didn't answer just now, so there's no read on it. "
+    $out = ['reply' => "Photo received and saved — my eyes (SAM) didn't answer just now, so there's no read on it. "
         . "The card is staged anyway; say \"gol\" to log it, or tell me the item name and I'll handle it.",
-          'card' => $card]);
+          'card' => $card];
+    $inboxPush($out);
+    pout($out);
 }
 $reply = "SAM read your photo: {$sam['regions']} region(s) found for \"{$prompt}\".";
 if ($match) {
@@ -110,4 +170,6 @@ if ($match) {
 } else {
     $reply .= " No catalog item matches \"{$prompt}\" — say \"gol\" to log the photo, or name the item if it's new.";
 }
-pout(['reply' => $reply, 'card' => $card]);
+$out = ['reply' => $reply, 'card' => $card];
+$inboxPush($out);
+pout($out);

@@ -40,6 +40,7 @@ async function loadSettings() {
   try { const r = await fetch(API + '?settings'); receiptSettings = await r.json(); }
   catch (e) { /* keep the last known settings; the register never stops */ }
   applyStorePill();
+  syncWatchCam(); // the cash-frame camera follows the watch_frame setting
 }
 // --- store open/closed (Settings dropdown toggle, persisted server-side) -----
 // Closed pauses NEW sales: the register refuses the tap, and the sale
@@ -422,6 +423,10 @@ async function tender(kind, tendered) {
   } else {
     showReceipt(sale);
   }
+  // Register Watch: a completed CASH sale pairs its counter frame when
+  // the owner turned the watch on and a camera is live. Fire-and-forget
+  // AFTER the receipt — the frame is a passenger, never a gate.
+  if (kind === 'cash') { attachCashFrame(sale.id); }
   return true;
 }
 // Cash is a register step, not a blind button: the cashier sees the total,
@@ -723,6 +728,11 @@ async function sendPhoto(file, promptText) {
 }
 
 async function sendChat(text) {
+  noteChatLang(text); // the voice door follows the language of the chat
+  // A counter-sensing ask is a camera errand, not a brain question: the
+  // frame goes to the vision lane and its answer comes back as Gol's
+  // reply — the message never reaches the brain's catalog lanes.
+  if (isSenseAsk(text)) { await senseFlow(text); return; }
   const mine = chatMsg(text, 'me');
   const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(brainPayload({ message: text })) });
@@ -855,6 +865,7 @@ function renderSettingsForm() {
        <label class="os-chk"><input id="os_logo" type="checkbox" ${chk(st.logo)}> Logo on receipt</label>
        <label class="os-chk"><input id="os_show_tax" type="checkbox" ${chk(st.show_tax)}> Show tax line</label>
        <label class="os-chk"><input id="os_auto_open" type="checkbox" ${chk(st.auto_open)}> Receipt after each sale</label>
+       <label class="os-chk"><input id="os_watch_frame" type="checkbox" ${chk(st.watch_frame)}> Camera frame on cash sales<span class="os-micro">Register Watch — one counter photo saved with each cash sale (needs a camera on this register)</span></label>
      </div>
      <button id="osSave" type="button">Save print settings</button> <span id="osSaved"></span>`;
   $('osSave').addEventListener('click', saveSettingsForm);
@@ -869,7 +880,7 @@ async function saveSettingsForm() {
     card_surcharge_pct: parseFloat($('os_card_surcharge_pct').value) || 0,
     show_address: $('os_show_address').checked, show_phone: $('os_show_phone').checked,
     logo: $('os_logo').checked, show_tax: $('os_show_tax').checked,
-    auto_open: $('os_auto_open').checked } };
+    auto_open: $('os_auto_open').checked, watch_frame: $('os_watch_frame').checked } };
   const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload) });
   receiptSettings = await r.json();
@@ -877,6 +888,8 @@ async function saveSettingsForm() {
   // field re-reads the stored value, so what it shows is what is set.
   const osPct = $('os_card_surcharge_pct');
   if (osPct) { osPct.value = receiptSettings.card_surcharge_pct ?? 0; }
+  camDenied = false; // a settings save is a fresh word — the watch may retry its camera
+  syncWatchCam();
   renderCart();
   $('osSaved').textContent = 'Saved ✓ — Gol chat reads these same settings.';
 }
@@ -1123,7 +1136,8 @@ function txnRowEl(sale) {
   const sub = document.createElement('small');
   const n = txnItemCount(sale);
   sub.textContent = '#' + (sale.id || '') + ' · ' + (sale.tender === 'card' ? 'Card' : 'Cash')
-    + ' · ' + n + (n === 1 ? ' item' : ' items') + (sale.tax_exempt ? ' · EXEMPT' : '');
+    + ' · ' + n + (n === 1 ? ' item' : ' items') + (sale.tax_exempt ? ' · EXEMPT' : '')
+    + (sale.frame ? ' · 📷 frame' : '');
   left.appendChild(time); left.appendChild(sub);
   const total = document.createElement('span'); total.className = 'txn-total';
   total.textContent = money(sale.total);
@@ -1165,6 +1179,15 @@ function txnRowEl(sale) {
   meta.textContent = 'Receipt ' + (sale.id || '') + ' · '
     + new Date(sale.at || Date.now()).toLocaleString('en-US');
   detail.appendChild(meta);
+  if (sale.frame) {
+    const fb = document.createElement('button');
+    fb.type = 'button'; fb.className = 'txn-frame'; fb.textContent = '📷 View counter frame';
+    fb.addEventListener('click', () => {
+      $('frameImg').src = '../server/frame.php?txn=' + encodeURIComponent(sale.id || '');
+      $('frameModal').classList.remove('hidden');
+    });
+    detail.appendChild(fb);
+  }
   const rp = document.createElement('button');
   rp.type = 'button'; rp.className = 'txn-reprint'; rp.textContent = 'Reprint this receipt';
   rp.addEventListener('click', async () => {
@@ -1501,6 +1524,312 @@ $('npMargin').addEventListener('input', () => npSyncMargin('margin'));
 $('npBarcode').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); $('npStock').focus(); }
 });
+
+// --- voice + camera: Gol's ears and eyes (owner directive, Oct 28) -----------
+// Mic = ears: press-to-talk only (never always-on). A spoken sentence
+// enters through voiceFinal -> sendChat — the EXACT path a typed message
+// takes — so "add 3 dollars in coke" said aloud stages the same card as
+// the same words typed. Camera = eyes: one stream, one visible "Camera
+// on" pill whenever it is live, and three honest jobs — a photo for the
+// chat lanes, a scan-by-phone pairing for registers with no camera, and
+// (when the owner turns the watch on) one frame paired to each cash
+// sale. None of it can block the register: every failure degrades to a
+// plain word and the till keeps ringing.
+function hasGUM() {
+  return typeof navigator !== 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+}
+
+// --- the recognizer's language follows the conversation ----------------------
+// The brain mirrors the user's language per message; the recognizer
+// makes the same call on the client BEFORE the words exist. Choice,
+// documented: the stored preference is the language of the last chat
+// message this device sent (Devanagari -> ne-NP; the brain's own
+// Romanized Nepali stems -> ne-NP; its Hindi stems -> hi-IN), default
+// en-US. noteChatLang runs inside sendChat, so typing teaches it too.
+function voiceLangOf(text) {
+  if (/[\u0900-\u097F]/.test(String(text || ''))) { return 'ne-NP'; }
+  const t = ' ' + String(text || '').toLowerCase() + ' ';
+  const np = ['kati', 'thap', 'mulya', 'hisab', 'aaja', 'chha', 'gara', 'deu', 'dinus',
+              'chahiyo', 'bikri', 'saman', 'naya', 'pasal', 'banda'];
+  const hi = ['kitna', 'kitne', 'daam', 'jodo', 'lagao', 'saaman', 'karo', 'badlo',
+              'hisaab', ' hai ', ' aaj ', ' mein '];
+  let n = 0, h = 0;
+  np.forEach(w => { if (t.includes(w)) { n++; } });
+  hi.forEach(w => { if (t.includes(w)) { h++; } });
+  if (n === 0 && h === 0) { return null; }
+  return n >= h ? 'ne-NP' : 'hi-IN';
+}
+function noteChatLang(text) {
+  const l = voiceLangOf(text);
+  if (l) { try { localStorage.setItem('golpos_voice_lang', l); } catch (e) { /* private mode */ } }
+}
+function voiceLangPref() {
+  try { return localStorage.getItem('golpos_voice_lang') || 'en-US'; } catch (e) { return 'en-US'; }
+}
+
+let recog = null;
+let voiceOn = false;
+function voiceSupported() {
+  return typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+function setVoiceUi(on) {
+  voiceOn = on;
+  ['voiceBtn', 'chatMicBtn'].forEach(id => { const b = $(id); if (b) { b.classList.toggle('listening', on); } });
+  const pill = $('voicePill'); if (pill) { pill.classList.toggle('hidden', !on); }
+}
+function startVoice() {
+  if (!voiceSupported()) {
+    showToast('Voice is not available in this browser — typing works as always.');
+    return;
+  }
+  if (voiceOn && recog) { try { recog.stop(); } catch (e) { /* already stopping */ } return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recog = new SR();
+  recog.lang = voiceLangPref();
+  recog.interimResults = true;
+  recog.continuous = false;
+  recog.onresult = (ev) => {
+    let interim = '', finalText = '';
+    for (let i = ev.resultIndex || 0; i < ev.results.length; i++) {
+      const r = ev.results[i];
+      const s = (r[0] && r[0].transcript) || '';
+      if (r.isFinal) { finalText += s; } else { interim += s; }
+    }
+    if (interim) { $('chatInput').value = interim; }
+    if (finalText.trim()) { voiceFinal(finalText.trim()); }
+  };
+  recog.onerror = (ev) => {
+    setVoiceUi(false);
+    const kind = ev && ev.error;
+    if (kind === 'not-allowed' || kind === 'service-not-allowed') {
+      showToast('Microphone is blocked — allow the mic in the browser, then try again.');
+    } else if (kind === 'no-speech') {
+      showToast("Didn't catch that — tap the mic and speak again.");
+    } else if (kind !== 'aborted') {
+      showToast('Voice stumbled — typing works as always.');
+    }
+  };
+  recog.onend = () => setVoiceUi(false);
+  setVoiceUi(true);
+  try { recog.start(); } catch (e) { setVoiceUi(false); }
+}
+// THE seam: a final transcript becomes a chat message through the same
+// sendChat a typed message takes — same session, same brain, same card.
+function voiceFinal(text) {
+  setVoiceUi(false);
+  $('chatInput').value = '';
+  sendChat(text);
+}
+
+// --- the one camera stream ----------------------------------------------------
+let camStream = null;  // the live stream, whoever opened it (watch or modal)
+let camDenied = false; // a refusal is remembered so the till never nags
+function setCamPill(on) {
+  const p = $('camPill'); if (p) { p.classList.toggle('hidden', !on); }
+}
+async function camStart(videoEl) {
+  if (!hasGUM() || camDenied) { return null; }
+  try {
+    if (!camStream) {
+      camStream = await navigator.mediaDevices.getUserMedia(
+        { video: { facingMode: 'environment' }, audio: false });
+    }
+    if (videoEl) {
+      videoEl.srcObject = camStream;
+      try { await videoEl.play(); } catch (e) { /* autoplay dress; frames still grab */ }
+    }
+    setCamPill(true);
+    return camStream;
+  } catch (e) { camDenied = true; return null; }
+}
+function camStopAll() {
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  setCamPill(false);
+}
+// The watch stream follows the watch_frame setting (called from
+// loadSettings and the settings save): on -> a live stream waits in the
+// hidden watch video with the pill showing; off -> the stream stops,
+// unless the capture view is holding it right now.
+async function syncWatchCam() {
+  const want = !!(receiptSettings && receiptSettings.watch_frame === true);
+  if (want) { await camStart($('watchVideo')); return; }
+  if (camStream && $('camModal').classList.contains('hidden')) { camStopAll(); }
+}
+function grabFrame(videoEl) {
+  return new Promise((resolve) => {
+    try {
+      if (!videoEl || !videoEl.videoWidth || !videoEl.videoHeight) { resolve(null); return; }
+      const c = document.createElement('canvas');
+      c.width = videoEl.videoWidth; c.height = videoEl.videoHeight;
+      const g = c.getContext('2d');
+      if (!g) { resolve(null); return; }
+      g.drawImage(videoEl, 0, 0, c.width, c.height);
+      if (c.toBlob) { c.toBlob(b => resolve(b || null), 'image/jpeg', 0.85); }
+      else { resolve(null); }
+    } catch (e) { resolve(null); }
+  });
+}
+// Cash-tender frame pairing: after a cash sale completes, one frame from
+// the live watch camera rides to frame.php against the sale's id. No
+// live camera -> no frame and no fuss; the sale already stands.
+async function attachCashFrame(txnId) {
+  try {
+    if (!receiptSettings || receiptSettings.watch_frame !== true) { return; }
+    if (!camStream || !txnId) { return; }
+    const blob = await grabFrame($('watchVideo'));
+    if (!blob) { return; }
+    const fd = new FormData();
+    fd.append('photo', new File([blob], 'frame.jpg', { type: 'image/jpeg' }));
+    fd.append('txn', txnId);
+    await fetch('../server/frame.php', { method: 'POST', body: fd });
+  } catch (e) { /* the frame is a passenger, never a gate */ }
+}
+
+// --- the capture view -----------------------------------------------------------
+let camMode = 'photo'; // 'photo' | 'sense'
+let camShot = null;    // the captured Blob waiting for its job
+async function openCam(mode) {
+  camMode = mode || 'photo';
+  camDenied = false; // an explicit tap is a fresh ask
+  if (!hasGUM()) {
+    // No in-app camera: the native capture input is the same door.
+    if (camMode === 'photo') { $('chatDrawer').classList.remove('hidden'); $('photoInput').click(); }
+    return false;
+  }
+  camShot = null;
+  $('camPreview').classList.add('hidden');
+  $('camVideo').classList.remove('hidden');
+  $('camLiveBtns').classList.remove('hidden');
+  $('camShotBtns').classList.add('hidden');
+  $('camUseSense').classList.toggle('hidden', camMode !== 'sense');
+  $('camUsePhoto').classList.toggle('hidden', camMode === 'sense');
+  $('camUseBill').classList.toggle('hidden', camMode === 'sense');
+  $('camNote').textContent = camMode === 'sense'
+    ? 'Point the camera at the counter, then capture — Gol answers whether a customer is there.'
+    : 'Point the camera, then capture. The photo goes to Gol\'s chat.';
+  $('camModal').classList.remove('hidden');
+  const s = await camStart($('camVideo'));
+  if (!s) {
+    closeCam();
+    showToast('No camera on this register — pair a phone instead: Settings → Scan with phone.');
+    return false;
+  }
+  return true;
+}
+function closeCam() {
+  $('camModal').classList.add('hidden');
+  camShot = null;
+  if (receiptSettings && receiptSettings.watch_frame === true) { camStart($('watchVideo')); }
+  else { camStopAll(); }
+}
+async function camSnapNow() {
+  const blob = await grabFrame($('camVideo'));
+  if (!blob) { showToast('The camera gave no picture — try again.'); return; }
+  camShot = blob;
+  try { $('camPreview').src = URL.createObjectURL(blob); } catch (e) { /* preview is dress */ }
+  $('camPreview').classList.remove('hidden');
+  $('camVideo').classList.add('hidden');
+  $('camLiveBtns').classList.add('hidden');
+  $('camShotBtns').classList.remove('hidden');
+}
+function camShotFile() { return new File([camShot], 'photo.jpg', { type: 'image/jpeg' }); }
+
+// --- customer sensing on demand ---------------------------------------------------
+// The asks this lane answers (English + the shop's Nepali/Hindi shapes):
+// a counter word AND a customer word in one breath. Everything else
+// stays a brain question.
+function isSenseAsk(text) {
+  const t = String(text || '');
+  const counter = /(counter|काउन्टर|register|till)/i.test(t);
+  const customer = /(customer|ग्राहक|visitor|anyone|someone|people|person|मान्छे|कोही|कोई)/i.test(t);
+  return counter && customer;
+}
+async function senseFlow(text) {
+  chatMsg(text, 'me');
+  $('chatDrawer').classList.remove('hidden');
+  if (camStream) { // the watch camera is live — answer from it at once
+    const blob = await grabFrame($('watchVideo'));
+    if (blob) { sendSensePhoto(new File([blob], 'counter.jpg', { type: 'image/jpeg' })); return; }
+  }
+  if (hasGUM()) { openCam('sense'); return; }
+  chatMsg('No camera on this register — I can\'t see the counter from here. Pair a phone (Settings → Scan with phone) or use a register with a camera, and I\'ll answer that at a glance.', 'gol');
+}
+async function sendSensePhoto(file) {
+  const fd = new FormData();
+  fd.append('photo', file);
+  fd.append('session', SESSION_ID);
+  fd.append('mode', 'sense');
+  try {
+    const res = await fetch('../server/photo.php', { method: 'POST', body: fd });
+    const r = await res.json();
+    if (r.reply) { chatMsg(r.reply, 'gol'); }
+  } catch (e) { chatMsg('The counter photo could not be sent just now.', 'gol'); }
+}
+
+// --- scan-by-phone: the register side ---------------------------------------------
+async function openScanModal() {
+  $('scanModal').classList.remove('hidden');
+  $('scanCode').textContent = '······';
+  $('scanUrl').textContent = 'Making a fresh link…';
+  try {
+    const r = await fetch('../server/pair.php', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mint: true, session: SESSION_ID }) });
+    const j = await r.json();
+    if (!j.token) { $('scanNote').textContent = j.error || 'The link could not be made just now.'; return; }
+    $('scanCode').textContent = j.code;
+    $('scanUrl').textContent = new URL('scan.html?t=' + j.token, location.href).href;
+    $('scanNote').textContent = 'The link lives for about ' + Math.max(1, Math.round((j.expires_in || 600) / 60))
+      + ' minutes. Photos the phone takes land in this register\'s Gol chat.';
+  } catch (e) { $('scanNote').textContent = 'The link could not be made just now.'; }
+}
+
+// --- the session inbox: paired-phone results land in this chat ---------------------
+async function fetchInbox() {
+  try {
+    const r = await fetch(API + '?inbox&session=' + encodeURIComponent(SESSION_ID));
+    const j = await r.json();
+    const entries = (j && j.entries) || [];
+    if (!entries.length) { return; }
+    entries.forEach(e => {
+      if (e.reply) { chatMsg(e.reply, 'gol'); }
+      if (e.card) { chatCard(e.card); }
+    });
+    $('chatDrawer').classList.remove('hidden');
+    showToast('📷 A phone scan landed in Gol chat.');
+  } catch (e) { /* polling never breaks the register */ }
+}
+setInterval(fetchInbox, 4000);
+
+$('camBtn').addEventListener('click', () => openCam('photo'));
+$('voiceBtn').addEventListener('click', () => { $('chatDrawer').classList.remove('hidden'); startVoice(); });
+$('chatMicBtn').addEventListener('click', () => startVoice());
+$('camCancel').addEventListener('click', closeCam);
+$('camSnap').addEventListener('click', camSnapNow);
+$('camRetake').addEventListener('click', () => {
+  camShot = null;
+  $('camPreview').classList.add('hidden');
+  $('camVideo').classList.remove('hidden');
+  $('camLiveBtns').classList.remove('hidden');
+  $('camShotBtns').classList.add('hidden');
+});
+$('camUsePhoto').addEventListener('click', () => {
+  if (!camShot) { return; }
+  const f = camShotFile(); closeCam();
+  $('chatDrawer').classList.remove('hidden'); sendPhoto(f, '');
+});
+$('camUseBill').addEventListener('click', () => {
+  if (!camShot) { return; }
+  const f = camShotFile(); closeCam();
+  $('chatDrawer').classList.remove('hidden'); sendPhoto(f, 'bill');
+});
+$('camUseSense').addEventListener('click', () => {
+  if (!camShot) { return; }
+  const f = camShotFile(); closeCam(); sendSensePhoto(f);
+});
+$('frameClose').addEventListener('click', () => $('frameModal').classList.add('hidden'));
+$('smScanBtn').addEventListener('click', () => { closeSettingsMenu(); openScanModal(); });
+$('scanClose').addEventListener('click', () => $('scanModal').classList.add('hidden'));
+$('scanNew').addEventListener('click', openScanModal);
 
 // --- launch binding: MR.STORE's settings link opens this register with
 // ?store=<id>&name=<name>&unlock=1 — the same contract MR.STORE's own

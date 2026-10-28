@@ -17,6 +17,8 @@
 // GET  ?history             -> the sales log grouped by day (newest first,
 //                              capped per day) for the Transactions panel
 // GET  ?pending             -> the staged card, if any
+// GET  ?inbox&session=      -> scan-by-phone results waiting for this
+//                              register session (read-and-clear)
 // GET  ?settings            -> receipt print settings (one store, two doors)
 // POST {settings:{...}}     -> owner panel form save, same store
 // POST {stock_add:{sku,qty}, session} -> the tile's "+ Stock" receive:
@@ -121,6 +123,15 @@ if ($method === 'GET' && isset($_GET['settings'])) {
     // Receipt print settings — the ONE store both doors (Gol chat and the
     // owner panel form) read and write.
     echo json_encode(golpos_settings(), JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($method === 'GET' && isset($_GET['inbox'])) {
+    // Scan-by-phone results waiting for THIS register session: a paired
+    // phone upload's reply (and any staged card) lands here via
+    // photo.php. Reading takes the entries — each renders exactly once.
+    $sid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($_GET['session'] ?? ''));
+    echo json_encode(['entries' => $sid === '' ? [] : golpos_inbox_take($sid)],
+                     JSON_UNESCAPED_UNICODE);
     exit;
 }
 if ($method === 'GET' && isset($_GET['report'])) {

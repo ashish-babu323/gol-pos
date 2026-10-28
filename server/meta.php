@@ -280,3 +280,24 @@ function golpos_meta_read_receipt(string $dataUrl): ?array {
         'receipt_no' => $clean($r['receipt_no'] ?? null),
     ];
 }
+
+// Counter sensing for the Register Watch lane: ONE question over one
+// frame — is a customer standing at the counter, and how many people
+// are in view at all? Returns ['customer_present'=>bool, 'people'=>int],
+// or null when the API did not answer — the lane then says so honestly
+// instead of guessing about the owner's own shop floor.
+function golpos_meta_sense_counter(string $dataUrl): ?array {
+    $prompt = 'Look at this photo of a store checkout counter area. Reply with ONLY a JSON object and no other text: '
+        . '{"customer_present": <true if a customer is standing at the counter being served or waiting to pay, '
+        . 'false otherwise>, "people": <the total number of people visible in the photo as a whole number>}. '
+        . 'A cashier behind the counter alone is NOT a customer. If you cannot tell, answer customer_present false '
+        . 'and count only the people you can actually see.';
+    $r = golpos_meta_vision_json($dataUrl, $prompt);
+    if ($r === null) { return null; }
+    $people = $r['people'] ?? 0;
+    if (is_string($people)) { $people = preg_replace('/[^0-9]/', '', $people); }
+    $people = is_numeric($people) ? max(0, (int)$people) : 0;
+    $present = filter_var($r['customer_present'] ?? false, FILTER_VALIDATE_BOOLEAN);
+    if ($present && $people < 1) { $people = 1; } // a customer there is a person seen
+    return ['customer_present' => $present, 'people' => $people];
+}

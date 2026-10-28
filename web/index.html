@@ -20,6 +20,9 @@
       <button type="button" data-set-theme="clean"><span class="sw sw-clean"></span>Clean</button>
       <button type="button" data-set-theme="bold"><span class="sw sw-bold"></span>Bold</button>
     </div>
+    <span id="camPill" class="cam-pill hidden" role="status">● Camera on</span>
+    <button id="camBtn" type="button" title="Camera — take a photo for Gol (bill, receipt, product)">📷</button>
+    <button id="voiceBtn" type="button" title="Voice — talk to Gol">🎙</button>
     <div class="setmenu">
       <button id="settingsBtn" type="button" aria-haspopup="true" aria-expanded="false">⚙ Settings</button>
       <div class="setmenu-pop hidden" id="settingsPop" role="menu" aria-label="Register settings">
@@ -40,6 +43,10 @@
         <div class="sm-row">
           <div class="sm-main"><span class="sm-label">Transactions</span><span class="sm-sub">Sales history with items — reprint any sale</span></div>
           <button type="button" class="sm-act" id="smHistoryBtn">History</button>
+        </div>
+        <div class="sm-row">
+          <div class="sm-main"><span class="sm-label">Scan with phone</span><span class="sm-sub">No camera here? A phone becomes this register's camera</span></div>
+          <button type="button" class="sm-act" id="smScanBtn">Show link</button>
         </div>
         <div class="sm-row">
           <div class="sm-main"><span class="sm-label">Printer</span><span class="sm-sub">Receipt prints after each sale</span></div>
@@ -293,14 +300,61 @@
     <button type="button" data-chip="Make an offer poster">🎨 Make an offer poster</button>
     <button type="button" data-chip="How much is a Coke?">🥤 How much is a Coke?</button>
   </div>
+  <div id="voicePill" class="voice-pill hidden" role="status">🎙 Listening… speak now</div>
   <form class="chat-form" id="chatForm">
     <label class="photo-btn" title="Send a photo — Gol's eyes (SAM) will read it">📷
       <input id="photoInput" type="file" accept="image/*" hidden>
     </label>
+    <button id="chatMicBtn" type="button" class="mic-btn" title="Voice — talk to Gol" aria-label="Voice input">🎙</button>
     <input id="chatInput" type="text" placeholder="Message Gol…" autocomplete="off">
     <button type="submit">Send</button>
   </form>
 </div>
+
+<div class="camview hidden" id="camModal"><div class="cam-card">
+  <div class="cam-head">
+    <h3>Camera</h3>
+    <span class="cam-pill">● Camera on</span>
+  </div>
+  <video id="camVideo" autoplay playsinline muted></video>
+  <img id="camPreview" class="hidden" alt="Captured photo">
+  <p class="cam-note" id="camNote">Point the camera, then capture. The photo goes to Gol's chat.</p>
+  <div class="cash-actions" id="camLiveBtns">
+    <button type="button" id="camCancel" class="ghost">Cancel</button>
+    <button type="button" id="camSnap">📸 Capture</button>
+  </div>
+  <div class="cash-actions hidden" id="camShotBtns">
+    <button type="button" id="camRetake" class="ghost">Retake</button>
+    <button type="button" id="camUsePhoto">Use as photo</button>
+    <button type="button" id="camUseBill">Use as bill</button>
+    <button type="button" id="camUseSense" class="hidden">Check the counter</button>
+  </div>
+</div></div>
+
+<div class="camview hidden" id="frameModal"><div class="cam-card">
+  <div class="cam-head">
+    <h3>Counter frame</h3>
+    <button type="button" id="frameClose" class="ghost">Close</button>
+  </div>
+  <img id="frameImg" alt="Counter frame saved with this sale">
+  <p class="cam-note">The moment this cash sale was rung, saved with its receipt.</p>
+</div></div>
+
+<div class="camview hidden" id="scanModal"><div class="cam-card">
+  <div class="cam-head">
+    <h3>Scan with phone</h3>
+    <button type="button" id="scanClose" class="ghost">Close</button>
+  </div>
+  <p class="cam-note">Open this link on a phone — or type the code there — and its camera becomes this register's camera. Bills and photos land in this register's Gol chat.</p>
+  <div class="scan-code" id="scanCode">······</div>
+  <p class="scan-url" id="scanUrl">…</p>
+  <p class="cam-note" id="scanNote">The link lives for about 10 minutes.</p>
+  <div class="cash-actions">
+    <button type="button" id="scanNew">New link</button>
+  </div>
+</div></div>
+
+<video id="watchVideo" muted playsinline class="watch-video" aria-hidden="true"></video>
 
 <script src="app.js?v=8e7ec18"></script>
 </body>

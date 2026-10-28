@@ -747,6 +747,12 @@ function golpos_settings_defaults(): array {
         // blocks the tap and the sale endpoint refuses the POST — while
         // chat, browsing and the owner panel keep working.
         'register_open' => true,
+        // Register Watch (owner directive, Oct 28): when ON and this
+        // register has a camera, completing a CASH sale saves one
+        // counter frame against the sale's id (data/frames/<txn>.jpg),
+        // so the receipt and the moment stay paired. Default OFF; card
+        // sales never take a frame; a missing camera never blocks a sale.
+        'watch_frame' => false,
     ];
 }
 
@@ -759,7 +765,7 @@ function golpos_settings(): array {
 // are ignored rather than stored — a settings file is never a junk drawer.
 function golpos_save_settings(array $in): array {
     $cur = golpos_settings();
-    foreach (['show_address', 'show_phone', 'logo', 'show_tax', 'auto_open', 'register_open'] as $k) {
+    foreach (['show_address', 'show_phone', 'logo', 'show_tax', 'auto_open', 'register_open', 'watch_frame'] as $k) {
         if (array_key_exists($k, $in)) { $cur[$k] = (bool)$in[$k]; }
     }
     foreach (['store_name' => 60, 'address' => 120, 'phone' => 40, 'footer' => 120] as $k => $max) {
@@ -1092,4 +1098,130 @@ function golpos_batch_auto_sweep(): ?array {
     $seg = golpos_unbatched_card_sales($today);
     if (!$seg) { return null; }
     return golpos_seal_batch($seg, 'auto', $close);
+}
+
+// --- Scan-by-phone pairing + the session inbox (owner directive, Oct 28) -----
+// A register without a camera borrows the owner's phone: the register
+// mints a short-lived pairing token bound to ITS chat session, the phone
+// opens web/scan.html?t=<token> and uploads through the ordinary photo
+// lane (photo.php) with the token riding along. photo.php resolves the
+// token back to the register's session — so a bill's price wait waits in
+// the register's own chat — and ALSO drops the lane's reply (and any
+// staged card) into that session's inbox here. The register polls the
+// inbox (api.php ?inbox) and renders what arrived into its chat. Tokens
+// are random, bound to one session, and die after ~10 minutes; expired
+// or unknown tokens refuse plainly at the photo lane's door.
+function golpos_pair_prune(array $tokens): array {
+    $now = time();
+    return array_filter($tokens, static fn($t) => is_array($t) && (int)($t['expires'] ?? 0) > $now);
+}
+
+// Mint a token for a session. Returns ['token'=>…, 'code'=>…, 'expires'=>…]
+// — the code is the short human form of the same secret (the phone page
+// accepts either the ?t= link or the typed code).
+function golpos_pair_mint(string $sessionId): array {
+    $tokens = golpos_pair_prune(golpos_read('pair_tokens.json', []));
+    if (!is_array($tokens)) { $tokens = []; }
+    do {
+        $token = bin2hex(random_bytes(12));
+        $code = strtoupper(substr($token, 0, 6));
+        $clash = false;
+        foreach ($tokens as $t) { if (($t['code'] ?? '') === $code) { $clash = true; break; } }
+    } while (isset($tokens[$token]) || $clash);
+    $rec = ['session' => $sessionId, 'code' => $code, 'expires' => time() + 600];
+    $tokens[$token] = $rec;
+    golpos_write('pair_tokens.json', $tokens);
+    return ['token' => $token, 'code' => $code, 'expires' => $rec['expires']];
+}
+
+// A live token's record, or null when unknown/expired (expired tokens are
+// pruned on the way through).
+function golpos_pair_lookup(string $token): ?array {
+    if ($token === '') { return null; }
+    $all = golpos_read('pair_tokens.json', []);
+    if (!is_array($all)) { return null; }
+    $live = golpos_pair_prune($all);
+    if (count($live) !== count($all)) { golpos_write('pair_tokens.json', $live); }
+    $rec = $live[$token] ?? null;
+    return is_array($rec) ? $rec : null;
+}
+
+// The typed-code door: the phone page trades a live 6-char code for its
+// token. Returns the token or null.
+function golpos_pair_resolve_code(string $code): ?string {
+    $code = strtoupper(trim($code));
+    if ($code === '') { return null; }
+    $all = golpos_read('pair_tokens.json', []);
+    if (!is_array($all)) { return null; }
+    foreach (golpos_pair_prune($all) as $token => $rec) {
+        if (($rec['code'] ?? '') === $code) { return (string)$token; }
+    }
+    return null;
+}
+
+// One session's waiting photo-lane results. photo.php pushes; the
+// register's poll takes (reads + clears), so each result renders once.
+function golpos_inbox_push(string $sessionId, array $entry): void {
+    if ($sessionId === '') { return; }
+    $all = golpos_read('inbox.json', []);
+    if (!is_array($all)) { $all = []; }
+    $list = (isset($all[$sessionId]) && is_array($all[$sessionId])) ? $all[$sessionId] : [];
+    $entry['at'] = date('c');
+    $list[] = $entry;
+    if (count($list) > 20) { $list = array_slice($list, -20); }
+    $all[$sessionId] = $list;
+    golpos_write('inbox.json', $all);
+}
+
+function golpos_inbox_take(string $sessionId): array {
+    $all = golpos_read('inbox.json', []);
+    if (!is_array($all) || empty($all[$sessionId]) || !is_array($all[$sessionId])) { return []; }
+    $list = $all[$sessionId];
+    unset($all[$sessionId]);
+    golpos_write('inbox.json', $all);
+    return $list;
+}
+
+// --- Counter frames (Register Watch, owner directive, Oct 28) ----------------
+// One frame per cash sale, saved beside the till data as
+// data/frames/<txn>.<ext> — the store's own record on the store's own
+// server path, paired to the sale by its id. The sale record carries
+// frame: true once a frame lands; frame.php serves the bytes back to
+// the Transactions panel.
+function golpos_frames_dir(): string {
+    $dir = golpos_data_dir() . '/frames';
+    if (!is_dir($dir)) { mkdir($dir, 0775, true); }
+    return $dir;
+}
+
+function golpos_sale_by_id(string $txn): ?array {
+    foreach (golpos_sales() as $s) {
+        if ((string)($s['id'] ?? '') === $txn) { return $s; }
+    }
+    return null;
+}
+
+// Flag a recorded sale as frame-paired. Returns false when the sale is
+// unknown — a frame never invents the sale it claims to witness.
+function golpos_mark_sale_frame(string $txn): bool {
+    $sales = golpos_sales();
+    foreach ($sales as $i => $s) {
+        if ((string)($s['id'] ?? '') === $txn) {
+            $sales[$i]['frame'] = true;
+            golpos_write('sales.json', $sales);
+            return true;
+        }
+    }
+    return false;
+}
+
+// The saved frame's [path, mime] for a sale, or null.
+function golpos_frame_file(string $txn): ?array {
+    if (!preg_match('/^txn_[a-z0-9]+$/', $txn)) { return null; }
+    $mimes = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
+    foreach ($mimes as $ext => $mime) {
+        $p = golpos_frames_dir() . '/' . $txn . '.' . $ext;
+        if (is_file($p)) { return [$p, $mime]; }
+    }
+    return null;
 }
