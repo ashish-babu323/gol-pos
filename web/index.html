@@ -20,6 +20,37 @@
       <button type="button" data-set-theme="clean"><span class="sw sw-clean"></span>Clean</button>
       <button type="button" data-set-theme="bold"><span class="sw sw-bold"></span>Bold</button>
     </div>
+    <div class="setmenu">
+      <button id="settingsBtn" type="button" aria-haspopup="true" aria-expanded="false">⚙ Settings</button>
+      <div class="setmenu-pop hidden" id="settingsPop" role="menu" aria-label="Register settings">
+        <div class="sm-row">
+          <div class="sm-main"><span class="sm-label">Batch close</span><span class="sm-sub" id="smBatchInfo">Checking…</span></div>
+          <button type="button" class="sm-act" id="smBatchBtn">Seal batch</button>
+        </div>
+        <div class="sm-note hidden" id="smBatchNote"></div>
+        <button type="button" class="sm-pin hidden" id="smBatchPin">Open Gol chat to enter the PIN →</button>
+        <div class="sm-row">
+          <div class="sm-main"><span class="sm-label">Day close</span><span class="sm-sub">Freeze today's record, batches included</span></div>
+          <button type="button" class="sm-act" id="smDayCloseBtn">Close day</button>
+        </div>
+        <div class="sm-row">
+          <div class="sm-main"><span class="sm-label">Receipt</span><span class="sm-sub">Reprint the most recent sale</span></div>
+          <button type="button" class="sm-act" id="smReprintBtn">Reprint last</button>
+        </div>
+        <div class="sm-row">
+          <div class="sm-main"><span class="sm-label">Printer</span><span class="sm-sub">Receipt prints after each sale</span></div>
+          <button type="button" class="sm-toggle" id="smPrinterBtn" aria-pressed="true">On</button>
+        </div>
+        <div class="sm-row">
+          <div class="sm-main"><span class="sm-label">Tax exempt</span><span class="sm-sub">No tax on the current sale only</span></div>
+          <button type="button" class="sm-toggle" id="smTaxBtn" aria-pressed="false">Off</button>
+        </div>
+        <div class="sm-row sm-last">
+          <div class="sm-main"><span class="sm-label">Store</span><span class="sm-sub">Closed pauses new sales</span></div>
+          <button type="button" class="sm-toggle on" id="smStoreBtn" aria-pressed="true">Open</button>
+        </div>
+      </div>
+    </div>
     <button id="ownerBtn" type="button">Owner</button>
     <button id="golBtn" type="button" class="gol-btn">Talk to Gol</button>
   </div>
@@ -40,7 +71,7 @@
     <div id="cartLines" class="cart-lines"><p class="empty">Cart is empty — tap a product or scan.</p></div>
     <div class="totals">
       <div class="row"><span>Subtotal</span><b id="subTotal">$0.00</b></div>
-      <div class="row"><span>Tax</span><b id="taxTotal">$0.00</b></div>
+      <div class="row"><span>Tax <span id="taxBadge" class="tax-badge hidden">EXEMPT</span></span><b id="taxTotal">$0.00</b></div>
       <div class="grand"><span>Total</span><b id="grandTotal">$0.00</b></div>
     </div>
     <div class="tender">
@@ -54,6 +85,10 @@
 <section class="owner hidden" id="ownerPanel">
   <h2>Owner — today</h2>
   <div id="ownerBody">Loading…</div>
+  <div class="owner-close-day" id="ownerCloseDay">
+    <button id="dayCloseBtn" type="button">Close the day</button>
+    <span id="dayCloseResult" class="ocd-result"></span>
+  </div>
   <div id="ownerLoyalty"></div>
   <div id="ownerSettings"></div>
   <div class="owner-reports">

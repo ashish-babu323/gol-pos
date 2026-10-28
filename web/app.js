@@ -37,7 +37,21 @@ let receiptSettings = null;
 async function loadSettings() {
   try { const r = await fetch(API + '?settings'); receiptSettings = await r.json(); }
   catch (e) { /* keep the last known settings; the register never stops */ }
+  applyStorePill();
 }
+// --- store open/closed (Settings dropdown toggle, persisted server-side) -----
+// Closed pauses NEW sales: the register refuses the tap, and the sale
+// endpoint refuses the POST with the same plain words. Chat, browsing and
+// the owner panel are never blocked.
+function storeIsOpen() { return !receiptSettings || receiptSettings.register_open !== false; }
+function applyStorePill() {
+  const open = storeIsOpen();
+  const dot = document.querySelector('.status-dot');
+  const label = document.querySelector('.store-open');
+  if (dot) { dot.classList.toggle('closed', !open); }
+  if (label) { label.textContent = open ? ' · Register open' : ' · Register closed'; }
+}
+function storeClosedNote() { showToast('Store is closed — open it from Settings'); }
 let toastTimer = null;
 function showToast(text) {
   const el = $('toast'); if (!el) { return; }
@@ -72,6 +86,7 @@ let catalog = { store: {}, products: [] };
 let cart = new Map(); // sku -> qty
 let cartTotals = { subtotal: 0, tax: 0, total: 0 };
 let activeCat = 'All';
+let taxExempt = false; // Settings menu, current sale only — never persisted
 
 async function loadCatalog() {
   const res = await fetch(API + '?products');
@@ -103,6 +118,7 @@ function renderGrid() {
     t.addEventListener('click', () => addToCart(t.dataset.sku)));
 }
 function addToCart(sku) {
+  if (!storeIsOpen()) { storeClosedNote(); return; }
   cart.set(sku, (cart.get(sku) || 0) + 1);
   renderCart();
 }
@@ -127,10 +143,11 @@ function renderCart() {
     }));
   const roundMoney = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
   const sub = roundMoney(lines.reduce((s, l) => s + l.total, 0));
-  const tax = roundMoney(sub * (catalog.store.tax_rate || 0));
+  const tax = taxExempt ? 0 : roundMoney(sub * (catalog.store.tax_rate || 0));
   cartTotals = { subtotal: sub, tax, total: roundMoney(sub + tax) };
   $('subTotal').textContent = money(sub);
   $('taxTotal').textContent = money(tax);
+  $('taxBadge').classList.toggle('hidden', !taxExempt);
   $('grandTotal').textContent = money(sub + tax);
 }
 // Build the receipt text from the print settings: header lines (store name,
@@ -161,11 +178,27 @@ function receiptText(sale) {
   for (let i = 1; i <= n; i++) { parts.push(`— copy ${i} of ${n} —\n` + block); }
   return parts.join('\n\n✂ - - - - - - - - - - - -\n\n');
 }
+// Render a recorded sale into the receipt view (the print settings decide
+// logo, paper width and copy count). Used by the tender path and by the
+// Settings menu's reprint, so a reprint is byte-identical to the original.
+function showReceipt(sale) {
+  const st = receiptSettings || {};
+  $('receiptLogo').style.display = st.logo ? 'block' : 'none';
+  const card = document.querySelector('.receipt-card');
+  card.classList.toggle('w58', st.paper_width === '58mm');
+  card.classList.toggle('w80', st.paper_width !== '58mm');
+  const n = parseInt(st.copies, 10) || 1;
+  $('receiptTitle').textContent = 'Receipt' + (n > 1 ? ' ×' + n : '');
+  $('receiptBody').textContent = receiptText(sale);
+  $('receiptModal').classList.remove('hidden');
+}
 async function tender(kind, tendered) {
   if (!cart.size) { return false; }
+  if (!storeIsOpen()) { storeClosedNote(); return false; }
   const lines = [...cart.entries()].map(([sku, qty]) => ({ sku, qty }));
   const salePayload = { lines, tender: kind };
   if (kind === 'cash') { salePayload.tendered = Number(Number(tendered || 0).toFixed(2)); }
+  if (taxExempt) { salePayload.tax_exempt = true; }
   const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sale: salePayload }) });
   const sale = await res.json();
@@ -175,18 +208,13 @@ async function tender(kind, tendered) {
   }
   await loadSettings();
   const st = receiptSettings || {};
-  $('receiptLogo').style.display = st.logo ? 'block' : 'none';
-  const card = document.querySelector('.receipt-card');
-  card.classList.toggle('w58', st.paper_width === '58mm');
-  card.classList.toggle('w80', st.paper_width !== '58mm');
-  const n = parseInt(st.copies, 10) || 1;
-  $('receiptTitle').textContent = 'Receipt' + (n > 1 ? ' ×' + n : '');
-  $('receiptBody').textContent = receiptText(sale);
+  taxExempt = false; // the exemption dies with the sale it was set for
+  setToggle($('smTaxBtn'), false);
   cart.clear(); renderCart(); refreshToday();
   if (st.auto_open === false) {
-    showToast('Sale rung — receipt auto-open is off. Gol chat: "auto print on gara" turns it back on.');
+    showToast('Sale rung — receipt auto-open is off. Turn Printer on in Settings to bring it back.');
   } else {
-    $('receiptModal').classList.remove('hidden');
+    showReceipt(sale);
   }
   return true;
 }
@@ -211,6 +239,7 @@ function updateCashPanel() {
 }
 function openCashPanel() {
   if (!cart.size) { return; }
+  if (!storeIsOpen()) { storeClosedNote(); return; }
   $('cashReceived').value = cartTotals.total.toFixed(2);
   updateCashPanel();
   $('cashModal').classList.remove('hidden');
@@ -323,7 +352,9 @@ document.querySelectorAll('[data-cash-add]').forEach(b =>
     updateCashPanel();
   }));
 $('cardBtn').addEventListener('click', () => tender('card'));
-$('clearBtn').addEventListener('click', () => { cart.clear(); renderCart(); });
+$('clearBtn').addEventListener('click', () => {
+  cart.clear(); taxExempt = false; setToggle($('smTaxBtn'), false); renderCart();
+});
 $('receiptClose').addEventListener('click', () => $('receiptModal').classList.add('hidden'));
 $('golBtn').addEventListener('click', () => { $('chatDrawer').classList.remove('hidden'); $('chatInput').focus(); });
 $('chatClose').addEventListener('click', () => $('chatDrawer').classList.add('hidden'));
@@ -371,6 +402,7 @@ $('ownerBtn').addEventListener('click', async () => {
         : '<p>No loyalty receipts yet.</p>');
   } catch (e) { $('ownerLoyalty').innerHTML = ''; }
   await loadSettings(); renderSettingsForm();
+  renderDayClose();
   showReport('today');
 });
 $('ownerClose').addEventListener('click', () => $('ownerPanel').classList.add('hidden'));
@@ -418,12 +450,53 @@ async function saveSettingsForm() {
   $('osSaved').textContent = 'Saved ✓ — Gol chat reads these same settings.';
 }
 
+// --- owner panel: Close the day — the daily action, top of the panel --------
+// The close lives directly under the "Owner — today" summary (owner
+// directive, Oct 28: daily actions on top, sit-down settings below). Same
+// api.php close_day path the Gol chat and the Settings dropdown run —
+// behind the same tap-confirm (first tap arms, second tap runs).
+let dayCloseArmed = false;
+let dayCloseTimer = null;
+async function renderDayClose() {
+  const btn = $('dayCloseBtn'); const resEl = $('dayCloseResult');
+  if (!btn) { return; }
+  dayCloseArmed = false; clearTimeout(dayCloseTimer);
+  btn.classList.remove('armed');
+  try {
+    const sum = await (await fetch(API + '?summary')).json(); // sum.date = today
+    const r = await (await fetch(API + '?report&date=' + sum.date)).json();
+    if (r.close) {
+      btn.textContent = 'Re-close today (refresh the record)';
+      const nb = (r.close.batches || []).length;
+      const unb = r.close.unbatched_card || { count: 0 };
+      resEl.textContent = 'Closed — ' + money(r.close.gross) + ' across ' + r.close.txns + ' sales'
+        + (nb ? ' · ' + nb + ' batch' + (nb === 1 ? '' : 'es') + ' sealed' : '')
+        + (unb.count ? ' · ' + unb.count + ' card sale' + (unb.count === 1 ? '' : 's') + ' not in a batch' : '');
+    } else {
+      btn.textContent = 'Close the day';
+      resEl.textContent = '';
+    }
+  } catch (e) { btn.textContent = 'Close the day'; }
+}
+async function dayCloseAction() {
+  const btn = $('dayCloseBtn'); if (!btn) { return; }
+  if (!dayCloseArmed) {
+    dayCloseArmed = true; btn.textContent = 'Tap again to confirm close'; btn.classList.add('armed');
+    dayCloseTimer = setTimeout(() => { if (dayCloseArmed) { renderDayClose(); } }, 4000);
+    return;
+  }
+  dayCloseArmed = false; clearTimeout(dayCloseTimer);
+  const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ close_day: true }) });
+  const rec = await r.json();
+  showToast('Day closed — ' + money(rec.gross) + ' across ' + rec.txns + ' sales.');
+  refreshToday(); renderDayClose(); showReport('today');
+}
+
 // --- owner panel: Reports card (manual twin of the chat's numbers) ----------
 // Same day-summary data the chat speaks, for a picked period; a date with a
 // saved close record shows the record's frozen figures, marked Closed.
-let closeArmed = false;
 async function showReport(mode, dateVal) {
-  closeArmed = false;
   document.querySelectorAll('[data-report]').forEach(b =>
     b.classList.toggle('on', b.dataset.report === mode));
   const body = $('reportBody');
@@ -447,30 +520,185 @@ async function showReport(mode, dateVal) {
   const src = r.close || r.summary;
   body.innerHTML =
     `<div class="rep-row rep-total"><span>${date}${r.close ? ' · <em class="rep-closed">Closed</em>' : ''}</span>` +
-    `<b>${money(src.gross)}</b><span>${src.txns} sales · cash ${money(src.cash)} · card ${money(src.card)}</span></div>` +
-    (mode === 'today' ? `<button id="repClose" type="button">${r.close ? 'Re-close today (refresh the record)' : 'Close the day'}</button>` : '');
-  if (mode === 'today') { $('repClose').addEventListener('click', manualClose); }
-}
-// Manual close: same golpos_close_day path as the chat, behind a tap-confirm
-// (first tap arms, second tap runs) — never one-tap destructive.
-async function manualClose() {
-  const b = $('repClose'); if (!b) { return; }
-  if (!closeArmed) {
-    closeArmed = true; b.textContent = 'Tap again to confirm close'; b.classList.add('armed');
-    setTimeout(() => { if (closeArmed) { closeArmed = false; showReport('today'); } }, 4000);
-    return;
-  }
-  closeArmed = false;
-  const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ close_day: true }) });
-  const rec = await r.json();
-  showToast('Day closed — ' + money(rec.gross) + ' across ' + rec.txns + ' sales.');
-  refreshToday(); showReport('today');
+    `<b>${money(src.gross)}</b><span>${src.txns} sales · cash ${money(src.cash)} · card ${money(src.card)}</span></div>`;
 }
 document.querySelectorAll('[data-report]').forEach(b =>
   b.addEventListener('click', () => showReport(b.dataset.report)));
 $('reportDate').addEventListener('change', (e) => { if (e.target.value) { showReport('custom', e.target.value); } });
 $('receiptPrint').addEventListener('click', () => window.print());
+$('dayCloseBtn').addEventListener('click', dayCloseAction);
+
+// --- Settings dropdown: the counter operations, in ONE menu ------------------
+// Owner decision (Oct 28): the counter's working settings live behind one
+// Settings dropdown on the register — not loose buttons, not chat-only.
+// Register UI language stays English; the chat's language mirroring is
+// untouched. Every item here runs the register's existing paths: the batch
+// seals through the Gol brain (same staging, same PIN gate), the day close
+// through api.php close_day, the printer toggle writes the ONE settings
+// store the owner panel form and the chat also write.
+function setToggle(btn, on, text) {
+  if (!btn) { return; }
+  btn.classList.toggle('on', !!on);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.textContent = text || (on ? 'On' : 'Off');
+}
+function settingsMenuOpen() { return !$('settingsPop').classList.contains('hidden'); }
+function closeSettingsMenu() {
+  $('settingsPop').classList.add('hidden');
+  $('settingsBtn').setAttribute('aria-expanded', 'false');
+}
+function openSettingsMenu() {
+  $('settingsPop').classList.remove('hidden');
+  $('settingsBtn').setAttribute('aria-expanded', 'true');
+  $('smBatchNote').classList.add('hidden');
+  $('smBatchPin').classList.add('hidden');
+  smCloseArmed = false; clearTimeout(smCloseTimer);
+  const dc = $('smDayCloseBtn');
+  dc.textContent = 'Close day'; dc.classList.remove('armed');
+  refreshSettingsMenu();
+}
+async function refreshSettingsMenu() {
+  await loadSettings();
+  const st = receiptSettings || {};
+  setToggle($('smPrinterBtn'), st.auto_open !== false);
+  setToggle($('smStoreBtn'), storeIsOpen(), storeIsOpen() ? 'Open' : 'Closed');
+  setToggle($('smTaxBtn'), taxExempt);
+  refreshBatchRow();
+}
+// --- the batch row: state comes fresh from the server on every open --------
+let smBatchStaged = null;   // a batch_close card the brain has staged
+let smBatchSegCount = 0;    // unbatched card sales at last refresh
+async function refreshBatchRow() {
+  const info = $('smBatchInfo'); const btn = $('smBatchBtn');
+  try {
+    const b = await (await fetch(API + '?batch')).json();
+    const p = await (await fetch(API + '?pending')).json();
+    smBatchSegCount = (b.unbatched && b.unbatched.count) || 0;
+    smBatchStaged = (p && p.type === 'batch_close') ? p : null;
+    if (smBatchStaged) {
+      info.textContent = 'Staged: ' + smBatchStaged.count + ' card sales · ' + money(smBatchStaged.total);
+      btn.textContent = 'Confirm seal'; btn.disabled = false;
+    } else if (smBatchSegCount > 0) {
+      info.textContent = smBatchSegCount + ' card sales · ' + money(b.unbatched.total) + ' not in a batch';
+      btn.textContent = 'Seal batch'; btn.disabled = false;
+    } else {
+      info.textContent = 'All card sales are in a batch.';
+      btn.textContent = 'Seal batch'; btn.disabled = true;
+    }
+  } catch (e) {
+    info.textContent = 'Batch state unavailable.'; btn.disabled = true;
+  }
+}
+function smBatchNoteShow(text) {
+  const n = $('smBatchNote');
+  n.textContent = text; n.classList.remove('hidden');
+}
+async function smBatchAction() {
+  const hadWork = !!smBatchStaged || smBatchSegCount > 0;
+  const payload = smBatchStaged ? { confirm: true } : { message: 'Batch close' };
+  const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(brainPayload(payload)) });
+  const r = await res.json();
+  if (r.card && r.card.type === 'batch_close') {
+    // Staged — the seal itself is the next tap, still inside the menu.
+    smBatchStaged = r.card;
+    $('smBatchInfo').textContent = 'Staged: ' + r.card.count + ' card sales · ' + money(r.card.total);
+    const btn = $('smBatchBtn'); btn.textContent = 'Confirm seal'; btn.disabled = false;
+    smBatchNoteShow((r.reply || 'Card staged.') + ' Tap "Confirm seal" to finish.');
+    return;
+  }
+  if (r.reply) { smBatchNoteShow(r.reply); }
+  // No card and no completion after real work was on the table means the
+  // access gate is holding the seal for the admin PIN — say where it goes.
+  $('smBatchPin').classList.toggle('hidden', !(!r.card && !r.done && hadWork));
+  smBatchStaged = null;
+  await refreshBatchRow();
+  if (r.done) {
+    if (r.reply) { showToast(r.reply); }
+    closeSettingsMenu();
+  }
+}
+// --- the day-close row: same arm-then-run tap-confirm as the owner panel ---
+let smCloseArmed = false;
+let smCloseTimer = null;
+async function smDayCloseAction() {
+  const btn = $('smDayCloseBtn');
+  if (!smCloseArmed) {
+    smCloseArmed = true; btn.textContent = 'Tap again to confirm close'; btn.classList.add('armed');
+    smCloseTimer = setTimeout(() => {
+      if (smCloseArmed) { smCloseArmed = false; btn.textContent = 'Close day'; btn.classList.remove('armed'); }
+    }, 4000);
+    return;
+  }
+  smCloseArmed = false; clearTimeout(smCloseTimer);
+  btn.textContent = 'Close day'; btn.classList.remove('armed');
+  const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ close_day: true }) });
+  const rec = await r.json();
+  const nb = (rec.batches || []).length;
+  const unb = rec.unbatched_card || { count: 0, total: 0 };
+  showToast('Day closed — ' + money(rec.gross) + ' across ' + rec.txns + ' sales.'
+    + (nb ? ' ' + nb + ' batch' + (nb === 1 ? '' : 'es') + ' sealed.' : '')
+    + (unb.count ? ' ' + unb.count + ' card sale' + (unb.count === 1 ? '' : 's')
+      + ' (' + money(unb.total) + ') not in a batch.' : ''));
+  refreshToday();
+  closeSettingsMenu();
+}
+// --- the reprint row: today's most recent sale, rendered like the original -
+async function smReprintAction() {
+  let sale = null;
+  try { sale = await (await fetch(API + '?last_sale')).json(); } catch (e) { /* handled below */ }
+  closeSettingsMenu();
+  if (!sale || !sale.id) { showToast('No sales yet today — nothing to reprint.'); return; }
+  await loadSettings();
+  showReceipt(sale);
+}
+// --- toggles ------------------------------------------------------------------
+async function saveSetting(key, value) {
+  const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ settings: { [key]: value } }) });
+  receiptSettings = await r.json();
+}
+async function smPrinterAction() {
+  const on = (receiptSettings || {}).auto_open !== false;
+  await saveSetting('auto_open', !on);
+  setToggle($('smPrinterBtn'), !on);
+  showToast(!on ? 'Printer on — the receipt prints after each sale.'
+                : 'Printer off — receipts will not print after a sale.');
+}
+async function smStoreAction() {
+  const open = storeIsOpen();
+  await saveSetting('register_open', !open);
+  applyStorePill();
+  setToggle($('smStoreBtn'), !open, !open ? 'Open' : 'Closed');
+  showToast(!open ? 'Store is open — sales are running.'
+                  : 'Store is closed — new sales are paused.');
+}
+function smTaxAction() {
+  taxExempt = !taxExempt;
+  setToggle($('smTaxBtn'), taxExempt);
+  renderCart();
+}
+$('settingsBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  settingsMenuOpen() ? closeSettingsMenu() : openSettingsMenu();
+});
+$('settingsPop').addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', () => { if (settingsMenuOpen()) { closeSettingsMenu(); } });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && settingsMenuOpen()) { closeSettingsMenu(); }
+});
+$('smBatchBtn').addEventListener('click', smBatchAction);
+$('smBatchPin').addEventListener('click', () => {
+  closeSettingsMenu();
+  $('chatDrawer').classList.remove('hidden');
+  $('chatInput').focus();
+});
+$('smDayCloseBtn').addEventListener('click', smDayCloseAction);
+$('smReprintBtn').addEventListener('click', smReprintAction);
+$('smPrinterBtn').addEventListener('click', smPrinterAction);
+$('smStoreBtn').addEventListener('click', smStoreAction);
+$('smTaxBtn').addEventListener('click', smTaxAction);
 
 // --- launch binding: MR.STORE's settings link opens this register with
 // ?store=<id>&name=<name>&unlock=1 — the same contract MR.STORE's own

@@ -36,6 +36,37 @@ button { font: inherit; cursor: pointer; }
 .topbar > button, .top-right > button { border-radius: 12px; padding: 9px 16px; font-weight: 600; }
 .gol-btn { font-weight: 800 !important; }
 
+/* ---------- settings dropdown (counter operations, one menu) ---------- */
+.setmenu { position: relative; }
+#settingsBtn { border-radius: 12px; padding: 9px 16px; font-weight: 600; font: inherit; cursor: pointer; }
+.setmenu-pop { position: absolute; right: 0; top: calc(100% + 8px); width: 330px; max-width: 92vw; z-index: 30;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--panel-radius);
+  box-shadow: var(--cart-shadow); padding: 8px 10px; color: var(--ink); text-align: left; }
+.sm-row { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 4px; border-bottom: 1px dashed var(--line); }
+.sm-row.sm-last { border-bottom: none; }
+.sm-main { min-width: 0; }
+.sm-label { display: block; font-weight: 700; font-size: 14.5px; }
+.sm-sub { display: block; font-size: 12.5px; color: var(--dim); margin-top: 1px; }
+.sm-act { flex: none; border: none; border-radius: 10px; padding: 9px 13px; font-weight: 700; cursor: pointer;
+  background: linear-gradient(135deg, #5b93ff, #2563eb); color: #fff; font: inherit; font-size: 13.5px; }
+.sm-act.armed { background: #b91c1c; }
+.sm-act:disabled { opacity: .45; cursor: not-allowed; }
+.sm-toggle { flex: none; min-width: 76px; border-radius: 999px; padding: 8px 14px; font-weight: 700; cursor: pointer;
+  border: 1px solid var(--line); background: var(--field-bg); color: var(--dim); font: inherit; font-size: 13.5px; }
+.sm-toggle.on { background: linear-gradient(135deg, #5b93ff, #2563eb); color: #fff; border-color: transparent; }
+.sm-note { font-size: 13.5px; line-height: 1.45; padding: 9px 6px 3px; color: var(--ink); }
+.sm-pin { display: block; background: none; border: none; padding: 5px 6px 8px; color: var(--price);
+  font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; text-align: left; }
+.status-dot.closed { background: #ef4444 !important; box-shadow: 0 0 8px rgba(239,68,68,.65) !important; }
+.tax-badge { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 1.2px;
+  background: #dc2626; color: #fff; padding: 2px 7px; border-radius: 999px; vertical-align: 2px; margin-left: 5px; }
+/* per-theme seats for the Settings button (the .top-right > button rules
+   do not reach it — it sits inside .setmenu) */
+[data-theme="midnight"] #settingsBtn { border: 1px solid var(--line); background: #0e1b38; color: var(--ink); }
+[data-theme="clean"] #settingsBtn { border: 1px solid #d5e4f8; background: #fff; color: var(--ink); }
+[data-theme="bold"] #settingsBtn { border: 1.5px solid rgba(255,255,255,.45); background: rgba(255,255,255,.1); color: #fff; border-radius: 999px; padding: 10px 17px; }
+
 /* ---------- theme switcher ---------- */
 .theme-switch { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--switch-bg); border: 1px solid var(--switch-line); }
 .theme-switch button { display: inline-flex; align-items: center; gap: 6px; border: none; background: transparent; color: var(--switch-ink); padding: 6px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; }
@@ -356,9 +387,13 @@ button { font: inherit; cursor: pointer; }
 .os-grid label.os-chk { flex-direction: row; align-items: center; gap: 8px; }
 .os-grid input[type="text"], .os-grid select { padding: 7px 9px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; }
-#osSave, #repClose { border-radius: 10px; padding: 9px 15px; font-weight: 700; border: none;
+#osSave, #dayCloseBtn { border-radius: 10px; padding: 9px 15px; font-weight: 700; border: none;
   background: linear-gradient(135deg, #5b93ff, #2563eb); color: #fff; cursor: pointer; }
-#repClose.armed { background: #b91c1c; }
+#dayCloseBtn.armed { background: #b91c1c; }
+/* Close the day sits at the TOP of the owner panel, under the summary —
+   daily actions first, sit-down settings below (owner directive, Oct 28). */
+.owner-close-day { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 12px 0 2px; }
+.ocd-result { font-size: 13.5px; color: var(--dim); }
 #osSaved { font-size: 13px; color: var(--dim); }
 .rep-tabs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
 .rep-tabs button { border-radius: 999px; padding: 7px 13px; border: 1px solid var(--line);
@@ -371,7 +406,6 @@ button { font: inherit; cursor: pointer; }
 .rep-row b { min-width: 74px; }
 .rep-total { font-size: 15px; }
 .rep-closed { color: #34d399; font-style: normal; font-weight: 700; }
-#reportBody #repClose { margin-top: 10px; }
 
 /* ---------- Receipt Loyalty customer page (web/loyalty.html) ---------- */
 /* A standalone mobile page in the one Gol identity: blue header, white

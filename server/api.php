@@ -5,6 +5,8 @@
 // Cash sales may carry the amount tendered; the server calculates change
 // and refuses an under-tendered sale instead of recording a false total.
 // GET  ?summary             -> today's summary
+// GET  ?batch               -> unbatched card segment + today's batches
+// GET  ?last_sale           -> today's most recent sale (reprint), or null
 // GET  ?pending             -> the staged card, if any
 // GET  ?settings            -> receipt print settings (one store, two doors)
 // POST {settings:{...}}     -> owner panel form save, same store
@@ -49,6 +51,26 @@ if ($method === 'GET' && isset($_GET['feed'])) {
     // The demo store's social feed — posters Gol staged and the owner
     // confirmed with "gol". Fictional demo content only.
     echo json_encode(golpos_read('feed.json', []), JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($method === 'GET' && isset($_GET['batch'])) {
+    // The Settings dropdown's batch row: the unbatched card segment exactly
+    // as the Gol chat stages it (ALL unbatched card sales, any day) plus
+    // today's sealed batches.
+    $seg = golpos_unbatched_card_sales();
+    $segTotal = 0.0; foreach ($seg as $s) { $segTotal += (float)($s['total'] ?? 0); }
+    echo json_encode(['unbatched' => ['count' => count($seg), 'total' => round($segTotal, 2)],
+                      'batches_today' => golpos_batches_on(date('Y-m-d'))],
+                     JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($method === 'GET' && isset($_GET['last_sale'])) {
+    // The most recent sale rung TODAY (the reprint source), or null.
+    $today = date('Y-m-d'); $last = null;
+    foreach (golpos_sales() as $s) {
+        if (substr((string)($s['at'] ?? ''), 0, 10) === $today) { $last = $s; }
+    }
+    echo json_encode($last, JSON_UNESCAPED_UNICODE);
     exit;
 }
 if ($method === 'GET' && isset($_GET['settings'])) {
@@ -115,6 +137,13 @@ if ($method === 'POST') {
     }
     $sale = $in['sale'] ?? null;
     if (is_array($sale) && !empty($sale['lines'])) {
+        // A closed store refuses new sales at the door — the register's
+        // own message, so any client hears the same plain words.
+        if ((golpos_settings()['register_open'] ?? true) === false) {
+            http_response_code(422);
+            echo json_encode(['error' => 'Store is closed — open it from Settings']);
+            exit;
+        }
         $catalog = golpos_catalog();
         $bySku = [];
         foreach ($catalog['products'] as $p) { $bySku[$p['sku']] = $p; }
@@ -133,13 +162,17 @@ if ($method === 'POST') {
             exit;
         }
         $taxRate = (float)($catalog['store']['tax_rate'] ?? 0.0);
-        $tax = round($subtotal * $taxRate, 2);
+        // Tax exempt is a per-sale flag from the register's Settings menu:
+        // this sale records no tax; nothing about it persists to the next.
+        $taxExempt = !empty($sale['tax_exempt']);
+        $tax = $taxExempt ? 0.0 : round($subtotal * $taxRate, 2);
         $total = round($subtotal + $tax, 2);
         $tender = ($sale['tender'] ?? 'cash') === 'card' ? 'card' : 'cash';
         $recordData = [
             'lines' => $lines, 'subtotal' => round($subtotal, 2), 'tax' => $tax,
             'total' => $total, 'tender' => $tender,
         ];
+        if ($taxExempt) { $recordData['tax_exempt'] = true; }
         if ($tender === 'cash') {
             // No tendered amount from an older client means exact cash; an
             // explicit amount must cover the total before anything records.

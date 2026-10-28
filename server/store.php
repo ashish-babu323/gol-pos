@@ -201,6 +201,11 @@ function golpos_settings_defaults(): array {
         'store_open'   => '08:00',
         'store_close'  => '21:00',
         'batch_mode'   => 'manual',
+        // Register open/closed (owner directive, Oct 28): the Settings
+        // dropdown's Store toggle. Closed pauses NEW sales — the register
+        // blocks the tap and the sale endpoint refuses the POST — while
+        // chat, browsing and the owner panel keep working.
+        'register_open' => true,
     ];
 }
 
@@ -213,7 +218,7 @@ function golpos_settings(): array {
 // are ignored rather than stored — a settings file is never a junk drawer.
 function golpos_save_settings(array $in): array {
     $cur = golpos_settings();
-    foreach (['show_address', 'show_phone', 'logo', 'show_tax', 'auto_open'] as $k) {
+    foreach (['show_address', 'show_phone', 'logo', 'show_tax', 'auto_open', 'register_open'] as $k) {
         if (array_key_exists($k, $in)) { $cur[$k] = (bool)$in[$k]; }
     }
     foreach (['store_name' => 60, 'address' => 120, 'phone' => 40, 'footer' => 120] as $k => $max) {
