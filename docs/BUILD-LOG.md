@@ -997,3 +997,70 @@ One entry per day; the git history carries the same dates.
   staged card always shows the catalog name it matched, so a
   mis-match is visible before "gol", never silent — but the
   resolver's owners should dedupe its token multiset.
+
+## Day 3 (Oct 28) — Register money polish: the list scrolls, the pad counts cents, cards can carry a surcharge (8e7ec18)
+
+- Three owner directives from live testing, one pass. (1) The
+  Keypad pane's product list stretched the page instead of
+  scrolling: the pane is now BOUNDED — height calc(100dvh −
+  var(--cart-top) − 118px), the sticky-header offset each theme
+  already carries, minus layout padding and the tab row — so the
+  flex chain (.kp-side / .kp-list, min-height: 0 throughout) gives
+  the list the pane's height and it scrolls inside its own column
+  under a slim register-dress scrollbar (8px webkit thumb in
+  --line, scrollbar-color to match). The pad never moves or
+  shrinks; the Products grid pane is untouched; at ≤1100px the
+  stacked pane un-bounds (height: auto) and the list keeps its
+  bounded 400px scroll.
+- (2) The Keypad took decimal typing — 2, 9, 9 read $299.00. The
+  amount model is now an integer CENTS buffer, ATM-style: digits
+  shift in as cents (2 → $0.02, 9 → $0.29, 9 → $2.99), the "." key
+  is a "00" key (two zeros within the cap), ⌫ drops the last digit,
+  C clears, and six digits cap the buffer at $9,999.99 — the
+  server's manual-amount limit, so an over-cap amount cannot even
+  be keyed. Physical keyboard follows the same model ("." ignored;
+  Backspace/Enter as before). Add · TAXABLE / NON-TAX build the
+  manual line from the buffer exactly as before; the cash-tender
+  panel is a different component and is untouched.
+- (3) Card surcharge: a new setting `card_surcharge_pct` (default
+  0, validated 0–10 at one decimal) in the ONE settings store
+  (golpos_settings_defaults + the save whitelist), edited from the
+  Owner panel's settings card (percent input, microcopy "added to
+  card sales only"; the field re-reads the stored value after save,
+  so a rejected 11 never poses as set). The sale endpoint computes
+  the surcharge ITSELF from the saved setting — round((subtotal +
+  tax) × pct / 100, 2) — for card sales only, records `surcharge`
+  (+ `surcharge_pct` for display) and folds it into the total, so
+  the day summary's card figure is the paid figure. The client
+  never sends a figure (a posted surcharge of 99 lands as the
+  computed 0.22). While a card payment is being taken (the Card
+  tap), the totals panel shows "Card surcharge (3%)" and the paid
+  total; the receipt prints the line, the Transactions expansion
+  shows it, and mrstore_append_ticket passes it into the journal
+  ticket's own `surcharge` field (inside total/card as well, as
+  the ticket's card field expects). Cash never carries it; at the
+  default 0% the sale record is byte-identical to before.
+- Verified on throwaway copies only (nothing deployed): PHP
+  battery over real HTTP, 37/37 — setting default/save/read-back,
+  11 and −1 rejected, 2.5 saves; Beat-1 card at 3% (6.67 + 0.53 →
+  surcharge 0.22 → total 7.42) recorded with the surcharge; cash
+  Beat-1 exact (7.20, $2.80 change, no surcharge key); client-sent
+  surcharge ignored; a manual $2.99 line taxes 0.24 and surcharges
+  on the taxed total; ?history round-trips the figure; the day
+  summary's card total includes it; at 0% the card record has no
+  surcharge key and the old totals; link mode on a stub bridge —
+  the captured journal ticket carries surcharge 0.22 with card =
+  total = 7.42 and named lines (cash ticket carries 0). JS
+  battery — the real app.js under a stub DOM against the real
+  server, 38/38 — the full cents-shift keypad set (2,9,9 → $2.99 →
+  line tax 0.24 → total 3.23; 1,0,0,0 → $10.00 → $10.80; 5,"00" →
+  $5.00; seven digits refused at the cap; ⌫ → $0.29; C → $0.00 and
+  Add refused at zero; physical digits/Backspace, "." ignored);
+  the card flow (row hidden before tender, the Card tap painting
+  label + $0.22 + $7.42 before the sale lands, receipt and history
+  expansion carrying the line); cash exact with no surcharge
+  anywhere; grid + keypad-list rendering and both PIN gates
+  unregressed. CSS assertions on the shipped sheet, 15/15 — the
+  bounded chain, the scrollbar dress, no fixed pixel heights on
+  the list column outside the breakpoint rule, keys unshrunk.
+  php -l / node --check clean. Nothing deployed.
