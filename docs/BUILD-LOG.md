@@ -600,3 +600,46 @@ One entry per day; the git history carries the same dates.
   clean archive of dc1c5e1. php -l / node --check clean. No stamp bump:
   the only client asset in the fix (app.js qty) already shipped inside
   5e2e56f and index.html already points at it; PHP serves uncached.
+
+## Day 3 (Oct 28) — Keypad-pane product list: the shelf beside the pad (ff6a208)
+- Keypad-pane product list (owner directive, Oct 28: "yo khali bich ma
+  products list dami prama" — the pad sat in the left of its pane with
+  empty white beside it): the pane is now two columns, the pad at its
+  full size (track capped at 520px, keys byte-identical) and the live
+  product list filling the remaining width. At the existing 1100px
+  layout breakpoint the pane stacks — pad first, list below with a
+  bounded 400px internal scroll; no fixed pixel widths anywhere in
+  the list column, so nothing can overflow horizontally.
+- Rows are the living shelf in miniature, not a second inventory:
+  compact category chips (the pane's own filter, list only) over
+  tappable rows — packshot thumb, name, price, state dot + count, and
+  a thin 4px fill bar. One catalog, one stock model: the rows read
+  the same stockOf / parOf / stockState / isLiquid helpers as the
+  tiles, the fill animation was factored out of renderGrid into a
+  shared animateFills (one lastFill tracker serves both
+  presentations), a row tap runs the very same addToCart (OUT rows
+  dim and refuse with the "Out of stock" toast), and the list
+  re-renders on the same loadCatalog triggers as the grid (after
+  tender, on chat-drawer close, on staged-card confirms). The
+  keypad's own behavior — entry discipline, Add TAXABLE / NON-TAX,
+  physical keyboard — is untouched, and the Products tab is exactly
+  as it was.
+- Verified on a pristine archive of the build (real app.js under a
+  stub DOM whose querySelectorAll parses the rendered rows, against
+  the real PHP API): battery 41/41 — all 62 rows with signals
+  identical to the tiles for every sampled state (Coke liquid 75%,
+  Gum crit, Milk low, Eggs crit, Heineken liquid at exactly 50%,
+  Hot Dog OUT); row tap adds Coke at $2.19 with cart totals
+  2.19/0.18/2.37; OUT row refuses; after a 2× Coke card tender the
+  grid, the list and the server all agree on 16; the Drinks chip
+  filters the list to its 14 rows and leaves the grid untouched;
+  keypad regression (manual taxable $10 → 10/0.80/10.80) and Beat-1
+  (6.67/0.53/7.20) exact; layout asserted from the shipped CSS
+  (two-column template, 1100px stacking, keys unshrunk, list
+  overflow-y auto, zero fixed widths). node --check clean.
+  Nothing deployed.
+- Landed inside ff6a208: the Add Stock build committed while both
+  builds were uncommitted in the same three web files, so its commit
+  carries these hunks too (verified present in ff6a208's tree).
+  This entry registers the list build and bumps the asset stamps
+  to ff6a208, the commit whose tree contains it.
