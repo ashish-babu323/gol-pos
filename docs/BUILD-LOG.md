@@ -395,3 +395,46 @@ One entry per day; the git history carries the same dates.
   second segment (2 / $4.74) and sealed Batch #2 from the menu's
   ?pending state. node --check and php -l clean. Asset stamps bumped
   to 36f30c5.
+
+
+## Day 3 (Oct 28) — Owner panel redesign: cards, not a form wall (3c0998c)
+
+- Owner rejection of the panel's raw full-width form wall ("hawa UI")
+  answered presentation-only: the panel is now a plain column of cards
+  in the register's tile recipe (tile bg/border/radius/shadow vars, so
+  Midnight, Clean and Bold all carry it), under a title row — "Owner" +
+  the store name (#ownerStoreName mirrors the header pill).
+- Today card: the summary renders as four stat tiles (Gross · Cash ·
+  Card · Sales, big --num figures in --price) with the staged-card line
+  as a muted note under them; #ownerCloseDay stays directly under the
+  summary, inside the same card. Demo feed moved to its own card
+  (new #ownerFeed container in index.html; the owner handler renders
+  the feed there instead of appending it to the summary). Receipt
+  Loyalty is its own card; empty states ("No staged cards waiting",
+  "No loyalty receipts yet", empty feed) are quiet .owner-muted lines
+  inside their cards.
+- Print settings card: .os-grid is now 3 columns (2 at ≤900px, 1 at
+  ≤560px), labels above fields in the register's field language (time
+  inputs styled too — they were bare before), checkbox rows as pill
+  rows with accent-colored boxes; Save stays brand-gradient.
+  Reports card: period chips now mirror the category chips exactly
+  (gradient .on state), the date input in field dress, rows keep the
+  dashed separators with blue tabular figures.
+- Zero behavior change: every panel id and JS hook preserved
+  (app.js edits are rendered-markup strings only — tiles, card titles,
+  muted classes, the feed's new container). No server changes.
+- Verified on a throwaway copy (php -S + a Node harness running the
+  real app.js under a stub DOM against the real API): 18/18 runtime
+  checks — panel opens with the store name in the title row; tiles
+  carry the live figures of two rung sales ($8.50 gross · $3.77 cash ·
+  $4.73 card · 2 sales); feed and loyalty empty states render muted in
+  their own cards; all 14 settings fields + save render; a footer
+  change saves and reads back from the settings store; the week chip
+  switches the report and totals $8.50; Close the day arms, confirms,
+  writes the close record ($8.50) and re-renders as "Re-close today"
+  with the frozen summary; theme switch cycles midnight/clean/bold
+  cleanly. Static pass: every preserved id exactly once, panel order
+  head < today < close < feed < loyalty < settings < reports, every
+  CSS var the new rules consume defined in all three theme blocks
+  (--num via :root), ≤900px two-column and ≤560px one-column stacking.
+  node --check clean. Asset stamps bumped to 3c0998c.
