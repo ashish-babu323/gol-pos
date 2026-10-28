@@ -24,6 +24,8 @@ function setStanding(s) {
   $('stTotal').textContent = money(s.total);
   $('stCount').textContent = String(s.receipts);
   $('stRank').textContent = '#' + s.rank + ' of ' + s.of;
+  const cr = $('stCredit');
+  if (cr) { cr.textContent = money(s.credit || 0); }
 }
 async function loadBoard() {
   try {

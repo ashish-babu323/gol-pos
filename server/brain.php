@@ -692,6 +692,51 @@ $S = [
     'np' => 'Refund ahile chat bata chaldaina — refund lane Transactions bata chalne gari baniraheko chha, tyasaile sale record ustai chha ra mulya ma kehi chalaieena. Kehi badliena.',
     'hi' => 'Refund abhi chat se nahi chalta — refund lane Transactions se chalne ke liye ban raha hai, isliye sale record waisa hi hai aur daam nahi chhua gaya. Kuchh nahi badla.',
     'dev' => 'Refund अहिले chat बाट चल्दैन — refund lane Transactions बाट चल्ने गरी बनिरहेको छ, त्यसैले sale record उस्तै छ र मूल्यमा केही चलाइएन। केही बदलिएन।'],
+  'refund_off' => [
+    'en' => 'Refunds are OFF for this store right now — nothing was refunded. Turn them on with "refunds allowed on gara" (a settings card) first.',
+    'np' => 'Refund ahile pasal ko lagi OFF chha — kehi farkaieena. Pahile "refunds allowed on gara" bhanera khola (setting card aauchha).',
+    'hi' => 'Refund abhi is dukaan ke liye OFF hai — kuchh wapas nahi hua. Pehle "refunds allowed on" karke kholo (setting card aayega).',
+    'dev' => 'फिर्ता अहिले यस पसलका लागि बन्द छ — केही फर्काइएन। पहिले "refunds allowed on" भनेर खोल्नुस् (setting card आउँछ)।'],
+  'refund_none' => [
+    'en' => 'No refundable sale matches that — nothing staged. Refunds attach to a recorded sale inside the window; name the item, the day ("hijo ko"), the tender, or the amount and I\'ll find it.',
+    'np' => 'Tes sanga milne refund hune sale bhetiyena — kehi stage bhaena. Refund record bhayeko sale sanga matra jodinchha; item ko naam, din ("hijo ko"), cash/card, ki rakam bhana — ma khojchhu.',
+    'hi' => 'Us se milti koi refundable sale nahi mili — kuchh stage nahi hua. Refund sirf record ki gayi sale se judta hai; item ka naam, din ("kal ki"), cash/card, ya rakam batao — main dhoondhta hoon.',
+    'dev' => 'त्यससँग मिल्ने फिर्ता हुने बिक्री भेटिएन — केही stage भएन। फिर्ता record भएको बिक्रीसँग मात्र जोडिन्छ; item को नाम, दिन ("हिजोको"), cash/card, कि रकम भन — म खोज्छु।'],
+  'refund_which' => [
+    'en' => 'A few sales could be the one — which? Say "pahilo" / "dosro" or name the item:',
+    'np' => 'Kehi sale milna sakchha — kun? "Pahilo" / "dosro" bhana, ki item ko naam bhana:',
+    'hi' => 'Kuchh sales mil sakti hain — kaun si? "Pehli" / "dosri" bolo, ya item ka naam batao:',
+    'dev' => 'केही बिक्री मिल्न सक्छ — कुन? "पहिलो" / "दोस्रो" भन, कि item को नाम भन:'],
+  'refund_done' => [
+    'en' => 'Refunded %s — back to %s. The returned items are on the shelf again.',
+    'np' => '%s farkaiyo — %s ma gayo. Farkieka item shelf ma farkie.',
+    'hi' => '%s wapas ho gaya — %s par gaya. Wapas aaye item shelf par laut gaye.',
+    'dev' => '%s फर्काइयो — %s मा गयो। फर्केका item फेरि shelf मा छन्।'],
+  'refund_credit_back' => [
+    'en' => ' %s of it went back onto the customer\'s store credit.',
+    'np' => ' Tesma bata %s customer ko credit ma farkiyo.',
+    'hi' => ' Usmein se %s customer ke credit mein wapas gaya.',
+    'dev' => ' त्यसबाट %s customer को credit मा फर्कियो।'],
+  'credit_none' => [
+    'en' => 'No credit on this number — that phone has no credit record at this store.',
+    'np' => 'Yo number ma credit chhaina — yo phone ko credit record pasal ma chhaina.',
+    'hi' => 'Is number par credit nahi hai — is phone ka credit record is dukaan mein nahi hai.',
+    'dev' => 'यो नम्बरमा credit छैन — यो phone को credit record यस पसलमा छैन।'],
+  'credit_balance' => [
+    'en' => '%s — store credit balance %s. It spends at the till: ring the sale, tap Credit, and apply up to the balance.',
+    'np' => '%s — store credit balance %s chha. Till ma kharcha hunchha: sale ring gara, Credit thicha, ra balance samma lagau.',
+    'hi' => '%s — store credit balance %s hai. Till par kharch hota hai: sale ring karo, Credit dabao, aur balance tak lagao.',
+    'dev' => '%s — store credit balance %s छ। Till मा खर्च हुन्छ: sale ring गर, Credit थिच, र balance सम्म लगाऊ।'],
+  'credit_ask_phone' => [
+    'en' => 'Whose credit? Give me the phone number — the balance reads from the store\'s own records, and the spend itself happens at the till tender.',
+    'np' => 'Kasko credit? Phone number deu — balance pasal kai record bata padhinchha, ra kharcha till ko tender mai hunchha.',
+    'hi' => 'Kiska credit? Phone number do — balance dukaan ke apne record se padha jata hai, aur kharch till ke tender par hi hota hai.',
+    'dev' => 'कसको credit? Phone number देऊ — balance पसलकै record बाट पढिन्छ, र खर्च till को tender मै हुन्छ।'],
+  'credit_link' => [
+    'en' => 'This register is linked to MR.STORE — the Festival balance lives MR.STORE-side and the register\'s credit spend lane for linked stores is still being wired. Nothing was spent.',
+    'np' => 'Yo register MR.STORE sanga jodieko chha — Festival balance MR.STORE tira chha, ra linked pasal ko lagi register bata credit kharcha garne lane ajhai baniraheko chha. Kehi kharcha bhaena.',
+    'hi' => 'Yeh register MR.STORE se juda hai — Festival balance MR.STORE ki taraf hai, aur linked dukaan ke liye register se credit kharch ka lane abhi ban raha hai. Kuchh kharch nahi hua.',
+    'dev' => 'यो register MR.STORE सँग जोडिएको छ — Festival balance MR.STORE तिर छ, र linked पसलका लागि register बाट credit खर्च गर्ने lane अझै बनिरहेको छ। केही खर्च भएन।'],
   'stock_one_local' => [
     'en' => '%s — %s on hand (this register\'s own shelf).',
     'np' => '%s — %s ota chha (yahi register ko shelf).',
@@ -924,6 +969,10 @@ function golpos_setting_label(string $key): string {
       'batch_mode'   => ['en' => 'Batch close mode', 'np' => 'Batch close mode', 'hi' => 'Batch close mode', 'dev' => 'ब्याच क्लोज मोड'],
       'card_surcharge_pct' => ['en' => 'Card surcharge', 'np' => 'Card surcharge', 'hi' => 'Card surcharge', 'dev' => 'कार्ड सरचार्ज'],
       'watch_frame'  => ['en' => 'Camera frame on cash sales', 'np' => 'Cash sale ma camera frame', 'hi' => 'Cash sale par camera frame', 'dev' => 'नगद बिक्रीमा क्यामेरा फ्रेम'],
+      'refunds_allowed' => ['en' => 'Refunds allowed', 'np' => 'Refund khula', 'hi' => 'Refund khula', 'dev' => 'फिर्ता खुला'],
+      'refund_pin'   => ['en' => 'Refund PIN', 'np' => 'Refund ma PIN', 'hi' => 'Refund par PIN', 'dev' => 'फिर्तामा PIN'],
+      'refund_window_days' => ['en' => 'Refund window', 'np' => 'Refund ko samaya (din)', 'hi' => 'Refund window (din)', 'dev' => 'फिर्ता अवधि (दिन)'],
+      'credit_redeem' => ['en' => 'Credit redeem at the till', 'np' => 'Till ma credit chalaune', 'hi' => 'Till par credit', 'dev' => 'टिलमा क्रेडिट चलाउने'],
     ];
     return $map[$key][$L] ?? $map[$key]['en'] ?? $key;
 }
@@ -934,7 +983,8 @@ function golpos_time12(string $hhmm): string {
 }
 function golpos_setting_display(string $key, $v): string {
     if (in_array($key, ['show_address', 'show_phone', 'show_tax'], true)) { return golpos_shown((bool)$v); }
-    if (in_array($key, ['logo', 'auto_open', 'watch_frame'], true)) { return golpos_onoff((bool)$v); }
+    if (in_array($key, ['logo', 'auto_open', 'watch_frame', 'refunds_allowed', 'refund_pin', 'credit_redeem'], true)) { return golpos_onoff((bool)$v); }
+    if ($key === 'refund_window_days') { return (string)(int)$v . ((int)$v === 1 ? ' day' : ' days'); }
     if ($key === 'card_surcharge_pct') { return rtrim(rtrim(number_format((float)$v, 1, '.', ''), '0'), '.') . '%'; }
     if ($key === 'copies') { return (string)(int)$v; }
     if ($key === 'store_open' || $key === 'store_close') { return golpos_time12((string)$v); }
@@ -959,6 +1009,11 @@ function golpos_settings_read_reply(): string {
     $lines[] = '• ' . golpos_setting_label('card_surcharge_pct') . ': '
         . golpos_setting_display('card_surcharge_pct', $s['card_surcharge_pct']);
     $lines[] = '• ' . golpos_setting_label('watch_frame') . ': ' . golpos_onoff((bool)$s['watch_frame']);
+    $lines[] = '• ' . golpos_setting_label('refunds_allowed') . ': ' . golpos_onoff((bool)$s['refunds_allowed']);
+    $lines[] = '• ' . golpos_setting_label('refund_pin') . ': ' . golpos_onoff((bool)$s['refund_pin']);
+    $lines[] = '• ' . golpos_setting_label('refund_window_days') . ': '
+        . golpos_setting_display('refund_window_days', $s['refund_window_days']);
+    $lines[] = '• ' . golpos_setting_label('credit_redeem') . ': ' . golpos_onoff((bool)$s['credit_redeem']);
     return implode("\n", $lines);
 }
 // Stage one settings change as a card (old -> new). A value that already
@@ -1064,11 +1119,24 @@ function golpos_pin_shaped(string $msg): ?string {
 // Shared by the gate and the dispatch, like every access matcher: the
 // gate must classify a message exactly as the dispatch will treat it.
 
-// A refund ask. Refunds are specced to run from Transactions; until
-// that lane lands, a refund word must NEVER fall into the price lane
-// (alive audit #53: "coke ko refund gara" staged a price question).
+// A refund ask. Refunds run from Transactions and from this chat lane
+// (the same staged card, the same executor); a refund word must NEVER
+// fall into the price lane (alive audit #53: "coke ko refund gara"
+// staged a price question).
 function golpos_is_refund_ask(string $msg): bool {
     return preg_match('/(refund|refand|farkau|farkaine|फिर्ता|रिफन्ड)/iu', $msg) === 1;
+}
+
+// A store-credit ask: a balance read ("credit kati chha?", a phone
+// number with "credit") or the credit_redeem setting's toggle words.
+// Bare "credit card" talk is tender talk, not this lane — and the card
+// surcharge lane never says "credit", so the two cannot collide.
+function golpos_is_credit_ask(string $msg): bool {
+    if (!preg_match('/(credit|points?|क्रेडिट|पोइन्ट)/iu', $msg)) { return false; }
+    $hasPhone = preg_match('/\d{7,}/', golpos_norm_digits($msg)) === 1;
+    if (preg_match('/\bcard\b/iu', $msg) && !$hasPhone) { return false; }
+    return $hasPhone
+        || preg_match('/(kati|how much|balance|check|kha|chha|baki|redeem|spend|off|on|bandha|khola|कति|बाँकी)/iu', $msg) === 1;
 }
 
 // Parse an assignment: "<name> lai bhandeu / kam deu: <tasks…>". The
@@ -1559,6 +1627,10 @@ function golpos_card_summary(array $card): string {
                 . ', system ' . (isset($card['system']) && $card['system'] !== null ? $qty($card['system']) : '—');
         case 'batch_close':
             return 'batch close — ' . (int)($card['count'] ?? 0) . ' card sales, ' . money((float)($card['total'] ?? 0));
+        case 'refund':
+            return 'refund — sale ' . ($card['sale_id'] ?? '') . ' (' . ($card['sale_when'] ?? '') . '): '
+                . money((float)($card['total'] ?? 0)) . ' back to ' . ($card['back_to'] ?? 'the original tender')
+                . ' · ' . ($card['lines_label'] ?? '');
         case 'bill':
             return 'bill — ' . money((float)($card['total'] ?? 0));
         case 'order_prep':
@@ -2583,6 +2655,218 @@ function golpos_emp_card_apply_edits(array $card, string $msg): bool {
         . ' Say "gol" to add + invite, or keep editing.', 'card' => $card]);
 }
 
+// --- refunds + customer credit (owner directive, Oct 28) ----------------------
+// One refund, two doors: Transactions stages it from the sale row, this
+// lane stages the SAME card from words ("hijo ko tyo sale refund
+// gara"), and both execute through golpos_execute_refund. The lane
+// finds the sale by the hints a person actually gives — the day, the
+// item, the tender, the amount — and when more than one sale fits, it
+// ASKS with the list and remembers it (refund_await): a guess is never
+// refunded. Policy lives in the settings store and changes through the
+// setting_change card like every other setting.
+
+function golpos_refund_await_set(?array $await): void {
+    $id = (string)($GLOBALS['golpos_session_id'] ?? '');
+    if ($id === '') { return; }
+    $s = golpos_session($id);
+    $s['refund_await'] = $await;
+    golpos_save_session($id, $s);
+}
+
+function golpos_refund_await_get(): ?array {
+    $id = (string)($GLOBALS['golpos_session_id'] ?? '');
+    if ($id === '') { return null; }
+    $s = golpos_session($id);
+    $a = $s['refund_await'] ?? null;
+    return is_array($a) && !empty($a['ids']) ? $a : null;
+}
+
+// A sale can still take a refund when at least one line has units left.
+function golpos_refund_sale_open(array $sale): bool {
+    $prior = golpos_refunds_for_sale((string)($sale['id'] ?? ''));
+    if (!$prior) { return true; }
+    foreach ((array)($sale['lines'] ?? []) as $i => $l) {
+        if (!is_array($l)) { continue; }
+        [$q] = golpos_refunded_on_line($prior, golpos_sale_line_key($l, (int)$i));
+        if ((int)($l['qty'] ?? 1) - $q > 0) { return true; }
+    }
+    return false;
+}
+
+function golpos_refund_policy_line(): string {
+    $s = golpos_settings();
+    return golpos_setting_label('refunds_allowed') . ': ' . golpos_onoff((bool)$s['refunds_allowed'])
+        . ' · ' . golpos_setting_label('refund_pin') . ': ' . golpos_onoff((bool)$s['refund_pin'])
+        . ' · ' . golpos_setting_label('refund_window_days') . ': '
+        . golpos_setting_display('refund_window_days', $s['refund_window_days'])
+        . ' · ' . golpos_setting_label('credit_redeem') . ': ' . golpos_onoff((bool)$s['credit_redeem']);
+}
+
+// Stage the refund card for one sale (full remaining — line-level
+// picks live on the Transactions sheet, where the lines are visible).
+function golpos_stage_refund(array $sale): void {
+    $q = golpos_refund_quote($sale, null);
+    if (isset($q['error'])) { out(['reply' => $q['error']]); }
+    $names = [];
+    foreach ($q['lines'] as $l) { $names[] = (string)$l['name'] . ' ×' . (int)$l['qty']; }
+    $back = [];
+    foreach (['cash' => 'cash', 'card' => 'card', 'credit' => 'store credit'] as $k => $lbl) {
+        if ((float)($q['tenders'][$k] ?? 0) > 0) { $back[] = $lbl; }
+    }
+    $card = golpos_stage(['type' => 'refund', 'sale_id' => (string)($sale['id'] ?? ''),
+        'sale_when' => date('g:i A, M j', strtotime((string)($sale['at'] ?? '')) ?: time()),
+        'picks' => null, 'total' => $q['total'],
+        'back_to' => implode(' + ', $back), 'lines_label' => implode(', ', $names)]);
+    out(['reply' => t('card_staged'), 'card' => $card]);
+}
+
+// Consume a pick from the waiting candidate list ("dosro", "2", or a
+// distinguishing item name). Returns true when the message WAS a pick
+// (the staged card has already answered); false lets dispatch run on.
+function golpos_refund_await_pick(string $msg, array $products): bool {
+    $await = golpos_refund_await_get();
+    if ($await === null) { return false; }
+    $ids = array_map('strval', (array)$await['ids']);
+    $pick = null;
+    $ord = golpos_ordinal_in($msg);
+    if ($ord !== null && isset($ids[$ord - 1])) { $pick = $ids[$ord - 1]; }
+    if ($pick === null && preg_match('/^\s*(\d{1,2})\s*[.!]?\s*$/', golpos_norm_digits(trim($msg)), $mm)) {
+        if (isset($ids[(int)$mm[1] - 1])) { $pick = $ids[(int)$mm[1] - 1]; }
+    }
+    if ($pick === null) {
+        $r = resolve_item($products, $msg);
+        if (!empty($r['one'])) {
+            foreach ($ids as $id) {
+                $s = golpos_sale_by_id($id);
+                if ($s === null) { continue; }
+                foreach ((array)($s['lines'] ?? []) as $l) {
+                    if (is_array($l) && (string)($l['sku'] ?? '') === (string)$r['one']['sku']) {
+                        $pick = $id; break 2;
+                    }
+                }
+            }
+        }
+    }
+    if ($pick === null) { return false; }
+    golpos_refund_await_set(null);
+    $s = golpos_sale_by_id($pick);
+    if ($s === null) { return false; }
+    golpos_stage_refund($s);
+    return true; // unreachable — staging answers
+}
+
+function golpos_refund_lane(string $msg, array $products): void {
+    $st = golpos_settings();
+    $off = golpos_wants_off($msg);
+    // Policy sub-lane: the refund settings read and change here, ahead
+    // of any sale finding — "refund pin off gara" is a settings card,
+    // never a sale search.
+    if (preg_match('/\bpin\b/iu', $msg) && $off !== null) {
+        golpos_stage_setting('refund_pin', !$off);
+    }
+    if (preg_match('/(window|samaya|अवधि)/iu', $msg)) {
+        if (preg_match('/(\d{1,3})/', golpos_norm_digits($msg), $mm)
+            && preg_match('/(gara|rakha|rakh|set|change|make|गर|राख)/iu', $msg)) {
+            $days = (int)$mm[1];
+            if ($days > 365) { out(['reply' => 'The refund window runs 0–365 days — that number is outside it, nothing staged.']); }
+            golpos_stage_setting('refund_window_days', $days);
+        }
+        out(['reply' => golpos_refund_policy_line()]);
+    }
+    if (preg_match('/(setting|policy|allowed)/iu', $msg)
+        || ($off !== null && !preg_match('/\bpin\b/iu', $msg))
+        || (preg_match('/\b(pin|window)\b/iu', $msg)
+            && preg_match('/(kati|how|what|ke|कति)/iu', $msg))) {
+        // An on/off word aimed at refunds (and not at the PIN, carved
+        // out above) IS the switch ask — "refunds off gara" stages the
+        // refunds_allowed card; no one has to say the word "allowed".
+        if ($off !== null && !preg_match('/\bpin\b/iu', $msg)) {
+            golpos_stage_setting('refunds_allowed', !$off);
+        }
+        out(['reply' => golpos_refund_policy_line()]);
+    }
+    if (empty($st['refunds_allowed'])) { out(['reply' => t('refund_off')]); }
+    // Find the sale: window-eligible, still refundable, newest first —
+    // then the person's own hints (day, amount, tender, item) narrow it.
+    $window = (int)($st['refund_window_days'] ?? 30);
+    $todayStart = strtotime(date('Y-m-d'));
+    $list = [];
+    foreach (array_reverse(golpos_sales()) as $s) {
+        $age = ($todayStart - strtotime(substr((string)($s['at'] ?? ''), 0, 10))) / 86400;
+        if ($age > $window || !golpos_refund_sale_open($s)) { continue; }
+        $list[] = $s;
+        if (count($list) >= 100) { break; }
+    }
+    if (preg_match('/(hijo|yesterday|हिजो)/iu', $msg)) {
+        $y = date('Y-m-d', strtotime('-1 day'));
+        $list = array_values(array_filter($list,
+            static fn($s) => substr((string)($s['at'] ?? ''), 0, 10) === $y));
+    }
+    $amt = null;
+    if (preg_match('/\$\s*(\d+(?:\.\d{1,2})?)/u', $msg, $m)) { $amt = (float)$m[1]; }
+    elseif (preg_match('/(\d+(?:\.\d{1,2})?)\s*(?:\$|dollar)/iu', $msg, $m)) { $amt = (float)$m[1]; }
+    if ($amt !== null) {
+        $list = array_values(array_filter($list,
+            static fn($s) => abs((float)($s['total'] ?? 0) - $amt) < 0.005));
+    }
+    if (preg_match('/\bcard\b/iu', $msg)) {
+        $list = array_values(array_filter($list,
+            static fn($s) => golpos_sale_tenders($s)['card'] > 0));
+    }
+    if (preg_match('/\bcash\b/iu', $msg)) {
+        $list = array_values(array_filter($list,
+            static fn($s) => golpos_sale_tenders($s)['cash'] > 0));
+    }
+    $r = resolve_item($products, $msg);
+    if (!empty($r['one'])) {
+        $sku = (string)$r['one']['sku'];
+        $list = array_values(array_filter($list, static function ($s) use ($sku) {
+            foreach ((array)($s['lines'] ?? []) as $l) {
+                if (is_array($l) && (string)($l['sku'] ?? '') === $sku) { return true; }
+            }
+            return false;
+        }));
+    }
+    if (!$list) { out(['reply' => t('refund_none')]); }
+    $latest = preg_match('/(last|bharkhar|just|recent|ahile|भर्खर|अहिले)/iu', $msg) === 1;
+    if (count($list) === 1 || $latest) { golpos_stage_refund($list[0]); }
+    // Ambiguous: name the candidates and remember the list — the pick
+    // ("dosro", an item name) stages from the await, never a guess.
+    $show = array_slice($list, 0, 5);
+    golpos_refund_await_set(['ids' => array_map(static fn($s) => (string)($s['id'] ?? ''), $show),
+                             'at' => date('c')]);
+    $lines = [t('refund_which')];
+    foreach ($show as $i => $s) {
+        $names = [];
+        foreach ((array)($s['lines'] ?? []) as $l) {
+            if (is_array($l)) { $names[] = (string)($l['name'] ?? '') . ' ×' . (int)($l['qty'] ?? 1); }
+        }
+        $lines[] = ($i + 1) . '. ' . date('g:i A, M j', strtotime((string)($s['at'] ?? '')) ?: time())
+            . ' · ' . implode(', ', $names) . ' — ' . money((float)($s['total'] ?? 0))
+            . ' (' . (string)($s['tender'] ?? 'cash') . ')';
+    }
+    out(['reply' => implode("\n", $lines)]);
+}
+
+// The credit lane: balance reads and the credit_redeem toggle. The
+// spend itself happens ONLY at the till tender (the Credit button) —
+// chat reads the store's records and says whose balance it is.
+function golpos_credit_lane(string $msg): void {
+    $off = golpos_wants_off($msg);
+    if (preg_match('/(redeem|spend|chalaune|चलाउने)/iu', $msg) && $off !== null) {
+        golpos_stage_setting('credit_redeem', !$off);
+    }
+    $digits = preg_replace('/\D+/', '', golpos_norm_digits($msg)) ?? '';
+    if (strlen($digits) >= 7) {
+        if (golpos_link_on()) { out(['reply' => t('credit_link')]); }
+        $acct = golpos_credit_account($digits);
+        if ($acct === null) { out(['reply' => t('credit_none')]); }
+        out(['reply' => t('credit_balance',
+            $acct['name'] !== '' ? $acct['name'] : $acct['phone'], money((float)$acct['balance']))]);
+    }
+    out(['reply' => t('credit_ask_phone')]);
+}
+
 // --- the dispatch -------------------------------------------------------------
 // Every intent below runs through this one function so the access layer (the
 // boot code at the bottom of this file) can replay the owner's original
@@ -2688,6 +2972,35 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
         if (!$seg) { out(['reply' => t('batch_none')]); }
         $b = golpos_seal_batch($seg, 'manual');
         out(['reply' => t('batch_done', $b['n'], $b['count'], money((float)$b['total'])), 'done' => $card]);
+    }
+    // A refund card: ONE execution path with the Transactions sheet
+    // (golpos_execute_refund) — the quote is recomputed at execution,
+    // so a card can never spend stale state, refund a line twice, or
+    // slip past the window. The gate holds this confirm to the admin
+    // PIN exactly when the store's refund_pin setting says so.
+    if ($card['type'] === 'refund') {
+        $target = golpos_sale_by_id((string)($card['sale_id'] ?? ''));
+        golpos_clear_pending();
+        if ($target === null) { out(['reply' => t('card_fail')]); }
+        $sidNow = (string)($GLOBALS['golpos_session_id'] ?? '');
+        $sessNow = $sidNow !== '' ? golpos_session($sidNow) : [];
+        $byName = (string)($sessNow['unlocked_name'] ?? '');
+        $byEmail = (!empty($sessNow['unlocked_by']) && $sessNow['unlocked_by'] !== 'admin')
+            ? (string)$sessNow['unlocked_by'] : '';
+        $res = golpos_execute_refund($target, $card['picks'] ?? null, $byName, $byEmail);
+        if (isset($res['error'])) { out(['reply' => $res['error']]); }
+        $rec = $res['refund'];
+        $parts = [];
+        foreach (['cash' => 'cash', 'card' => 'card', 'credit' => 'store credit'] as $k => $lbl) {
+            if ((float)($rec['tenders'][$k] ?? 0) > 0) {
+                $parts[] = money((float)$rec['tenders'][$k]) . ' to ' . $lbl;
+            }
+        }
+        $reply = t('refund_done', money((float)$rec['total']), implode(' + ', $parts) ?: 'the original tender');
+        if (!empty($rec['credit_restored'])) {
+            $reply .= t('refund_credit_back', money((float)$rec['credit_restored']));
+        }
+        out(['reply' => $reply, 'done' => $card]);
     }
     // An employee-remove card: the record leaves the people store.
     if ($card['type'] === 'employee_add') {
@@ -2905,11 +3218,25 @@ if (preg_match('/(poster|banner)/iu', $msg) ||
 }
 
 // --- refunds: never the price lane (alive audit #53) ---------------------------
-// A refund word is routed HERE, before every price lane can hear it:
-// the honest line — refunds will run from Transactions once that lane
-// lands — and the sale stays exactly as recorded.
+// A refund word is routed HERE, before every price lane can hear it.
+// First, a pick from a waiting candidate list is consumed (the pick
+// itself — "dosro" — carries no refund word, so it is checked before
+// the refund-ask gate); a message that is not a pick clears the list
+// and dispatch runs on. Then the lane itself: policy reads and setting
+// cards, or the sale found and staged as a refund card.
+if (golpos_refund_await_get() !== null) {
+    golpos_refund_await_pick($msg, $products);
+    golpos_refund_await_set(null);
+}
 if (golpos_is_refund_ask($msg)) {
-    out(['reply' => t('refund_route')]);
+    golpos_refund_lane($msg, $products);
+}
+
+// --- customer credit: balance reads + the redeem toggle -----------------------
+// Chat reads the balance from the store's records; the spend itself
+// happens only at the till tender (the Credit button beside Cash/Card).
+if (golpos_is_credit_ask($msg)) {
+    golpos_credit_lane($msg);
 }
 
 // --- edits to a staged ORDER card ---------------------------------------------
@@ -3006,7 +3333,7 @@ if (golpos_is_batch_close_intent($msg)) {
     $seg = golpos_unbatched_card_sales();
     if (!$seg) { out(['reply' => t('batch_none')]); }
     $total = 0.0;
-    foreach ($seg as $s) { $total += (float)($s['total'] ?? 0); }
+    foreach ($seg as $s) { $total += golpos_batch_amount($s); }
     $card = golpos_stage(['type' => 'batch_close', 'count' => count($seg),
         'total' => round($total, 2),
         'from' => (string)($seg[0]['at'] ?? ''), 'to' => (string)($seg[count($seg) - 1]['at'] ?? ''),
@@ -3956,6 +4283,13 @@ out(['reply' => t('fallback')]);
 function golpos_needs_admin(string $msg, array $in): bool {
     if (in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true) || !empty($in['confirm'])) {
         $pend = golpos_pending();
+        // A refund confirm is an admin execution exactly when the
+        // store's refund_pin setting says so (default ON); with the
+        // setting off, the open session's word is enough — the same
+        // rule the Transactions sheet's PIN gate follows.
+        if ($pend !== null && ($pend['type'] ?? '') === 'refund') {
+            return !empty(golpos_settings()['refund_pin']);
+        }
         return $pend !== null && in_array($pend['type'] ?? '', [
             'price_change', 'new_item', 'setting_change', 'batch_close', 'employee_remove', 'employee_add',
             'stock_receive', 'bill', 'order_prep', 'vendor_teach', 'task_assign',
@@ -3963,8 +4297,11 @@ function golpos_needs_admin(string $msg, array $in): bool {
     }
     if (preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', $msg)) { return true; }
     // A refund ask is never an admin ask and never a price ask — it has
-    // its own honest lane (alive audit #53).
+    // its own honest lane (alive audit #53). Staging is cashier-domain;
+    // the refund card's EXECUTION is gated above, at the confirm word.
     if (golpos_is_refund_ask($msg)) { return false; }
+    // A credit balance read is a cashier-domain read, like a price ask.
+    if (golpos_is_credit_ask($msg)) { return false; }
     // The owner's team domain (employee lane): assigning work, reading
     // a person's notes, team progress, and the presence read are admin
     // asks. The employee's own lanes (her tasks, her note back, her

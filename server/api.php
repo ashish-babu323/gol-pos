@@ -33,6 +33,18 @@
 // POST {product_create:{…}, session, pin?} -> Add Product sheet save:
 //        admin-gated by the sheet PIN gate (store.php), created by the
 //        one product constructor the chat's new-item path also builds
+// GET  ?credit&phone=       -> a customer's store-credit balance (the
+//                              loyalty ledger), or the plain refusal
+// POST {refund_quote:{sale_id, picks?}} -> the refund math for one
+//                              recorded sale (read-only; nothing moves)
+// POST {refund_execute:{sale_id, picks?, session, pin?}} -> execute a
+//                              refund ONCE through golpos_execute_refund;
+//                              PIN-gated by the sheet PIN gate when the
+//                              store's refund_pin setting is on
+// POST {sale:{…, credit:{phone, amount}}} -> a sale may carry a store-
+//                              credit part: credit is a tender (tax math
+//                              untouched), the rest splits to cash/card,
+//                              and the spend records once per sale id
 
 declare(strict_types=1);
 require __DIR__ . '/store.php';
@@ -79,7 +91,7 @@ if ($method === 'GET' && isset($_GET['batch'])) {
     // as the Gol chat stages it (ALL unbatched card sales, any day) plus
     // today's sealed batches.
     $seg = golpos_unbatched_card_sales();
-    $segTotal = 0.0; foreach ($seg as $s) { $segTotal += (float)($s['total'] ?? 0); }
+    $segTotal = 0.0; foreach ($seg as $s) { $segTotal += golpos_batch_amount($s); }
     echo json_encode(['unbatched' => ['count' => count($seg), 'total' => round($segTotal, 2)],
                       'batches_today' => golpos_batches_on(date('Y-m-d'))],
                      JSON_UNESCAPED_UNICODE);
@@ -106,9 +118,34 @@ if ($method === 'GET' && isset($_GET['history'])) {
     // mirror of a link sale, not this panel's source).
     $cap = 100;
     $byDay = [];
+    // Refund state rides along, derived from the ONE refund record:
+    // how much of this sale has gone back, per line and in total, so
+    // the panel can badge it and offer Refund only for what is left.
+    $refundsBySale = [];
+    foreach (golpos_refunds() as $r) { $refundsBySale[(string)($r['sale_id'] ?? '')][] = $r; }
     foreach (golpos_sales() as $s) {
         $d = substr((string)($s['at'] ?? ''), 0, 10);
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) { continue; }
+        $refs = $refundsBySale[(string)($s['id'] ?? '')] ?? [];
+        if ($refs) {
+            $back = 0.0; $perLine = [];
+            foreach ($refs as $r) {
+                $back += (float)($r['total'] ?? 0);
+                foreach ((array)($r['lines'] ?? []) as $rl) {
+                    $k = (string)($rl['key'] ?? '');
+                    $perLine[$k] = ($perLine[$k] ?? 0) + (int)($rl['qty'] ?? 0);
+                }
+            }
+            $s['refunded_total'] = round($back, 2);
+            $s['refunded_lines'] = $perLine;
+            $left = 0;
+            foreach ((array)($s['lines'] ?? []) as $li => $l) {
+                if (!is_array($l)) { continue; }
+                $k = golpos_sale_line_key($l, (int)$li);
+                $left += max(0, (int)($l['qty'] ?? 1) - (int)($perLine[$k] ?? 0));
+            }
+            $s['refund_status'] = $left > 0 ? 'partial' : 'full';
+        }
         $byDay[$d][] = $s;
     }
     krsort($byDay);
@@ -121,6 +158,27 @@ if ($method === 'GET' && isset($_GET['history'])) {
         $days[] = $day;
     }
     echo json_encode(['days' => $days], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($method === 'GET' && isset($_GET['credit'])) {
+    // A customer's store-credit balance, read from the ONE ledger (the
+    // loyalty store). Standalone only for now: in link mode the
+    // Festival balance lives MR.STORE-side as derived points with no
+    // spend ledger the register may write — the link leg is a named
+    // follow-up, answered plainly rather than guessed at.
+    if (golpos_link_on()) {
+        http_response_code(422);
+        echo json_encode(['error' => 'Store credit can\'t be spent at a linked register yet — the balance lives MR.STORE-side and that spend lane is still being wired.']);
+        exit;
+    }
+    $acct = golpos_credit_account((string)($_GET['phone'] ?? ''));
+    if ($acct === null) {
+        http_response_code(422);
+        echo json_encode(['error' => 'No credit on this number.']);
+        exit;
+    }
+    echo json_encode(['ok' => true, 'name' => $acct['name'], 'phone' => $acct['phone'],
+                      'balance' => $acct['balance']], JSON_UNESCAPED_UNICODE);
     exit;
 }
 if ($method === 'GET' && isset($_GET['settings'])) {
@@ -484,6 +542,75 @@ if ($method === 'POST') {
         echo json_encode(golpos_create_product($in['product_create']), JSON_UNESCAPED_UNICODE);
         exit;
     }
+    if (isset($in['refund_quote']) && is_array($in['refund_quote'])) {
+        // The Transactions sheet's math read: what this sale can still
+        // give back, line by line, before anything is staged or moved.
+        $target = golpos_sale_by_id((string)($in['refund_quote']['sale_id'] ?? ''));
+        if ($target === null) {
+            http_response_code(422);
+            echo json_encode(['error' => 'That sale is not in the register\'s log.']);
+            exit;
+        }
+        $picks = isset($in['refund_quote']['picks']) && is_array($in['refund_quote']['picks'])
+            ? $in['refund_quote']['picks'] : null;
+        $q = golpos_refund_quote($target, $picks);
+        if (isset($q['error'])) {
+            http_response_code(422);
+            echo json_encode(['error' => $q['error']]);
+            exit;
+        }
+        echo json_encode(['ok' => true, 'quote' => $q,
+                          'sale' => ['id' => $target['id'], 'at' => $target['at'],
+                                     'total' => $target['total'], 'tender' => $target['tender']]],
+                         JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if (isset($in['refund_execute']) && is_array($in['refund_execute'])) {
+        // The refund itself — one execution path (golpos_execute_refund,
+        // the same one the Gol chat's refund card runs), so the sheet
+        // and the chat can never disagree about what a refund did.
+        // Policy and state refusals speak BEFORE the PIN: a refund that
+        // cannot happen never asks for one. The PIN follows the store's
+        // refund_pin setting — ON (the default) runs the sheet PIN gate;
+        // OFF means the counter runs it on the open session alone.
+        $target = golpos_sale_by_id((string)($in['refund_execute']['sale_id'] ?? ''));
+        if ($target === null) {
+            http_response_code(422);
+            echo json_encode(['error' => 'That sale is not in the register\'s log.']);
+            exit;
+        }
+        $picks = isset($in['refund_execute']['picks']) && is_array($in['refund_execute']['picks'])
+            ? $in['refund_execute']['picks'] : null;
+        $pre = golpos_refund_quote($target, $picks);
+        if (isset($pre['error'])) {
+            http_response_code(422);
+            echo json_encode(['error' => $pre['error']]);
+            exit;
+        }
+        if (empty(golpos_settings()['refunds_allowed'])) {
+            http_response_code(422);
+            echo json_encode(['error' => 'Refunds are off for this store — turn them on in Gol chat (a settings card) first.']);
+            exit;
+        }
+        if (!empty(golpos_settings()['refund_pin'])) {
+            $gate = golpos_sheet_pin($in);
+            if (empty($gate['ok'])) { echo json_encode($gate, JSON_UNESCAPED_UNICODE); exit; }
+        }
+        $rsid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($in['session'] ?? ''));
+        $rsess = $rsid !== '' ? golpos_session($rsid) : [];
+        $byName = (string)($rsess['unlocked_name'] ?? '');
+        $byEmail = (!empty($rsess['unlocked_by']) && $rsess['unlocked_by'] !== 'admin')
+            ? (string)$rsess['unlocked_by'] : '';
+        $res = golpos_execute_refund($target, $picks, $byName, $byEmail);
+        if (isset($res['error'])) {
+            http_response_code(422);
+            echo json_encode(['error' => $res['error']]);
+            exit;
+        }
+        echo json_encode(['ok' => true, 'refund' => $res['refund'],
+                          'summary' => golpos_day_summary(date('Y-m-d'))], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     $sale = $in['sale'] ?? null;
     if (is_array($sale) && !empty($sale['lines'])) {
         // A closed store refuses new sales at the door — the register's
@@ -523,7 +650,8 @@ if ($method === 'POST') {
             $lineTotal = round((float)$p['price'] * $qty, 2);
             $subtotal += $lineTotal;
             if (($p['taxable'] ?? true) !== false) { $taxableSubtotal += $lineTotal; }
-            $lines[] = ['sku' => $p['sku'], 'name' => $p['name'], 'price' => $p['price'], 'qty' => $qty, 'line_total' => $lineTotal];
+            $lines[] = ['sku' => $p['sku'], 'name' => $p['name'], 'price' => $p['price'], 'qty' => $qty,
+                        'taxable' => (($p['taxable'] ?? true) !== false), 'line_total' => $lineTotal];
         }
         if (!$lines) {
             http_response_code(422);
@@ -535,21 +663,74 @@ if ($method === 'POST') {
         // this sale records no tax; nothing about it persists to the next.
         $taxExempt = !empty($sale['tax_exempt']);
         $tax = $taxExempt ? 0.0 : round($taxableSubtotal * $taxRate, 2);
-        $tender = ($sale['tender'] ?? 'cash') === 'card' ? 'card' : 'cash';
+        $base = round(round($subtotal, 2) + $tax, 2);
+        // --- store credit: a tender, never a discount -------------------
+        // The credit part is validated against the ONE ledger before
+        // anything records: the setting, the account, the balance, the
+        // sale's own total. Tax was computed above without any knowledge
+        // of tenders — paying by credit changes no tax by a cent. In
+        // link mode the Festival balance lives MR.STORE-side as derived
+        // points with no spend ledger the register may write, so the
+        // spend is refused plainly (the link leg is a named follow-up).
+        $creditAmt = 0.0; $creditPhone = ''; $creditName = '';
+        if (isset($sale['credit']) && is_array($sale['credit'])) {
+            if (empty(golpos_settings()['credit_redeem'])) {
+                http_response_code(422);
+                echo json_encode(['error' => 'Store credit redeem is off for this store — nothing was recorded.']);
+                exit;
+            }
+            if (golpos_link_on()) {
+                http_response_code(422);
+                echo json_encode(['error' => 'Store credit can\'t be spent at a linked register yet — the balance lives MR.STORE-side and that spend lane is still being wired. Nothing was recorded.']);
+                exit;
+            }
+            $acct = golpos_credit_account((string)($sale['credit']['phone'] ?? ''));
+            if ($acct === null) {
+                http_response_code(422);
+                echo json_encode(['error' => 'No credit on this number — nothing was recorded.']);
+                exit;
+            }
+            $want = isset($sale['credit']['amount']) && is_numeric($sale['credit']['amount'])
+                ? round((float)$sale['credit']['amount'], 2) : 0.0;
+            if ($want <= 0) {
+                http_response_code(422);
+                echo json_encode(['error' => 'Say how much credit to apply — nothing was recorded.']);
+                exit;
+            }
+            if ($want > (float)$acct['balance']) {
+                http_response_code(422);
+                echo json_encode(['error' => 'Credit balance is $' . number_format((float)$acct['balance'], 2)
+                    . ' — apply that much or less. Nothing was recorded.']);
+                exit;
+            }
+            if ($want > $base) {
+                http_response_code(422);
+                echo json_encode(['error' => 'Credit can cover at most the sale total of $'
+                    . number_format($base, 2) . ' — nothing was recorded.']);
+                exit;
+            }
+            $creditAmt = $want; $creditPhone = (string)$acct['phone']; $creditName = (string)$acct['name'];
+        }
+        $remainderBase = round($base - $creditAmt, 2);
+        // The tender is the REMAINDER's kind; a sale fully covered by
+        // credit has no remainder and its tender is credit itself.
+        $tender = ($creditAmt > 0 && $remainderBase <= 0) ? 'credit'
+            : ((($sale['tender'] ?? 'cash') === 'card') ? 'card' : 'cash');
         // Card surcharge (owner setting): computed HERE from the saved
         // setting for card sales only — a client-sent figure is never
         // trusted — and folded into the total the customer pays, so the
         // day summary's card figure is the paid figure, surcharge
-        // included, exactly as the journal's card field expects. Cash
-        // never carries it; at 0% the record is untouched.
+        // included, exactly as the journal's card field expects. With a
+        // credit part, the surcharge falls only on the card-paid share.
+        // Cash never carries it; at 0% the record is untouched.
         $surcharge = 0.0; $surchargePct = 0.0;
         if ($tender === 'card') {
             $surchargePct = (float)(golpos_settings()['card_surcharge_pct'] ?? 0);
             if ($surchargePct > 0) {
-                $surcharge = round((round($subtotal, 2) + $tax) * $surchargePct / 100, 2);
+                $surcharge = round($remainderBase * $surchargePct / 100, 2);
             }
         }
-        $total = round($subtotal + $tax + $surcharge, 2);
+        $total = round($base + $surcharge, 2);
         $recordData = [
             'lines' => $lines, 'subtotal' => round($subtotal, 2), 'tax' => $tax,
             'total' => $total, 'tender' => $tender,
@@ -558,18 +739,29 @@ if ($method === 'POST') {
             $recordData['surcharge'] = $surcharge;
             $recordData['surcharge_pct'] = $surchargePct;
         }
+        if ($creditAmt > 0) {
+            $tenders = ['credit' => $creditAmt];
+            $rem = round($total - $creditAmt, 2);
+            if ($rem > 0) { $tenders[$tender] = $rem; }
+            $recordData['tenders'] = $tenders;
+            $recordData['credit_phone'] = $creditPhone;
+            if ($creditName !== '') { $recordData['credit_name'] = $creditName; }
+        }
         if ($taxExempt) { $recordData['tax_exempt'] = true; }
         if ($tender === 'cash') {
             // No tendered amount from an older client means exact cash; an
-            // explicit amount must cover the total before anything records.
-            $tendered = isset($sale['tendered']) ? round((float)$sale['tendered'], 2) : $total;
-            if ($tendered < $total) {
+            // explicit amount must cover the CASH DUE (the total, or the
+            // cash remainder when credit covered a part) before anything
+            // records.
+            $cashDue = $creditAmt > 0 ? round($total - $creditAmt, 2) : $total;
+            $tendered = isset($sale['tendered']) ? round((float)$sale['tendered'], 2) : $cashDue;
+            if ($tendered < $cashDue) {
                 http_response_code(422);
-                echo json_encode(['error' => 'cash tendered is less than the total', 'total' => $total, 'tendered' => $tendered]);
+                echo json_encode(['error' => 'cash tendered is less than the total', 'total' => $cashDue, 'tendered' => $tendered]);
                 exit;
             }
             $recordData['tendered'] = $tendered;
-            $recordData['change_due'] = round($tendered - $total, 2);
+            $recordData['change_due'] = round($tendered - $cashDue, 2);
         }
         // Who rang it: the session's unlocked identity rides the sale
         // record (employee lane) — the owner's trail can say whose
@@ -589,6 +781,13 @@ if ($method === 'POST') {
             }
         }
         $record = golpos_append_sale($recordData);
+        if ($creditAmt > 0) {
+            // The spend lands ONCE, keyed by this sale's id — the
+            // ledger itself refuses a second redeem under the same id,
+            // so a retried tender can never double-spend the balance.
+            golpos_credit_add($creditPhone, -$creditAmt, 'redeem', ['sale_id' => (string)$record['id']]);
+            $record['credit_balance'] = golpos_credit_balance($creditPhone);
+        }
         if (!golpos_link_on()) {
             // STANDALONE: the sale takes its units off this POS's own
             // shelf, so the grid's live counts and fill bars move with

@@ -118,6 +118,9 @@ let activeCat = 'All';
 let taxExempt = false; // Settings menu, current sale only — never persisted
 let cardTenderPreview = false; // a card payment is being taken: the totals
 // panel shows the card surcharge (the server computes the real one)
+let creditApplied = null; // store credit applied to THIS sale only:
+// {phone, name, balance, amount} — set by the Credit tender sheet,
+// validated again by the server at tender, and dies with the sale.
 
 async function loadCatalog() {
   const res = await fetch(API + '?products');
@@ -337,10 +340,17 @@ function renderCart() {
   // payment is being taken the panel shows the line and the total the
   // customer will pay; the server computes the recorded surcharge from
   // the same setting, so this display never decides the charge.
+  // Credit applied to a cart that no longer exists dies with it, like
+  // the tax exemption above — a lingering credit on an empty cart
+  // would read as money from nowhere.
+  if (!lines.length && !manualLines.length && creditApplied) { creditApplied = null; }
   const pct = Number((receiptSettings || {}).card_surcharge_pct) || 0;
+  // With a credit part, the card surcharge falls only on the card-paid
+  // share — the same base the server computes from.
+  const creditAmt = creditApplied ? Math.min(creditApplied.amount, roundMoney(sub + tax)) : 0;
   const surcharge = (cardTenderPreview && pct > 0)
-    ? roundMoney((sub + tax) * pct / 100) : 0;
-  cartTotals = { subtotal: sub, tax, surcharge, total: roundMoney(sub + tax + surcharge) };
+    ? roundMoney((sub + tax - creditAmt) * pct / 100) : 0;
+  cartTotals = { subtotal: sub, tax, surcharge, total: roundMoney(sub + tax + surcharge), credit: creditAmt };
   $('subTotal').textContent = money(sub);
   $('taxTotal').textContent = money(tax);
   $('taxBadge').classList.toggle('hidden', !taxExempt);
@@ -348,6 +358,12 @@ function renderCart() {
   if (surcharge > 0) {
     $('surchargeLabel').textContent = 'Card surcharge (' + fmtPct(pct) + '%)';
     $('surchargeTotal').textContent = money(surcharge);
+  }
+  $('creditRow').classList.toggle('hidden', !(creditAmt > 0));
+  $('creditDueRow').classList.toggle('hidden', !(creditAmt > 0));
+  if (creditAmt > 0) {
+    $('creditTotal').textContent = '−' + money(creditAmt);
+    $('creditDue').textContent = money(cartTotals.total - creditAmt);
   }
   $('grandTotal').textContent = money(cartTotals.total);
 }
@@ -371,9 +387,21 @@ function receiptText(sale) {
       ? ' (' + fmtPct(sale.surcharge_pct) + '%)' : '';
     rows.push(`Card surcharge${p}  ${money(sale.surcharge)}`);
   }
-  rows.push(`TOTAL     ${money(sale.total)}`, `Paid by ${sale.tender}`);
+  rows.push(`TOTAL     ${money(sale.total)}`);
+  // Tender lines: a split sale names every part — credit is a tender,
+  // printed like one, never folded into a discount line.
+  if (sale.tenders && typeof sale.tenders === 'object') {
+    if (Number(sale.tenders.credit) > 0) { rows.push(`Store credit −${money(sale.tenders.credit)}`); }
+    if (Number(sale.tenders.card) > 0) { rows.push(`Paid by card ${money(sale.tenders.card)}`); }
+    if (Number(sale.tenders.cash) > 0) { rows.push(`Paid by cash ${money(sale.tenders.cash)}`); }
+  } else {
+    rows.push(`Paid by ${sale.tender}`);
+  }
   if (sale.tender === 'cash' && sale.tendered !== undefined && sale.tendered !== null) {
     rows.push(`Cash given ${money(sale.tendered)}`, `Change    ${money(sale.change_due || 0)}`);
+  }
+  if (Number(sale.refunded_total) > 0) {
+    rows.push(`Refunded  ${money(sale.refunded_total)}` + (sale.refund_status === 'full' ? ' (in full)' : ' (partial)'));
   }
   rows.push(new Date(sale.at || Date.now()).toLocaleString('en-US'));
   if (st.footer) { rows.push(sep, st.footer); }
@@ -407,6 +435,13 @@ async function tender(kind, tendered) {
   // (the session rides as a sibling of sale below — api.php reads it
   // for cashier attribution on the record)
   if (kind === 'cash') { salePayload.tendered = Number(Number(tendered || 0).toFixed(2)); }
+  if (creditApplied && creditApplied.amount > 0) {
+    // Clamp to this sale's credit-coverable base (subtotal + tax): the
+    // cart may have shrunk since the credit was applied. The server
+    // validates the same bounds again before anything records.
+    const cap = Math.round(((cartTotals.subtotal || 0) + (cartTotals.tax || 0)) * 100) / 100;
+    salePayload.credit = { phone: creditApplied.phone, amount: Math.min(creditApplied.amount, cap) };
+  }
   if (taxExempt) { salePayload.tax_exempt = true; }
   const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sale: salePayload, session: SESSION_ID }) });
@@ -420,6 +455,7 @@ async function tender(kind, tendered) {
   const st = receiptSettings || {};
   taxExempt = false; // the exemption dies with the sale it was set for
   cardTenderPreview = false; // and the surcharge preview with it
+  creditApplied = null; // and the applied credit with it
   setToggle($('smTaxBtn'), false);
   cart.clear(); manualLines = []; renderCart(); refreshToday();
   if (st.auto_open === false) {
@@ -437,8 +473,14 @@ async function tender(kind, tendered) {
 // enters or taps the cash handed over, and sees the change before the sale
 // can complete. The server repeats the same calculation and refuses a
 // short tender, so the recorded receipt can never invent change.
+// The cash a customer still owes on this sale: the total minus any
+// store credit applied (credit is a tender — the cash drawer only
+// ever sees the remainder).
+function cashDueNow() {
+  return Math.round(((cartTotals.total || 0) - (cartTotals.credit || 0)) * 100) / 100;
+}
 function updateCashPanel() {
-  const total = cartTotals.total;
+  const total = cashDueNow();
   const received = parseFloat($('cashReceived').value || '0') || 0;
   const change = received - total;
   $('cashDue').textContent = money(total);
@@ -455,14 +497,14 @@ function updateCashPanel() {
 function openCashPanel() {
   if (!cart.size && !manualLines.length) { return; }
   if (!storeIsOpen()) { storeClosedNote(); return; }
-  $('cashReceived').value = cartTotals.total.toFixed(2);
+  $('cashReceived').value = cashDueNow().toFixed(2);
   updateCashPanel();
   $('cashModal').classList.remove('hidden');
   $('cashReceived').focus(); $('cashReceived').select();
 }
 async function completeCashSale() {
   const tendered = parseFloat($('cashReceived').value || '0') || 0;
-  if (tendered < cartTotals.total) { updateCashPanel(); return; }
+  if (tendered < cashDueNow()) { updateCashPanel(); return; }
   if (await tender('cash', tendered)) { $('cashModal').classList.add('hidden'); }
 }
 async function refreshToday() {
@@ -743,6 +785,11 @@ function chatCard(card) {
   } else if (card.type === 'batch_close') {
     body = `<div class="sc-what">Batch close — ${card.count} card sales</div>` +
       `<div class="sc-prices"><span class="sc-new">${money(card.total)}</span></div>`;
+  } else if (card.type === 'refund') {
+    body = `<div class="sc-what">Refund — sale ${esc(card.sale_id || '')} · ${esc(card.sale_when || '')}</div>` +
+      `<div class="sc-line">${esc(card.lines_label || '')}</div>` +
+      `<div class="sc-prices"><span class="sc-new">${money(card.total)}</span></div>` +
+      `<div class="sc-line">Back to ${esc(card.back_to || 'the original tender')} · returned items go back on the shelf.</div>`;
   } else if (card.type === 'employee_add') {
     const duties = (card.duties || []).map(d => `<div class="sc-line">✓ ${esc(d)}</div>`).join('');
     body = `<div class="sc-what">Add employee — ${esc(card.name ? card.name + ' · ' : '')}${esc(card.email)}</div>` +
@@ -893,12 +940,13 @@ $('scanInput').addEventListener('keydown', (e) => {
 });
 $('cashBtn').addEventListener('click', () => {
   cardTenderPreview = false; renderCart(); // cash never carries the surcharge
+  if (creditApplied && cashDueNow() <= 0) { openCreditSheet(); return; } // credit covers it all
   openCashPanel();
 });
 $('cashBack').addEventListener('click', () => $('cashModal').classList.add('hidden'));
 $('cashComplete').addEventListener('click', completeCashSale);
 $('cashReceived').addEventListener('input', updateCashPanel);
-$('cashExact').addEventListener('click', () => { $('cashReceived').value = cartTotals.total.toFixed(2); updateCashPanel(); });
+$('cashExact').addEventListener('click', () => { $('cashReceived').value = cashDueNow().toFixed(2); updateCashPanel(); });
 $('cashClear').addEventListener('click', () => { $('cashReceived').value = ''; updateCashPanel(); $('cashReceived').focus(); });
 document.querySelectorAll('[data-cash-add]').forEach(b =>
   b.addEventListener('click', () => {
@@ -914,9 +962,205 @@ $('cardBtn').addEventListener('click', async () => {
 });
 $('clearBtn').addEventListener('click', () => {
   cart.clear(); manualLines = []; taxExempt = false; cardTenderPreview = false;
+  creditApplied = null;
   setToggle($('smTaxBtn'), false); renderCart();
 });
 $('receiptClose').addEventListener('click', () => $('receiptModal').classList.add('hidden'));
+
+// --- store credit tender --------------------------------------------------------
+// The Credit button beside Cash/Card (owner directive, Oct 28): look
+// the customer up by phone — the loyalty master key — read the balance
+// from the store's OWN ledger, and apply up to the balance. The rest
+// splits to cash/card exactly as usual. This sheet only carries the
+// cashier's choices: the server re-validates the account, the balance
+// and the amount at tender, and the spend records once per sale id.
+let creditAcct = null; // the last balance read: {name, phone, balance}
+function creditNoteShow(text) {
+  const el = $('creditNote');
+  el.textContent = text || '';
+  el.classList.toggle('hidden', !text);
+}
+function creditBase() { // what credit may cover: subtotal + tax (never the card fee)
+  return Math.round(((cartTotals.subtotal || 0) + (cartTotals.tax || 0)) * 100) / 100;
+}
+function openCreditSheet() {
+  if (!cart.size && !manualLines.length) { return; }
+  if (!storeIsOpen()) { storeClosedNote(); return; }
+  creditNoteShow('');
+  creditAcct = null;
+  $('creditResult').classList.add('hidden');
+  $('creditRemove').classList.toggle('hidden', !creditApplied);
+  if (creditApplied) { $('creditPhone').value = creditApplied.phone; }
+  $('creditModal').classList.remove('hidden');
+  $('creditPhone').focus(); $('creditPhone').select();
+}
+async function creditLookup() {
+  const phone = $('creditPhone').value.trim();
+  creditNoteShow('');
+  if (phone.replace(/\D/g, '').length < 7) { creditNoteShow('Enter the customer\'s phone number.'); return; }
+  let r = null;
+  try {
+    const res = await fetch(API + '?credit&phone=' + encodeURIComponent(phone));
+    r = await res.json();
+    if (!res.ok || !r.ok) {
+      creditNoteShow((r && r.error) || 'No credit on this number.');
+      $('creditResult').classList.add('hidden');
+      return;
+    }
+  } catch (e) { creditNoteShow('The credit ledger did not answer — try again.'); return; }
+  creditAcct = r;
+  $('creditName').textContent = r.name || r.phone;
+  $('creditBalance').textContent = money(r.balance);
+  $('creditAmount').value = Math.min(Number(r.balance) || 0, creditBase()).toFixed(2);
+  $('creditResult').classList.remove('hidden');
+  updateCreditSheet();
+}
+function updateCreditSheet() {
+  if (!creditAcct) { return; }
+  const amt = parseFloat($('creditAmount').value || '0') || 0;
+  const left = Math.round((creditBase() - amt) * 100) / 100;
+  $('creditLeft').textContent = left > 0 ? money(left) + ' still due by cash or card' : 'Credit covers the whole sale';
+  $('creditApply').textContent = left > 0 ? 'Apply credit' : 'Complete sale with credit';
+}
+async function applyCredit() {
+  if (!creditAcct) { return; }
+  const amt = Math.round((parseFloat($('creditAmount').value || '0') || 0) * 100) / 100;
+  if (!(amt > 0)) { creditNoteShow('Enter an amount above $0.00.'); return; }
+  if (amt > Number(creditAcct.balance)) {
+    creditNoteShow('Balance is ' + money(creditAcct.balance) + ' — apply that much or less.');
+    return;
+  }
+  if (amt > creditBase()) {
+    creditNoteShow('Credit can cover at most ' + money(creditBase()) + ' on this sale.');
+    return;
+  }
+  if (amt >= creditBase()) {
+    // Credit covers it all: the tender IS the credit.
+    creditApplied = { phone: creditAcct.phone, name: creditAcct.name, balance: creditAcct.balance, amount: amt };
+    if (await tender('credit')) { $('creditModal').classList.add('hidden'); }
+    return;
+  }
+  creditApplied = { phone: creditAcct.phone, name: creditAcct.name, balance: creditAcct.balance, amount: amt };
+  $('creditModal').classList.add('hidden');
+  renderCart();
+  showToast('Store credit ' + money(amt) + ' applied — ' + money(cashDueNow()) + ' still due by cash or card.');
+}
+$('creditBtn').addEventListener('click', openCreditSheet);
+$('creditBack').addEventListener('click', () => $('creditModal').classList.add('hidden'));
+$('creditCheck').addEventListener('click', creditLookup);
+$('creditPhone').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); creditLookup(); } });
+$('creditAmount').addEventListener('input', updateCreditSheet);
+$('creditApply').addEventListener('click', applyCredit);
+$('creditRemove').addEventListener('click', () => {
+  creditApplied = null;
+  $('creditModal').classList.add('hidden');
+  renderCart();
+  showToast('Store credit removed from this sale.');
+});
+
+// --- refunds from Transactions ---------------------------------------------------
+// Pick a recorded sale, pick the lines coming back, and the refund
+// runs the ONE execution path (api.php refund_execute →
+// golpos_execute_refund — the same one the Gol chat's refund card
+// runs), behind the sheet PIN gate whenever the store's refund_pin
+// setting is on. The quote comes from the server on every pick change,
+// so the number on the button is the number that will move.
+let refundCtx = null; // {sale, picks|null, quote}
+function refundNoteShow(text) {
+  const el = $('refundNote');
+  el.textContent = text || '';
+  el.classList.toggle('hidden', !text);
+}
+function txnLineKey(l, i) { return l.sku ? 'sku:' + l.sku : 'manual:' + i; }
+async function refundPost(body) {
+  const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body) });
+  return res.json().catch(() => ({}));
+}
+async function openRefundSheet(sale) {
+  refundCtx = { sale, picks: null, quote: null };
+  $('refundSaleLine').textContent = 'Sale ' + (sale.id || '') + ' · '
+    + new Date(sale.at || Date.now()).toLocaleString('en-US') + ' · ' + money(sale.total);
+  refundNoteShow('');
+  $('refundLines').innerHTML = '<p class="txn-empty">Reading the sale…</p>';
+  $('refundModal').classList.remove('hidden');
+  await refreshRefundSheet();
+}
+async function refreshRefundSheet() {
+  if (!refundCtx) { return; }
+  const r = await refundPost({ refund_quote: { sale_id: refundCtx.sale.id, picks: refundCtx.picks } });
+  if (!r || r.error || !r.quote) {
+    refundNoteShow((r && r.error) || 'That refund cannot be quoted.');
+    $('refundLines').innerHTML = '';
+    $('refundGo').disabled = true;
+    return;
+  }
+  refundCtx.quote = r.quote;
+  const q = r.quote;
+  $('refundLines').innerHTML = '';
+  (q.states || []).forEach(st => {
+    if (!(st.remaining > 0)) { return; }
+    const row = document.createElement('div'); row.className = 'refund-line';
+    const nm = document.createElement('span'); nm.className = 'refund-line-name';
+    nm.textContent = st.name + ' — sold ' + st.sold
+      + (st.refunded_qty > 0 ? ' · ' + st.refunded_qty + ' already back' : '')
+      + ' · ' + st.remaining + ' left';
+    const stepper = document.createElement('div'); stepper.className = 'stepper';
+    const dec = document.createElement('button'); dec.type = 'button'; dec.textContent = '−';
+    const val = document.createElement('b');
+    const inc = document.createElement('button'); inc.type = 'button'; inc.textContent = '+';
+    const cur = () => {
+      if (!refundCtx.picks) { return st.remaining; }
+      const p = refundCtx.picks.find(x => x.key === st.key);
+      return p ? p.qty : 0;
+    };
+    val.textContent = String(cur());
+    const setQty = (n) => {
+      n = Math.max(0, Math.min(st.remaining, n));
+      if (!refundCtx.picks) {
+        refundCtx.picks = (q.states || []).filter(s2 => s2.remaining > 0)
+          .map(s2 => ({ key: s2.key, qty: s2.remaining }));
+      }
+      refundCtx.picks = refundCtx.picks.filter(x => x.key !== st.key);
+      if (n > 0) { refundCtx.picks.push({ key: st.key, qty: n }); }
+      refreshRefundSheet();
+    };
+    dec.addEventListener('click', () => setQty(cur() - 1));
+    inc.addEventListener('click', () => setQty(cur() + 1));
+    stepper.appendChild(dec); stepper.appendChild(val); stepper.appendChild(inc);
+    row.appendChild(nm); row.appendChild(stepper);
+    $('refundLines').appendChild(row);
+  });
+  $('refundTotal').textContent = money(q.total);
+  const parts = [];
+  if (q.tenders.cash > 0) { parts.push(money(q.tenders.cash) + ' cash'); }
+  if (q.tenders.card > 0) { parts.push(money(q.tenders.card) + ' card'); }
+  if (q.tenders.credit > 0) { parts.push(money(q.tenders.credit) + ' store credit'); }
+  $('refundBackLine').textContent = 'Back to the original tender: ' + (parts.join(' + ') || '—')
+    + (q.batch_effect === 'negative_in_current'
+      ? ' · the sale sits in a sealed batch, so this lands as a negative entry in the current batch — the sealed batch is never edited.'
+      : '');
+  $('refundGo').disabled = !(q.total > 0);
+  $('refundGo').textContent = 'Refund ' + money(q.total);
+}
+async function executeRefund() {
+  if (!refundCtx || !refundCtx.quote) { return; }
+  const r = await gatedApiPost({ refund_execute: { sale_id: refundCtx.sale.id, picks: refundCtx.picks },
+    session: SESSION_ID });
+  if (!r || r.cancelled) { return; }
+  if (r.locked) { refundNoteShow(r.error || 'PIN entry is locked — try again later.'); return; }
+  if (r.error) { refundNoteShow(r.error); return; }
+  if (r.ok && r.refund) {
+    $('refundModal').classList.add('hidden');
+    showToast('Refunded ' + money(r.refund.total) + ' — returned items are back on the shelf.');
+    refundCtx = null;
+    refreshToday();
+    smHistoryAction(); // re-read the log: badges and remaining amounts move
+    loadCatalog();     // the restock moved the shelf counts
+  }
+}
+$('refundCancel').addEventListener('click', () => $('refundModal').classList.add('hidden'));
+$('refundGo').addEventListener('click', executeRefund);
 // --- order sheet: the confirmed vendor order, printed or shared for the rep --
 let orderSheetRec = null;
 function orderSheetText(rec) {
@@ -1023,7 +1267,7 @@ $('ownerBtn').addEventListener('click', async () => {
       `<h3 class="ocard-title">Receipt Loyalty — leaderboard <small>— send customers to web/loyalty.html</small></h3>` +
       (board.length ? board.map(r =>
         `<div class="rep-row"><span>#${r.rank} ${esc(r.name)}</span><b>${money(r.total)}</b>` +
-        `<span>${r.receipts} receipt${r.receipts === 1 ? '' : 's'}</span></div>`).join('')
+        `<span>${r.receipts} receipt${r.receipts === 1 ? '' : 's'}${Number(r.credit) > 0 ? ' · credit ' + money(r.credit) : ''}</span></div>`).join('')
         : '<p class="owner-muted">No loyalty receipts yet.</p>');
   } catch (e) { $('ownerLoyalty').innerHTML = ''; }
   // Today's rep visits — the register order prep state: which vendors are
@@ -1121,7 +1365,11 @@ function renderSettingsView() {
     row('Batch close', st.batch_mode || 'manual') +
     row('Card surcharge', fmtPct(st.card_surcharge_pct ?? 0) + '% · card sales only') +
     row('Camera frame on cash sales', onoff(st.watch_frame === true)) +
-    '<p class="owner-muted">Changes run through Gol chat — e.g. "card surcharge 3%" or "store name \'Sunrise Mart\'" — staged as a card, confirmed with "gol".</p>';
+    row('Refunds allowed', onoff(st.refunds_allowed !== false)) +
+    row('Refund PIN', onoff(st.refund_pin !== false)) +
+    row('Refund window', String(st.refund_window_days ?? 30) + ' days') +
+    row('Credit redeem at the till', onoff(st.credit_redeem !== false)) +
+    '<p class="owner-muted">Changes run through Gol chat — e.g. "card surcharge 3%", "refund pin off gara" or "refund window 15 din rakha" — staged as a card, confirmed with "gol". Refunds run from Transactions (pick the sale → Refund) or by asking Gol; a customer\'s credit balance reads in chat with their phone number.</p>';
 }
 
 // --- owner panel: Close the day — the daily action, top of the panel --------
@@ -1356,8 +1604,14 @@ function txnRowEl(sale) {
     .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   const sub = document.createElement('small');
   const n = txnItemCount(sale);
-  sub.textContent = '#' + (sale.id || '') + ' · ' + (sale.tender === 'card' ? 'Card' : 'Cash')
+  const tenderLbl = sale.tenders
+    ? [sale.tenders.credit > 0 ? 'Credit' : null, sale.tenders.card > 0 ? 'Card' : null,
+       sale.tenders.cash > 0 ? 'Cash' : null].filter(Boolean).join(' + ')
+    : (sale.tender === 'card' ? 'Card' : (sale.tender === 'credit' ? 'Credit' : 'Cash'));
+  sub.textContent = '#' + (sale.id || '') + ' · ' + tenderLbl
     + ' · ' + n + (n === 1 ? ' item' : ' items') + (sale.tax_exempt ? ' · EXEMPT' : '')
+    + (sale.refund_status === 'full' ? ' · REFUNDED'
+      : (sale.refund_status === 'partial' ? ' · PART REFUNDED' : ''))
     + '';
   if (sale.frame) { const ft = document.createElement('span'); ft.innerHTML = ' \u00b7 ' + IC_CAM + ' frame'; sub.appendChild(ft); }
   left.appendChild(time); left.appendChild(sub);
@@ -1368,11 +1622,13 @@ function txnRowEl(sale) {
 
   const detail = document.createElement('div');
   detail.className = 'txn-detail hidden';
-  (sale.lines || []).forEach(l => {
+  (sale.lines || []).forEach((l, li2) => {
     const li = document.createElement('div'); li.className = 'txn-line';
     const nm = document.createElement('span');
+    const backQty = sale.refunded_lines ? (sale.refunded_lines[txnLineKey(l, li2)] || 0) : 0;
     nm.textContent = (l.name || '') + ' ×' + (l.qty ?? 1)
-      + (l.manual ? (l.taxable ? ' (TAX)' : ' (NO-TAX)') : '');
+      + (l.manual ? (l.taxable ? ' (TAX)' : ' (NO-TAX)') : '')
+      + (backQty > 0 ? ' · ' + backQty + ' refunded' : '');
     const lt = document.createElement('b'); lt.textContent = money(l.line_total);
     li.appendChild(nm); li.appendChild(lt); detail.appendChild(li);
   });
@@ -1391,10 +1647,20 @@ function txnRowEl(sale) {
     tots.appendChild(trow('Card surcharge' + p, money(sale.surcharge)));
   }
   tots.appendChild(trow('Total', money(sale.total)));
-  tots.appendChild(trow('Paid by', sale.tender === 'card' ? 'Card' : 'Cash'));
+  if (sale.tenders) {
+    if (Number(sale.tenders.credit) > 0) { tots.appendChild(trow('Store credit', '−' + money(sale.tenders.credit))); }
+    if (Number(sale.tenders.card) > 0) { tots.appendChild(trow('Paid by card', money(sale.tenders.card))); }
+    if (Number(sale.tenders.cash) > 0) { tots.appendChild(trow('Paid by cash', money(sale.tenders.cash))); }
+  } else {
+    tots.appendChild(trow('Paid by', sale.tender === 'card' ? 'Card' : (sale.tender === 'credit' ? 'Credit' : 'Cash')));
+  }
   if (sale.tender === 'cash' && sale.tendered !== undefined && sale.tendered !== null) {
     tots.appendChild(trow('Cash given', money(sale.tendered)));
     tots.appendChild(trow('Change', money(sale.change_due || 0)));
+  }
+  if (Number(sale.refunded_total) > 0) {
+    tots.appendChild(trow('Refunded back', money(sale.refunded_total)
+      + (sale.refund_status === 'full' ? ' (in full)' : ' (partial)')));
   }
   detail.appendChild(tots);
   const meta = document.createElement('p'); meta.className = 'txn-meta';
@@ -1418,6 +1684,15 @@ function txnRowEl(sale) {
     showReceipt(sale);
   });
   detail.appendChild(rp);
+  // Refund: offered while the store allows refunds and the sale still
+  // has units that can come back (the server re-checks both, plus the
+  // window and the PIN, at execution — this button only opens the sheet).
+  if ((receiptSettings || {}).refunds_allowed !== false && sale.refund_status !== 'full') {
+    const rb = document.createElement('button');
+    rb.type = 'button'; rb.className = 'txn-refund'; rb.textContent = 'Refund…';
+    rb.addEventListener('click', () => openRefundSheet(sale));
+    detail.appendChild(rb);
+  }
 
   row.addEventListener('click', () => {
     const open = detail.classList.toggle('hidden') === false;
@@ -2232,4 +2507,15 @@ async function bindLaunch() {
   } catch (e) { /* the register never stops for the link */ }
 }
 
-bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); clearTillSearch(); setTimeout(clearTillSearch, 600); });
+// A linked register hides the Credit tender: the Festival balance
+// lives MR.STORE-side as derived points and the register's spend lane
+// for linked stores is a named follow-up — a button that cannot spend
+// is worse than no button. Refunds stay: their restock rides the same
+// MR.STORE bridge a receive uses.
+async function applyLinkMode() {
+  try {
+    const st = await (await fetch(API + '?bind')).json();
+    if (st && st.bound) { $('creditBtn').classList.add('hidden'); }
+  } catch (e) { /* standalone until proven linked */ }
+}
+bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); applyLinkMode(); clearTillSearch(); setTimeout(clearTillSearch, 600); });

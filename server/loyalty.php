@@ -98,17 +98,31 @@ if ($method === 'POST' && isset($_FILES['receipt'])) {
             . 'each receipt counts once. ' . ($s ? standing_line($s) : ''),
               'duplicate' => true, 'standing' => $s]);
     }
-    golpos_loyalty_add_receipt($phone, [
+    $savedReceipt = golpos_loyalty_add_receipt($phone, [
         'store' => $store,
         'date' => $read['date'],
         'total' => $read['total'],
         'receipt_no' => $read['receipt_no'],
         'image' => $imagePath,
     ]);
+    // Festival points: 1 point per $20 on this receipt, 1 point = $1
+    // of store credit, into the ONE ledger (keyed by this receipt's id,
+    // so a receipt can never earn twice — it can only count once
+    // anyway). The points are spendable at the till's Credit tender.
+    $earned = (int)floor((float)$read['total'] / 20);
+    if ($earned > 0) {
+        golpos_credit_add($phone, (float)$earned, 'earn',
+            ['receipt_id' => (string)$savedReceipt['id'], 'receipt_no' => (string)$read['receipt_no']]);
+    }
     $s = golpos_loyalty_standing($phone);
     $dateLine = $read['date'] !== null ? ' dated ' . $read['date'] : '';
+    $pointsLine = $earned > 0
+        ? ' You earned ' . $earned . ' point' . ($earned === 1 ? '' : 's') . ' = '
+            . lmoney((float)$earned) . ' store credit — balance '
+            . lmoney((float)($s['credit'] ?? 0)) . '.'
+        : '';
     lout(['reply' => '✓ Receipt counted — ' . $store . ' #' . $read['receipt_no'] . $dateLine
-        . ': ' . lmoney((float)$read['total']) . '. ' . ($s ? standing_line($s) : ''),
+        . ': ' . lmoney((float)$read['total']) . '. ' . ($s ? standing_line($s) : '') . $pointsLine,
           'counted' => true, 'standing' => $s,
           'receipt' => ['store' => $store, 'date' => $read['date'],
                         'total' => $read['total'], 'receipt_no' => $read['receipt_no']]]);

@@ -692,7 +692,7 @@ function golpos_close_day(string $ymd): array {
         'closed_by' => $b['closed_by'], 'close_time' => $b['close_time'] ?? null,
     ], golpos_batches_on($ymd));
     $unb = golpos_unbatched_card_sales($ymd);
-    $ut = 0.0; foreach ($unb as $s) { $ut += (float)($s['total'] ?? 0); }
+    $ut = 0.0; foreach ($unb as $s) { $ut += golpos_batch_amount($s); }
     $rec['unbatched_card'] = ['count' => count($unb), 'total' => round($ut, 2)];
     $closes = golpos_read('closes.json', []);
     $out = [];
@@ -702,16 +702,49 @@ function golpos_close_day(string $ymd): array {
     return $rec;
 }
 
+// A sale's money split, one shape for every reader: the recorded
+// tenders map when the sale carries one (a credit split), else the
+// whole total on its single tender. Credit is a TENDER, never a
+// discount — the sale's total stands; the split only says whose money
+// it was.
+function golpos_sale_tenders(array $sale): array {
+    $out = ['cash' => 0.0, 'card' => 0.0, 'credit' => 0.0];
+    if (isset($sale['tenders']) && is_array($sale['tenders'])) {
+        foreach ($out as $k => $_) {
+            if (isset($sale['tenders'][$k]) && is_numeric($sale['tenders'][$k])) {
+                $out[$k] = round((float)$sale['tenders'][$k], 2);
+            }
+        }
+        return $out;
+    }
+    $t = (string)($sale['tender'] ?? 'cash');
+    $out[$t === 'card' ? 'card' : ($t === 'credit' ? 'credit' : 'cash')] = round((float)($sale['total'] ?? 0), 2);
+    return $out;
+}
+
 function golpos_day_summary(string $ymd): array {
-    $gross = 0.0; $cash = 0.0; $card = 0.0; $count = 0;
+    $gross = 0.0; $cash = 0.0; $card = 0.0; $credit = 0.0; $count = 0;
     foreach (golpos_sales() as $s) {
         if (substr((string)($s['at'] ?? ''), 0, 10) !== $ymd) { continue; }
-        $total = (float)($s['total'] ?? 0);
-        $gross += $total; $count++;
-        if (($s['tender'] ?? '') === 'cash') { $cash += $total; } else { $card += $total; }
+        $gross += (float)($s['total'] ?? 0); $count++;
+        $t = golpos_sale_tenders($s);
+        $cash += $t['cash']; $card += $t['card']; $credit += $t['credit'];
+    }
+    // Refunds executed this day adjust this day (refund law): a refund
+    // of an older sale is a negative entry in the CURRENT day, never a
+    // rewrite of the day the sale was rung.
+    $refunded = 0.0;
+    foreach (golpos_refunds() as $r) {
+        if (substr((string)($r['at'] ?? ''), 0, 10) !== $ymd) { continue; }
+        $refunded += (float)($r['total'] ?? 0);
+        $gross -= (float)($r['total'] ?? 0);
+        $t = (isset($r['tenders']) && is_array($r['tenders'])) ? $r['tenders'] : [];
+        $cash -= (float)($t['cash'] ?? 0); $card -= (float)($t['card'] ?? 0);
+        $credit -= (float)($t['credit'] ?? 0);
     }
     return ['date' => $ymd, 'gross' => round($gross, 2), 'cash' => round($cash, 2),
-            'card' => round($card, 2), 'txns' => $count];
+            'card' => round($card, 2), 'credit' => round($credit, 2),
+            'refunds' => round($refunded, 2), 'txns' => $count];
 }
 
 // The saved close record for one date, if the day was closed (chat or panel).
@@ -762,6 +795,17 @@ function golpos_settings_defaults(): array {
         // so the receipt and the moment stay paired. Default OFF; card
         // sales never take a frame; a missing camera never blocks a sale.
         'watch_frame' => false,
+        // Refunds + customer credit (owner directive, Oct 28): refunds
+        // are allowed by default and demand the admin PIN; a sale stays
+        // refundable at the till for 30 days (older routes the owner to
+        // MR.STORE). A refund always attaches to a recorded sale — by
+        // design there is no setting that frees the amount. Credit
+        // redeem is on wherever a credit program exists (the till reads
+        // the balance; it never invents one).
+        'refunds_allowed' => true,
+        'refund_pin' => true,
+        'refund_window_days' => 30,
+        'credit_redeem' => true,
     ];
 }
 
@@ -774,8 +818,13 @@ function golpos_settings(): array {
 // are ignored rather than stored — a settings file is never a junk drawer.
 function golpos_save_settings(array $in): array {
     $cur = golpos_settings();
-    foreach (['show_address', 'show_phone', 'logo', 'show_tax', 'auto_open', 'register_open', 'watch_frame'] as $k) {
+    foreach (['show_address', 'show_phone', 'logo', 'show_tax', 'auto_open', 'register_open', 'watch_frame',
+              'refunds_allowed', 'refund_pin', 'credit_redeem'] as $k) {
         if (array_key_exists($k, $in)) { $cur[$k] = (bool)$in[$k]; }
+    }
+    if (isset($in['refund_window_days']) && is_numeric($in['refund_window_days'])) {
+        $w = (int)$in['refund_window_days'];
+        if ($w >= 0 && $w <= 365) { $cur['refund_window_days'] = $w; }
     }
     foreach (['store_name' => 60, 'address' => 120, 'phone' => 40, 'footer' => 120] as $k => $max) {
         if (isset($in[$k]) && is_string($in[$k])) { $cur[$k] = mb_substr(trim($in[$k]), 0, $max); }
@@ -898,7 +947,8 @@ function golpos_loyalty_board(): array {
             }
         }
         $rows[] = ['name' => (string)($c['name'] ?? ''), 'phone' => (string)($c['phone'] ?? ''),
-                   'total' => round($total, 2), 'receipts' => $count];
+                   'total' => round($total, 2), 'receipts' => $count,
+                   'credit' => golpos_credit_balance((string)($c['phone'] ?? ''))];
     }
     usort($rows, static fn($a, $b) => ($b['total'] <=> $a['total']) ?: ($b['receipts'] <=> $a['receipts']));
     foreach ($rows as $i => &$row) { $row['rank'] = $i + 1; }
@@ -911,9 +961,318 @@ function golpos_loyalty_standing(string $phone): ?array {
     $key = golpos_loyalty_phone_key($phone);
     $board = golpos_loyalty_board();
     foreach ($board as $row) {
-        if ($row['phone'] === $key) { $row['of'] = count($board); return $row; }
+        if ($row['phone'] === $key) {
+            $row['of'] = count($board);
+            // The spendable balance rides the same read, so the
+            // customer page and the till can never show two numbers.
+            $row['credit'] = golpos_credit_balance($key);
+            return $row;
+        }
     }
     return null;
+}
+
+// --- Customer credit: the points ledger (owner directive, Oct 28) ------------
+// Festival's rule is the ledger's rule: 1 point per $20 of counted
+// receipt spend, 1 point = $1 of store credit. The ledger lives INSIDE
+// loyalty.json beside the customers and receipts it derives from — one
+// ledger of truth: the balance the till spends is the balance the
+// customer page shows, computed from these entries on every read.
+// Entries are signed amounts: earn/grant/restore add, redeem spends.
+// A redeem is keyed by its sale id and a restore by its refund id, and
+// the ledger itself refuses a second entry under the same key — a
+// retried tender can never double-spend, whatever door retries it.
+function golpos_credit_entries(): array {
+    $d = golpos_read('loyalty.json', null);
+    if (!is_array($d) || !isset($d['credit']) || !is_array($d['credit'])) { return []; }
+    return array_values(array_filter($d['credit'], 'is_array'));
+}
+
+function golpos_credit_balance(string $phone): float {
+    $key = golpos_loyalty_phone_key($phone);
+    if ($key === '') { return 0.0; }
+    $bal = 0.0;
+    foreach (golpos_credit_entries() as $e) {
+        if (($e['phone'] ?? '') === $key) { $bal += (float)($e['amount'] ?? 0); }
+    }
+    return round($bal, 2);
+}
+
+// The credit account for one phone: the loyalty customer plus their
+// balance, or null when the number has no record at all (the till says
+// "no credit on this number" — it never guesses a balance).
+function golpos_credit_account(string $phone): ?array {
+    $c = golpos_loyalty_customer($phone);
+    if ($c === null) { return null; }
+    return ['name' => (string)($c['name'] ?? ''), 'phone' => (string)$c['phone'],
+            'balance' => golpos_credit_balance((string)$c['phone'])];
+}
+
+function golpos_credit_add(string $phone, float $amount, string $kind, array $extra = []): ?array {
+    $key = golpos_loyalty_phone_key($phone);
+    if ($key === '' || $amount == 0.0) { return null; }
+    $dedupeKey = null; $dedupeVal = null;
+    if ($kind === 'redeem' && !empty($extra['sale_id'])) { $dedupeKey = 'sale_id'; $dedupeVal = (string)$extra['sale_id']; }
+    if ($kind === 'restore' && !empty($extra['refund_id'])) { $dedupeKey = 'refund_id'; $dedupeVal = (string)$extra['refund_id']; }
+    if ($kind === 'earn' && !empty($extra['receipt_id'])) { $dedupeKey = 'receipt_id'; $dedupeVal = (string)$extra['receipt_id']; }
+    $d = golpos_loyalty();
+    if (!isset($d['credit']) || !is_array($d['credit'])) { $d['credit'] = []; }
+    if ($dedupeKey !== null) {
+        foreach ($d['credit'] as $e) {
+            if (is_array($e) && ($e['kind'] ?? '') === $kind
+                && (string)($e[$dedupeKey] ?? '') === $dedupeVal) { return null; }
+        }
+    }
+    $entry = ['id' => 'cred_' . substr(sha1(uniqid('', true)), 0, 10),
+              'phone' => $key, 'amount' => round($amount, 2), 'kind' => $kind, 'at' => date('c')];
+    foreach (['sale_id', 'refund_id', 'receipt_id', 'receipt_no', 'note'] as $k) {
+        if (isset($extra[$k]) && (string)$extra[$k] !== '') { $entry[$k] = (string)$extra[$k]; }
+    }
+    $d['credit'][] = $entry;
+    golpos_write('loyalty.json', $d);
+    return $entry;
+}
+
+function golpos_credit_redeem_for_sale(string $saleId): ?array {
+    foreach (golpos_credit_entries() as $e) {
+        if (($e['kind'] ?? '') === 'redeem' && (string)($e['sale_id'] ?? '') === $saleId) { return $e; }
+    }
+    return null;
+}
+
+// --- Refunds (owner directive, Oct 28) ----------------------------------------
+// A refund attaches to a RECORDED sale — never a free-typed amount —
+// and money returns to the sale's ORIGINAL tenders. refunds.json is
+// the one record: what a sale has already given back (per line) is
+// DERIVED from it, so a line can never refund twice or beyond what was
+// sold, and the day/batch math above reads the same facts.
+function golpos_refunds(): array {
+    $r = golpos_read('refunds.json', []);
+    return is_array($r) ? array_values(array_filter($r, 'is_array')) : [];
+}
+
+function golpos_refunds_for_sale(string $saleId): array {
+    return array_values(array_filter(golpos_refunds(),
+        static fn($r) => (string)($r['sale_id'] ?? '') === $saleId));
+}
+
+function golpos_refund_by_id(string $id): ?array {
+    foreach (golpos_refunds() as $r) {
+        if ((string)($r['id'] ?? '') === $id) { return $r; }
+    }
+    return null;
+}
+
+// A sale line's stable identity for refund picks: its SKU, or its
+// position for manual lines (a manual line has no SKU to hold).
+function golpos_sale_line_key(array $line, int $i): string {
+    $sku = (string)($line['sku'] ?? '');
+    return $sku !== '' ? 'sku:' . $sku : 'manual:' . $i;
+}
+
+// What has already gone back on one line: [qty, amount].
+function golpos_refunded_on_line(array $refunds, string $key): array {
+    $qty = 0; $amt = 0.0;
+    foreach ($refunds as $r) {
+        foreach ((array)($r['lines'] ?? []) as $l) {
+            if ((string)($l['key'] ?? '') === $key) {
+                $qty += (int)($l['qty'] ?? 0);
+                $amt += (float)($l['line_total'] ?? 0);
+            }
+        }
+    }
+    return [$qty, round($amt, 2)];
+}
+
+// Quote a refund against a recorded sale — the register math both
+// doors share (Transactions sheet and the Gol chat card). $picks is a
+// list of ['key' => line key, 'qty' => n]; null picks everything still
+// refundable. Returns the full breakdown or ['error' => …] — policy
+// (window), state (already refunded) and quantity refusals all speak
+// here, so no door can talk its way past them.
+function golpos_refund_quote(array $sale, ?array $picks): array {
+    $st = golpos_settings();
+    $saleDay = substr((string)($sale['at'] ?? ''), 0, 10);
+    $age = (strtotime(date('Y-m-d')) - strtotime($saleDay)) / 86400;
+    $window = (int)($st['refund_window_days'] ?? 30);
+    if ($age > $window) {
+        return ['error' => 'That sale is ' . (int)$age . ' days old — past the ' . $window
+            . '-day refund window. Older refunds run through MR.STORE; nothing was refunded.'];
+    }
+    $prior = golpos_refunds_for_sale((string)($sale['id'] ?? ''));
+    $priorTax = 0.0; $priorSurcharge = 0.0; $priorTotal = 0.0;
+    foreach ($prior as $r) {
+        $priorTax += (float)($r['tax'] ?? 0);
+        $priorSurcharge += (float)($r['surcharge'] ?? 0);
+        $priorTotal += (float)($r['total'] ?? 0);
+    }
+    $states = [];
+    foreach ((array)($sale['lines'] ?? []) as $i => $l) {
+        if (!is_array($l)) { continue; }
+        $key = golpos_sale_line_key($l, (int)$i);
+        [$rQty, $rAmt] = golpos_refunded_on_line($prior, $key);
+        $sold = max(1, (int)($l['qty'] ?? 1));
+        $states[$key] = ['key' => $key, 'sku' => (string)($l['sku'] ?? ''),
+            'name' => (string)($l['name'] ?? ''), 'manual' => !empty($l['manual']),
+            'taxable' => ($l['taxable'] ?? true) !== false,
+            'price' => (float)($l['price'] ?? 0), 'sold' => $sold,
+            'refunded_qty' => $rQty, 'refunded_amt' => $rAmt,
+            'remaining' => max(0, $sold - $rQty),
+            'line_total' => (float)($l['line_total'] ?? 0)];
+    }
+    $want = [];
+    if ($picks === null) {
+        foreach ($states as $key => $s) { if ($s['remaining'] > 0) { $want[$key] = $s['remaining']; } }
+        if (!$want) { return ['error' => 'That sale is already fully refunded — nothing left to give back.']; }
+    } else {
+        foreach ($picks as $p) {
+            $key = (string)($p['key'] ?? '');
+            $qty = (int)($p['qty'] ?? 0);
+            if (!isset($states[$key])) { return ['error' => 'One of those lines is not on this sale.']; }
+            if ($qty < 1) { return ['error' => 'A refund line needs at least one item.']; }
+            if ($qty > $states[$key]['remaining']) {
+                return ['error' => $states[$key]['name'] . ' — only ' . $states[$key]['remaining']
+                    . ' left to refund on this sale (a line can never refund beyond what was sold, or twice).'];
+            }
+            $want[$key] = $qty;
+        }
+        if (!$want) { return ['error' => 'Pick at least one line to refund.']; }
+    }
+    $lines = []; $subtotal = 0.0; $taxableSub = 0.0; $saleTaxableSub = 0.0;
+    foreach ($states as $s) { if ($s['taxable']) { $saleTaxableSub += $s['line_total']; } }
+    $completes = true;
+    foreach ($states as $s) {
+        if (($want[$s['key']] ?? 0) < $s['remaining']) { $completes = false; }
+    }
+    foreach ($want as $key => $qty) {
+        $s = $states[$key];
+        // Picking everything left on a line returns the line's exact
+        // remaining cents — partial picks price at the recorded unit.
+        $amt = ($qty === $s['remaining'])
+            ? round($s['line_total'] - $s['refunded_amt'], 2)
+            : round($s['price'] * $qty, 2);
+        $lines[] = ['key' => $key, 'sku' => $s['sku'], 'name' => $s['name'],
+                    'qty' => $qty, 'price' => $s['price'], 'line_total' => $amt,
+                    'manual' => $s['manual']];
+        $subtotal += $amt;
+        if ($s['taxable']) { $taxableSub += $amt; }
+    }
+    $subtotal = round($subtotal, 2);
+    $saleTax = (float)($sale['tax'] ?? 0);
+    $tax = 0.0;
+    if ($saleTax > 0 && $saleTaxableSub > 0) {
+        $tax = $completes ? round($saleTax - $priorTax, 2)
+            : round($saleTax * ($taxableSub / $saleTaxableSub), 2);
+    }
+    $saleSurcharge = (float)($sale['surcharge'] ?? 0);
+    $surcharge = 0.0;
+    $saleBase = (float)($sale['subtotal'] ?? 0) + $saleTax;
+    if ($saleSurcharge > 0 && $saleBase > 0) {
+        $surcharge = $completes ? round($saleSurcharge - $priorSurcharge, 2)
+            : round($saleSurcharge * (($subtotal + $tax) / $saleBase), 2);
+    }
+    $total = round($subtotal + $tax + $surcharge, 2);
+    // Money returns to the ORIGINAL tenders, in their proportions,
+    // with the rounding remainder settled on the largest part.
+    $src = array_filter(golpos_sale_tenders($sale), static fn($v) => $v > 0);
+    $srcSum = array_sum($src);
+    $alloc = ['cash' => 0.0, 'card' => 0.0, 'credit' => 0.0];
+    if ($srcSum > 0 && $total > 0) {
+        $given = 0.0; $biggest = null;
+        foreach ($src as $k => $v) {
+            $alloc[$k] = round($total * ($v / $srcSum), 2);
+            $given += $alloc[$k];
+            if ($biggest === null || $v > $src[$biggest]) { $biggest = $k; }
+        }
+        $drift = round($total - $given, 2);
+        if ($biggest !== null && $drift != 0.0) { $alloc[$biggest] = round($alloc[$biggest] + $drift, 2); }
+    }
+    $cardPart = (float)$alloc['card'];
+    $batchEffect = 'none';
+    if ($cardPart > 0) {
+        $sealedIds = [];
+        foreach (golpos_batches() as $b) {
+            foreach ((array)($b['sale_ids'] ?? []) as $id) { $sealedIds[(string)$id] = true; }
+        }
+        $batchEffect = isset($sealedIds[(string)($sale['id'] ?? '')])
+            ? 'negative_in_current' : 'removed_from_open';
+    }
+    return ['lines' => $lines, 'subtotal' => $subtotal, 'tax' => $tax,
+            'surcharge' => $surcharge, 'total' => $total, 'tenders' => $alloc,
+            'batch_effect' => $batchEffect, 'completes' => $completes,
+            'states' => array_values($states)];
+}
+
+// Returned goods go back on the shelf — the count changes because the
+// goods physically returned (unlike a What's Out report). ONE path:
+// standalone increments the live catalog exactly where rung sales
+// decrement it; link mode moves MR.STORE stock up through
+// mrstore_adjust_stock — the same bridge function a receive executes
+// — and logs the movement as a refund restock. Manual lines carry no
+// product and never touch stock.
+function golpos_restock_lines(array $lines): array {
+    $notes = [];
+    if (golpos_link_on()) {
+        foreach ($lines as $l) {
+            if (!empty($l['manual']) || (string)($l['name'] ?? '') === '') { continue; }
+            $res = mrstore_adjust_stock((string)($l['mr_name'] ?? $l['name']), (float)($l['qty'] ?? 0));
+            if ($res !== null) {
+                $notes[] = $res;
+                golpos_link_log(['kind' => 'refund_restock', 'name' => $res['name'],
+                                 'qty' => (float)($l['qty'] ?? 0),
+                                 'before' => $res['before'], 'after' => $res['after']]);
+            }
+        }
+        return $notes;
+    }
+    $cat = golpos_catalog();
+    $idx = [];
+    foreach ($cat['products'] as $i => $p) { $idx[(string)($p['sku'] ?? '')] = $i; }
+    $moved = false;
+    foreach ($lines as $l) {
+        $sku = (string)($l['sku'] ?? '');
+        if ($sku === '' || !isset($idx[$sku])) { continue; }
+        $i = $idx[$sku];
+        if (!isset($cat['products'][$i]['stock']) || !is_numeric($cat['products'][$i]['stock'])) { continue; }
+        $before = $cat['products'][$i]['stock'] + 0;
+        $cat['products'][$i]['stock'] = $before + max(1, (int)($l['qty'] ?? 1));
+        $notes[] = ['name' => (string)($cat['products'][$i]['name'] ?? ''),
+                    'before' => $before, 'after' => $cat['products'][$i]['stock']];
+        $moved = true;
+    }
+    if ($moved) { golpos_write('catalog.live.json', $cat); }
+    return $notes;
+}
+
+// Execute a refund ONCE: the quote is recomputed at execution (a card
+// staged earlier can never spend stale state), the record lands, the
+// goods restock, and any credit portion returns to the customer's
+// balance as a restore entry keyed by this refund's id.
+function golpos_execute_refund(array $sale, ?array $picks, string $byName, string $byEmail): array {
+    if (empty(golpos_settings()['refunds_allowed'])) {
+        return ['error' => 'Refunds are off for this store — turn them on in Gol chat (a settings card) first.'];
+    }
+    $q = golpos_refund_quote($sale, $picks);
+    if (isset($q['error'])) { return $q; }
+    $rec = ['id' => 'ref_' . substr(sha1(uniqid('', true)), 0, 10),
+            'sale_id' => (string)($sale['id'] ?? ''), 'at' => date('c'),
+            'lines' => $q['lines'], 'subtotal' => $q['subtotal'], 'tax' => $q['tax'],
+            'surcharge' => $q['surcharge'], 'total' => $q['total'], 'tenders' => $q['tenders'],
+            'batch_effect' => $q['batch_effect'],
+            'by' => $byName, 'by_email' => $byEmail];
+    if ((float)($q['tenders']['credit'] ?? 0) > 0 && !empty($sale['credit_phone'])) {
+        $rec['credit_phone'] = (string)$sale['credit_phone'];
+    }
+    $all = golpos_refunds();
+    $all[] = $rec;
+    golpos_write('refunds.json', $all);
+    $rec['restocked'] = golpos_restock_lines($q['lines']);
+    if (isset($rec['credit_phone'])) {
+        golpos_credit_add($rec['credit_phone'], (float)$q['tenders']['credit'], 'restore',
+            ['refund_id' => $rec['id'], 'sale_id' => $rec['sale_id']]);
+        $rec['credit_restored'] = (float)$q['tenders']['credit'];
+    }
+    return ['refund' => $rec];
 }
 
 // --- People & access (owner directive, Oct 28) -------------------------------
@@ -1052,6 +1411,22 @@ function golpos_batches(): array {
     return is_array($b) ? $b : [];
 }
 
+// The card money one segment row contributes to a batch. A sale
+// contributes its card tender MINUS the card portions of refunds that
+// removed money from the open segment (batch_effect removed_from_open);
+// a refund pseudo-row (a sealed sale's refund, riding as a negative
+// entry in the current segment) contributes its negative total as-is.
+function golpos_batch_amount(array $row): float {
+    if (!empty($row['refund'])) { return round((float)($row['total'] ?? 0), 2); }
+    $due = golpos_sale_tenders($row)['card'];
+    foreach (golpos_refunds_for_sale((string)($row['id'] ?? '')) as $r) {
+        if (($r['batch_effect'] ?? '') === 'removed_from_open') {
+            $due -= (float)($r['tenders']['card'] ?? 0);
+        }
+    }
+    return round($due, 2);
+}
+
 function golpos_unbatched_card_sales(?string $ymd = null): array {
     $sealed = [];
     foreach (golpos_batches() as $b) {
@@ -1059,10 +1434,23 @@ function golpos_unbatched_card_sales(?string $ymd = null): array {
     }
     $out = [];
     foreach (golpos_sales() as $s) {
-        if (($s['tender'] ?? '') !== 'card') { continue; }
         if (isset($sealed[(string)($s['id'] ?? '')])) { continue; }
+        if (golpos_batch_amount($s) <= 0.004) { continue; } // no card money owed
         if ($ymd !== null && substr((string)($s['at'] ?? ''), 0, 10) !== $ymd) { continue; }
         $out[] = $s;
+    }
+    // Negative entries: refunds of sales already inside a SEALED batch
+    // ride the current open segment as negative rows (a sealed batch is
+    // never edited) until a seal takes them in by id, like a sale.
+    foreach (golpos_refunds() as $r) {
+        if (($r['batch_effect'] ?? '') !== 'negative_in_current') { continue; }
+        if (isset($sealed[(string)($r['id'] ?? '')])) { continue; }
+        if ($ymd !== null && substr((string)($r['at'] ?? ''), 0, 10) !== $ymd) { continue; }
+        $cardPart = round((float)($r['tenders']['card'] ?? 0), 2);
+        if ($cardPart <= 0) { continue; }
+        $out[] = ['id' => (string)$r['id'], 'at' => (string)($r['at'] ?? ''),
+                  'tender' => 'card', 'total' => -$cardPart, 'refund' => true,
+                  'sale_id' => (string)($r['sale_id'] ?? ''), 'lines' => (array)($r['lines'] ?? [])];
     }
     return $out;
 }
@@ -1070,7 +1458,7 @@ function golpos_unbatched_card_sales(?string $ymd = null): array {
 function golpos_seal_batch(array $sales, string $closedBy, ?string $closeTime = null): array {
     $batches = golpos_batches();
     $total = 0.0;
-    foreach ($sales as $s) { $total += (float)($s['total'] ?? 0); }
+    foreach ($sales as $s) { $total += golpos_batch_amount($s); }
     $rec = [
         'n' => count($batches) + 1,
         'date' => date('Y-m-d'),
