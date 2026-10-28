@@ -240,3 +240,17 @@ One entry per day; the git history carries the same dates.
     PIN demand with no leak spot-checked by hand. PHP -l clean on every server file,
     node --check clean on app.js + invite.js; asset stamps bumped to the client
     commit per the static-cache law.
+- **PIN gate: report classification fixed (follow-up, Oct 28).** The gate caught
+  English period words ("last week ko report dekha" was gated) but missed Nepali
+  report asks — a fresh cashier asking "hijo ko report dekha" got today's-total
+  fallback with no PIN demanded. New shared matcher `golpos_is_report_intent` in
+  server/brain.php, called from the gate ahead of the settings-word return:
+  (figure nouns — report/hisab/bikri/sales/total/kamai — or the "kati …
+  bhayo/thiyo" shape) crossed with a NON-today time reference (hijo/asti/parsi/
+  gata/last/previous/kal/agadi, hapta/hafte/mahina/mahine week-month periods,
+  explicit dates, month names; Devanagari included). Guards keep the cashier
+  domain intact: a pure today ask ("aaja kati bikri bho?") never carries a
+  non-today reference, and a price-of-item query naming a day ("hijo Coke ko
+  price kati thiyo?") stays a price answer. Evidence (throwaway copy): Nepali
+  battery 10 fails pre-fix → 17/17 post-fix, every gated reply showing zero
+  figures; original access battery still 43/43.

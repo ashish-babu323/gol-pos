@@ -520,6 +520,35 @@ function golpos_is_hours_set(string $msg): bool {
     if (preg_match('/(banda|khulne).{0,12}\d{1,2}\s*(baje|pm|am)/iu', $n)) { return true; }
     return false;
 }
+// A report ask: sales/report FIGURES for a time OTHER than "today so far".
+// The meaning is (figure words, or a "kati … bhayo/thiyo" figure shape)
+// crossed with a non-today time reference — Romanized Nepali, Hindi,
+// English and Devanagari time words all count, as do explicit dates and
+// month names. A pure "today so far" ask never carries one of these
+// references, so the cashier day total stays open; and a price-of-item
+// query that merely names a day ("hijo Coke ko price kati thiyo?") is
+// still a price query — figure+non-today ⇒ admin, price-of-item ⇒ cashier.
+function golpos_is_report_intent(string $msg): bool {
+    // Non-today time references: other days (hijo/asti/kal), last/previous,
+    // week-and-month periods, "days ago", an explicit date or month name.
+    $other = preg_match('/(hijo|hiju|asti|parsi|bholi|gata|\blast\b|previous|pichhla|pichhle|\bkal\b|agadi|\bago\b'
+        . '|hapta|hafte|week|mahina|mahine|month|tarikh|miti'
+        . '|हिजो|अस्ति|गत|हप्ता|महिना|मिति)/iu', $msg) === 1
+        || preg_match('/\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}[\/.\-]\d{1,2}([\/.\-]\d{2,4})?\b/u',
+                      golpos_norm_digits($msg)) === 1
+        || preg_match('/\b(january|february|march|april|may|june|july|august|september|october|november|december'
+                      . '|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b/iu', $msg) === 1;
+    if (!$other) { return false; }
+    // Figure-seeking: a figure noun, or the "kati … bhayo/thiyo" ask shape.
+    $figureNoun = preg_match('/(report|hisab|hisaab|हिसाब|bikri|बिक्री|sales|sale|total|jamma|kamai|revenue|earning)/iu', $msg) === 1;
+    $figure = $figureNoun
+        || preg_match('/(kati|kitna|kitni|kitne|कति).{0,40}(bhayo|bho|thiyo|भयो|थियो)/iu', $msg) === 1;
+    if (!$figure) { return false; }
+    // Price-of-item guard: price words and no figure noun ⇒ a price query
+    // that happens to name a day, not a report.
+    if (!$figureNoun && preg_match('/(price|mulya|dam|daam|मूल्य|दाम)/iu', $msg) === 1) { return false; }
+    return true;
+}
 // A typed PIN: 4–6 digits and nothing else (Devanagari digits normalized).
 function golpos_pin_shaped(string $msg): ?string {
     $d = golpos_norm_digits(trim($msg));
@@ -1152,6 +1181,7 @@ function golpos_needs_admin(string $msg, array $in): bool {
     if (golpos_is_batch_close_intent($msg)) { return true; }
     if (golpos_is_employee_intent($msg)) { return true; }
     if (golpos_is_loyalty_board_intent($msg)) { return true; }
+    if (golpos_is_report_intent($msg)) { return true; }
     if (preg_match('/(receipt|bill|print|paper|footer|logo|tax|auto|cop(y|ies)|phone|address|store name|फोन|ठेगाना|लोगो|कर)/iu', $msg)) { return false; }
     if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|kasto|kina|hapta|हप्ता|week|month|suggest|advice|sujhab|sujhav|sallah|slow|trend|improv)/iu', $msg)) { return true; }
     if (preg_match('/(close|banda|बन्द|क्लोज)/iu', $msg)) { return true; }
