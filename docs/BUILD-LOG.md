@@ -254,3 +254,54 @@ One entry per day; the git history carries the same dates.
   price kati thiyo?") stays a price answer. Evidence (throwaway copy): Nepali
   battery 10 fails pre-fix → 17/17 post-fix, every gated reply showing zero
   figures; original access battery still 43/43.
+
+## Day 3 (Oct 28) — MR.STORE link: Gol Connect simulation (branch mrstore-link)
+
+- server/mrstore.php (new): the bridge. It speaks MR.STORE's own storage
+  language — MySQL lm_ops_kv rows under the fixed Floor ops owner, loaded
+  and saved with the same patterns as store-api/gol-chat.php
+  (gol_catalog_load / gol_catalog_save / gol_pos_apply_stock /
+  gol_apply_stock_counts), including the stock_overrides patch and the
+  gol-backups backup convention. No mirror file exists: a write here is a
+  write in MR.STORE.
+- Fencing: every write path refuses unless the configured store id is the
+  Muse QA Test Store (22af5007-…). Reads are store-scoped the same way.
+- Wiring (all behind LINK_MRSTORE, default off; standalone POS unchanged —
+  smoke-tested link-off: seed catalog, sale, day total all normal):
+  golpos_catalog() serves the linked store's catalog (real store name,
+  live onHand, MR.STORE prices; POS-side demo prices only where MR.STORE
+  has none, never written back); a completed sale calls
+  mrstore_record_sale() so MR.STORE stock moves; the Gol chat gains a
+  stock lane (one item's stock, out/low list, staged stock-receive card
+  executing on "gol") answered from MR.STORE live state; day-total
+  answers name their source (POS till vs MR.STORE); owner price changes
+  and new items sync back into the MR.STORE catalog.
+- scripts/sim-month.php: the month runner — drives the same
+  golpos_append_sale + bridge functions in a loop (100 txns/day × 30
+  days), c-store-weighted baskets, twice-weekly + guard receives, a day
+  close per day, every simulated sale labelled source=sim-month.
+- Adjustment (owner pointer, same day): MR.STORE already ships its own
+  POS — pos.html launched from the desk/settings paint JS as
+  pos.html?store=<id>&name=<name>&unlock=1; its sales post to
+  /store-api/?route=pos_sale, which appends a ticket to the register
+  journal (store-api/data/pos/sales-<store>-<day>.jsonl via
+  lm_pos_append_ticket in card-report.php); stock moves separately via
+  gol_pos_apply_stock. The bridge now mirrors BOTH halves: every Gol POS
+  sale also appends its journal ticket by calling lm_pos_append_ticket
+  itself. The Gol POS register accepts the same launch params: app.js
+  records ?store=&name=&unlock= via POST {bind}, the link engages only
+  when the named store is the configured one, and any other store is
+  refused with a plain note + standalone fallback. MR.STORE's card batch
+  (pos-batch.html, lm_batch_* over the journal) is a settlement batch —
+  a different record from this POS's day-close; the parity map says so.
+- Simulation executed (Oct 28): deployed to gol-pos-sim (gol-pos-dev
+  untouched), basic proofs over HTTPS (3 sales, stock Q&A, staged
+  receive, binding contract incl. a refused Lucky launch), then the
+  month run — 100 txns/day × 30 days (Sep 29–Oct 28), 3,000 sales,
+  $57,301.04 gross; every day closed; stock equation verified 28/28 by
+  ordered replay; 3 sample days cross-checked line-by-line against
+  MR.STORE's own card report over the journal; Gol's month answer
+  ($53,580.05, October) matches the POS log to the cent; Lucky + 123
+  state files md5-identical before/after. Full evidence:
+  docs/mrstore-sim-evidence.md. Parity: docs/mrstore-parity-map.md
+  (10 wired-in-sim · 10 already chat-native · 10 remaining).

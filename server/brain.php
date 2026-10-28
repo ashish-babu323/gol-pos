@@ -239,6 +239,46 @@ $S = [
     'np' => 'Copy 1, 2 wa 3 matra milchha — kati ota print garne?',
     'hi' => 'Copies 1, 2 ya 3 hi ho sakti hain — kitni print karoon?',
     'dev' => 'प्रति १, २ वा ३ मात्र मिल्छ — कति वटा छाप्ने?'],
+  'stock_one' => [
+    'en' => '%s — %s on hand (MR.STORE live stock).',
+    'np' => '%s — %s ota chha (MR.STORE live stock).',
+    'hi' => '%s — %s maujud hai (MR.STORE live stock).',
+    'dev' => '%s — %s वटा छ (MR.STORE लाइभ स्टक)।'],
+  'stock_untracked' => [
+    'en' => '%s is in the MR.STORE catalog, but its stock count is not tracked.',
+    'np' => '%s MR.STORE ko list ma chha, tara stock count track bhayeko chhaina.',
+    'hi' => '%s MR.STORE ki list mein hai, lekin stock count track nahi hota.',
+    'dev' => '%s MR.STORE को सूचीमा छ, तर स्टक गन्ती ट्र्याक भएको छैन।'],
+  'stock_notfound' => [
+    'en' => 'I couldn\'t find that item in the MR.STORE catalog.',
+    'np' => 'MR.STORE ko list ma tyo saman bhettina.',
+    'hi' => 'MR.STORE ki list mein woh saaman nahi mila.',
+    'dev' => 'MR.STORE को सूचीमा त्यो सामान भेटिन।'],
+  'stock_low_head' => [
+    'en' => 'Out or running low at %s (MR.STORE live stock):',
+    'np' => '%s ma sakiyeko wa sakina lageko (MR.STORE live stock):',
+    'hi' => '%s mein khatam ya kam (MR.STORE live stock):',
+    'dev' => '%s मा सकिएको वा सकिन लागेको (MR.STORE लाइभ स्टक):'],
+  'stock_low_none' => [
+    'en' => 'Nothing is out or running low — every tracked item has more than 2 on hand (MR.STORE live stock).',
+    'np' => 'Kehi sakiyeko wa sakina lageko chhaina — sabai tracked item 2 bhanda badhi chha (MR.STORE live stock).',
+    'hi' => 'Kuchh khatam ya kam nahi hai — har tracked item 2 se zyada hai (MR.STORE live stock).',
+    'dev' => 'केही सकिएको वा सकिन लागेको छैन — सबै ट्र्याक गरिएको सामान २ भन्दा बढी छ (MR.STORE लाइभ स्टक)।'],
+  'stock_recv_done' => [
+    'en' => '%s received — MR.STORE stock %s → %s.',
+    'np' => '%s ayo — MR.STORE stock %s → %s bhayo.',
+    'hi' => '%s aaya — MR.STORE stock %s → %s ho gaya.',
+    'dev' => '%s आयो — MR.STORE स्टक %s → %s भयो।'],
+  'stock_link_down' => [
+    'en' => 'I can\'t reach MR.STORE right now, so I can\'t read stock.',
+    'np' => 'Ahile MR.STORE sanga connect bhayena — stock herna milena.',
+    'hi' => 'Abhi MR.STORE se connect nahi ho raha — stock nahi dekh sakta.',
+    'dev' => 'अहिले MR.STORE सँग कनेक्ट भएन — स्टक हेर्न मिलेन।'],
+  'src_till' => [
+    'en' => '(Source: POS till — stock lives in MR.STORE.)',
+    'np' => '(Source: POS till — stock MR.STORE ma chha.)',
+    'hi' => '(Source: POS till — stock MR.STORE mein hai.)',
+    'dev' => '(स्रोत: POS टिल — स्टक MR.STORE मा छ।)'],
   'fallback' => [
     'en' => 'I can add items, quote or change prices (staged as a card), give today\'s total, and run the receipt print settings. Try: "print settings" or "How much is Coke?"',
     'np' => 'Ma saman thapna, mulya sodhna/badalna (card stage garera), din ko hisab dina, ra receipt print settings chalauna sakchhu. Prayas garnus: "print settings ke chha?"',
@@ -788,6 +828,20 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
         }
         out(['reply' => t('emp_not_found', (string)$card['email'])]);
     }
+    // A stock-receive card (link mode): the goods physically arrived, the
+    // owner confirmed — MR.STORE stock goes up by the received quantity.
+    // A stock write is an admin execution: the gate's card-type list
+    // includes stock_receive, so "gol" from an unelevated session demands
+    // the PIN before this runs, exactly like a price change.
+    if ($card['type'] === 'stock_receive') {
+        $res = mrstore_adjust_stock((string)$card['name'], (float)$card['qty']);
+        golpos_clear_pending();
+        if ($res === null) { out(['reply' => t('card_fail')]); }
+        golpos_link_log(['kind' => 'receive', 'name' => $res['name'], 'qty' => (float)$card['qty'],
+                         'before' => $res['before'], 'after' => $res['after'], 'via' => 'chat']);
+        $fmt = static fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
+        out(['reply' => t('stock_recv_done', $res['name'], $fmt($res['before']), $fmt($res['after'])), 'done' => $card]);
+    }
     out(['reply' => t('card_fail')]);
 }
 
@@ -961,13 +1015,70 @@ if (preg_match('/(receipt|bill|print|paper|footer|logo|tax|auto|cop(y|ies)|phone
     // normal intents below — never a dead end.
 }
 
+// --- MR.STORE stock lane (link mode only) --------------------------------------
+// With MR.STORE connected, stock questions are answered from MR.STORE's
+// live state — never from the register's memory — and a delivery is staged
+// as a card that moves MR.STORE stock on "gol". This lane sits before the
+// price and day-total lanes because "stock kati chha?" is a stock question,
+// not a price question.
+if (golpos_link_on() && preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khatam|restock|received|delivery|ayo|aayo|स्टक|आयो)/iu', $msg)) {
+    $fmtq = static fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
+    // a receive: "<item> <qty> ayo" / "received 24 Coke" — staged, not instant
+    if (preg_match('/(ayo|aayo|aaya|received|restock|delivery|आयो)/iu', $msg)
+        && !preg_match('/(kati|kun|which|list|dekha|कति|कुन)/iu', $msg)) {
+        $r = resolve_item($products, $msg);
+        if (!empty($r['one'])) {
+            $p = $r['one'];
+            $rest = preg_replace('/\b\d+(?:\.\d+)?\s*(oz|pk|lb|ml|ltr|l|g|kg)\b/iu', ' ', $msg);
+            $qty = null;
+            if (preg_match_all('/(\d+(?:\.\d+)?)/', golpos_norm_digits((string)$rest), $nm2)) {
+                $nums = array_map('floatval', $nm2[1]);
+                $qty = end($nums);
+            }
+            if ($qty !== null && $qty > 0) {
+                $card = golpos_stage(['type' => 'stock_receive',
+                                      'name' => $p['mr_name'] ?? $p['name'], 'qty' => $qty]);
+                out(['reply' => t('card_staged'), 'card' => $card]);
+            }
+        }
+    }
+    // out / running-low list
+    if (preg_match('/(sakina|sakiyo|khatam|low|out|kun kun|कुन कुन)/iu', $msg)) {
+        $rows = [];
+        foreach ($products as $p) {
+            if (!isset($p['onHand']) || $p['onHand'] === null) { continue; }
+            if ((float)$p['onHand'] <= 2) { $rows[] = $p; }
+        }
+        usort($rows, static fn($a, $b) => (float)$a['onHand'] <=> (float)$b['onHand']);
+        if (!$rows) { out(['reply' => t('stock_low_none')]); }
+        $lines = [t('stock_low_head', $shop)];
+        foreach ($rows as $p) {
+            $lines[] = '• ' . $p['name'] . ' — ' . ((float)$p['onHand'] <= 0 ? '0 (out)' : $fmtq($p['onHand']) . ' left');
+        }
+        out(['reply' => implode("\n", $lines)]);
+    }
+    // one item's stock, read live from MR.STORE
+    $r = resolve_item($products, $msg);
+    if (!empty($r['one'])) {
+        $st = mrstore_stock_of((string)($r['one']['mr_name'] ?? $r['one']['name']));
+        if ($st === null) { out(['reply' => t('stock_link_down')]); }
+        if ($st['onHand'] === null) { out(['reply' => t('stock_untracked', $st['name'])]); }
+        out(['reply' => t('stock_one', $st['name'], $fmtq($st['onHand']))]);
+    }
+    if (!empty($r['many'])) {
+        $list = implode(', ', array_map(fn($p) => $p['name'], $r['many']));
+        out(['reply' => t('which_one', $list)]);
+    }
+    out(['reply' => t('stock_notfound')]);
+}
+
 // --- analysis / advice: the DEEP-THINK lane (Muse Wonder) --------------------
 // Judgment questions leave the register floor and go to Wonder: why was
 // today slow, how was the week, what should I do. The deterministic layer
 // assembles the week's facts; Wonder composes the judgment; Spark composes
 // if Wonder is unreachable; the template speaks if neither answers. Same
 // grounding law: a reply is accepted only if it carries a real figure.
-if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|kasto|kina|hapta|हप्ता|week|month|suggest|advice|sujhab|sujhav|sallah|slow|trend|improv)/iu', $msg)) {
+if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|kasto|kina|hapta|हप्ता|week|month|mahina|महिना|suggest|advice|sujhab|sujhav|sallah|slow|trend|improv)/iu', $msg)) {
     [$facts, $figures, $weekTx, $weekGross, $todaySum, $monthGross, $monthTx, $monthCash, $monthCard] = golpos_week_facts($shop, $products);
     if ($weekTx === 0 && $monthTx === 0) { out(['reply' => t('week_none')]); }
     $grounded = function (?string $reply) use ($figures): bool {
@@ -1015,10 +1126,12 @@ if (preg_match('/(kati bikri|kitni bikri|aaja ko|aaj ka|aaja kati|becheu|आज|
     }
     // Muse composes the day line from the exact figures; template if it can't.
     $facts = "Today's sales at {$shop} so far: total " . money($s['gross']) . " across {$s['txns']} sales"
-        . " — cash " . money($s['cash']) . ", card " . money($s['card']) . ".";
+        . " — cash " . money($s['cash']) . ", card " . money($s['card']) . "."
+        . (golpos_link_on() ? " These are the POS till's own figures; stock figures live in MR.STORE." : "");
     $reply = golpos_meta_compose($shop, $facts, $msg);
     if ($reply !== null && strpos($reply, money($s['gross'])) !== false) { out(['reply' => $reply]); }
-    out(['reply' => t('day_total', money($s['gross']), $s['txns'], money($s['cash']), money($s['card']))]);
+    out(['reply' => t('day_total', money($s['gross']), $s['txns'], money($s['cash']), money($s['card']))
+                    . (golpos_link_on() ? "\n" . t('src_till') : '')]);
 }
 
 // --- new item (staged) ---------------------------------------------------------
@@ -1142,6 +1255,11 @@ $sum = golpos_day_summary(date('Y-m-d'));
 $pack = "Shop: {$shop}. Today so far: " . money($sum['gross']) . " across {$sum['txns']} sales"
     . " (cash " . money($sum['cash']) . ", card " . money($sum['card']) . ").\nCatalog (name — price): "
     . implode('; ', array_map(fn($p) => $p['name'] . ' — ' . money((float)$p['price']), $products));
+if (golpos_link_on()) {
+    $pack .= "\nStock on hand (MR.STORE live): " . implode('; ', array_map(
+        fn($p) => $p['name'] . ' — ' . (isset($p['onHand']) && $p['onHand'] !== null ? (string)(float)$p['onHand'] : 'not tracked'),
+        $products)) . ". Sales totals above are the POS till's own figures.";
+}
 $reply = golpos_meta_compose($shop, $pack, $msg);
 if ($reply !== null) { out(['reply' => $reply]); }
 
@@ -1172,7 +1290,7 @@ function golpos_needs_admin(string $msg, array $in): bool {
     if (in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true) || !empty($in['confirm'])) {
         $pend = golpos_pending();
         return $pend !== null && in_array($pend['type'] ?? '', [
-            'price_change', 'new_item', 'setting_change', 'batch_close', 'employee_remove',
+            'price_change', 'new_item', 'setting_change', 'batch_close', 'employee_remove', 'stock_receive',
         ], true);
     }
     if (preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', $msg)) { return true; }

@@ -14,5 +14,8 @@ data/closes.json
 data/people.json
 data/sessions.json
 data/batches.json
+data/link.json
+data/bind.json
+data/mrstore_link_log.jsonl
 web/uploads/receipts/*
 !web/uploads/receipts/.gitkeep
