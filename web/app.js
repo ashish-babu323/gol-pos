@@ -27,6 +27,8 @@ function brainPayload(obj) {
 const LOYALTY = '../server/loyalty.php';
 const $ = (id) => document.getElementById(id);
 const money = (n) => '$' + Number(n).toFixed(2);
+const IC_CAM = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+const IC_CHECK = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 9.5 18 20 6.5"/></svg>';
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // A surcharge percent as the owner says it: 3, 2.5 — never 3.0.
 const fmtPct = (p) => String(Math.round(Number(p) * 10) / 10);
@@ -700,7 +702,7 @@ function chatCard(card) {
   } else {
     body = `<div class="sc-what">New item — ${card.name} · ${money(card.price)}</div>`;
   }
-  d.innerHTML = `<span class="sc-badge">STAGED</span>${body}<button type="button">✓ Confirm — Gol</button>`;
+  d.innerHTML = `<span class="sc-badge">STAGED</span>${body}<button type="button">${IC_CHECK} Confirm — Gol</button>`;
   d.querySelector('button').addEventListener('click', async () => {
     const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(brainPayload({ confirm: true })) });
@@ -1156,7 +1158,8 @@ function txnRowEl(sale) {
   const n = txnItemCount(sale);
   sub.textContent = '#' + (sale.id || '') + ' · ' + (sale.tender === 'card' ? 'Card' : 'Cash')
     + ' · ' + n + (n === 1 ? ' item' : ' items') + (sale.tax_exempt ? ' · EXEMPT' : '')
-    + (sale.frame ? ' · 📷 frame' : '');
+    + '';
+  if (sale.frame) { const ft = document.createElement('span'); ft.innerHTML = ' \u00b7 ' + IC_CAM + ' frame'; sub.appendChild(ft); }
   left.appendChild(time); left.appendChild(sub);
   const total = document.createElement('span'); total.className = 'txn-total';
   total.textContent = money(sale.total);
@@ -1200,7 +1203,7 @@ function txnRowEl(sale) {
   detail.appendChild(meta);
   if (sale.frame) {
     const fb = document.createElement('button');
-    fb.type = 'button'; fb.className = 'txn-frame'; fb.textContent = '📷 View counter frame';
+    fb.type = 'button'; fb.className = 'txn-frame'; fb.innerHTML = IC_CAM + ' View counter frame';
     fb.addEventListener('click', () => {
       $('frameImg').src = '../server/frame.php?txn=' + encodeURIComponent(sale.id || '');
       $('frameModal').classList.remove('hidden');

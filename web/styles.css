@@ -776,3 +776,9 @@ body.loyalty { background: linear-gradient(180deg, #f7faff 0%, #eff5fe 100%); ba
 .scan-qr { display: flex; justify-content: center; margin: 12px 0 4px; }
 .scan-qr:empty { display: none; }
 .scan-qr svg { width: 180px; height: 180px; background: #fff; border-radius: 12px; }
+
+/* Live icons (Oct 28 icon pass): inline SVG, stroke = currentColor so the
+   three themes dress them; sized in em so each button keeps the scale its
+   emoji glyph had. No icon fonts or files — the till works offline. */
+.ic { width: 1.2em; height: 1.2em; display: inline-block; vertical-align: -0.24em; flex: none; }
+.ic-dot { width: 0.62em; height: 0.62em; vertical-align: -0.04em; }
