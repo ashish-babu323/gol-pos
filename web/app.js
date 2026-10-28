@@ -2,6 +2,28 @@
 'use strict';
 const API = '../server/api.php';
 const BRAIN = '../server/brain.php';
+
+// --- chat identity (access layer, Oct 28) --------------------------------------
+// This device holds a session id the server keys admin elevation to, and —
+// after the invite flow — an employee identity (email + device token). Both
+// ride along with every chat call; the server decides what the session may
+// do. An employee identity grants the cashier domain only, never admin.
+let SESSION_ID = 'sess_ephemeral';
+try {
+  SESSION_ID = localStorage.getItem('golpos_session') || '';
+  if (!SESSION_ID) {
+    SESSION_ID = 'sess_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    localStorage.setItem('golpos_session', SESSION_ID);
+  }
+} catch (e) { /* private mode: elevation simply will not persist */ }
+function brainPayload(obj) {
+  const p = Object.assign({}, obj, { session: SESSION_ID });
+  try {
+    const emp = JSON.parse(localStorage.getItem('golpos_employee') || 'null');
+    if (emp && emp.email && emp.token) { p.employee = emp; }
+  } catch (e) { /* no employee on this device */ }
+  return p;
+}
 const LOYALTY = '../server/loyalty.php';
 const $ = (id) => document.getElementById(id);
 const money = (n) => '$' + Number(n).toFixed(2);
@@ -225,6 +247,11 @@ function chatCard(card) {
     const fmt = (v) => typeof v === 'boolean' ? (v ? 'on' : 'off') : String(v);
     body = `<div class="sc-what">Print setting — ${esc(card.label || card.setting)}</div>` +
       `<div class="sc-prices"><span class="sc-old">${esc(fmt(card.old))}</span><span class="sc-arrow">→</span><span class="sc-new">${esc(fmt(card.new))}</span></div>`;
+  } else if (card.type === 'batch_close') {
+    body = `<div class="sc-what">Batch close — ${card.count} card sales</div>` +
+      `<div class="sc-prices"><span class="sc-new">${money(card.total)}</span></div>`;
+  } else if (card.type === 'employee_remove') {
+    body = `<div class="sc-what">Remove employee — ${esc(card.name ? card.name + ' · ' : '')}${esc(card.email)}</div>`;
   } else if (card.type === 'photo_read') {
     const found = card.regions === null || card.regions === undefined
       ? 'SAM gave no read on this photo'
@@ -237,7 +264,7 @@ function chatCard(card) {
   d.innerHTML = `<span class="sc-badge">STAGED</span>${body}<button type="button">✓ Confirm — Gol</button>`;
   d.querySelector('button').addEventListener('click', async () => {
     const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirm: true }) });
+      body: JSON.stringify(brainPayload({ confirm: true })) });
     const r = await res.json();
     chatMsg(r.reply, 'gol');
     if (r.action && r.action.type === 'add') { addToCart(r.action.sku); }
@@ -258,10 +285,13 @@ async function sendPhoto(file, promptText) {
 }
 
 async function sendChat(text) {
-  chatMsg(text, 'me');
+  const mine = chatMsg(text, 'me');
   const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: text }) });
+    body: JSON.stringify(brainPayload({ message: text })) });
   const r = await res.json();
+  // The server consumed that message as a PIN entry — never leave the
+  // digits standing in the chat history.
+  if (r.pin_mask && mine) { mine.textContent = '••••'; }
   if (r.reply) { chatMsg(r.reply, 'gol'); }
   if (r.card) { chatCard(r.card); }
   if (r.action && r.action.type === 'add') { addToCart(r.action.sku); }
@@ -357,6 +387,9 @@ function renderSettingsForm() {
        <label>Footer message <input id="os_footer" type="text" value="${esc(st.footer || '')}"></label>
        <label>Copies <select id="os_copies">${opts([1, 2, 3], st.copies)}</select></label>
        <label>Paper width <select id="os_paper_width">${opts(['80mm', '58mm'], st.paper_width)}</select></label>
+       <label>Store opens <input id="os_store_open" type="time" value="${esc(st.store_open || '08:00')}"></label>
+       <label>Store closes <input id="os_store_close" type="time" value="${esc(st.store_close || '21:00')}"></label>
+       <label>Batch close <select id="os_batch_mode">${opts(['manual', 'auto'], st.batch_mode || 'manual')}</select></label>
        <label class="os-chk"><input id="os_show_address" type="checkbox" ${chk(st.show_address)}> Show address line</label>
        <label class="os-chk"><input id="os_show_phone" type="checkbox" ${chk(st.show_phone)}> Show phone line</label>
        <label class="os-chk"><input id="os_logo" type="checkbox" ${chk(st.logo)}> Logo on receipt</label>
@@ -371,6 +404,8 @@ async function saveSettingsForm() {
     store_name: $('os_store_name').value, address: $('os_address').value,
     phone: $('os_phone').value, footer: $('os_footer').value,
     copies: parseInt($('os_copies').value, 10), paper_width: $('os_paper_width').value,
+    store_open: $('os_store_open').value, store_close: $('os_store_close').value,
+    batch_mode: $('os_batch_mode').value,
     show_address: $('os_show_address').checked, show_phone: $('os_show_phone').checked,
     logo: $('os_logo').checked, show_tax: $('os_show_tax').checked,
     auto_open: $('os_auto_open').checked } };

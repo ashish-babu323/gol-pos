@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="clean">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Employee invite — Sunrise Mart · Gol</title>
+<link rel="stylesheet" href="styles.css?v=6a47fb7">
+</head>
+<body class="loyalty">
+<header class="loy-head">
+  <span class="gol-mark gol-mark-lg"><img class="gol-mark-img" src="assets/gol-ring-white.png" alt="Gol"><i class="gol-mark-dot"></i></span>
+  <div class="loy-brand">Sunrise Mart<small>Employee invite · powered by Gol</small></div>
+</header>
+
+<main class="loy-main">
+  <section class="loy-card" id="inviteCard">
+    <h2 id="invTitle">Checking your invite…</h2>
+    <p class="loy-sub" id="invSub">One moment while Gol checks this link.</p>
+    <form id="pinForm" class="loy-form hidden">
+      <label>Choose your employee PIN (4–6 digits)
+        <input id="pin1" type="password" inputmode="numeric" autocomplete="new-password" placeholder="e.g. 4821" required>
+      </label>
+      <label>Type it once more
+        <input id="pin2" type="password" inputmode="numeric" autocomplete="new-password" placeholder="same PIN again" required>
+      </label>
+      <button type="submit" class="loy-primary">Set my PIN</button>
+    </form>
+    <p class="loy-sub hidden" id="invDone">You are set — this device now rings sales as you at the register.
+      Your PIN unlocks nothing else: admin questions still ask for the owner's admin PIN.</p>
+    <a id="openRegister" class="loy-primary hidden" href="index.html" style="text-align:center;text-decoration:none;">Open the register</a>
+  </section>
+  <p class="loy-foot">Demo store — Sunrise Mart is fictional; no real people or data.</p>
+</main>
+
+<script src="invite.js?v=6a47fb7"></script>
+</body>
+</html>
