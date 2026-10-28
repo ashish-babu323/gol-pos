@@ -209,3 +209,14 @@ One entry per day; the git history carries the same dates.
   refused with a plain note + standalone fallback. MR.STORE's card batch
   (pos-batch.html, lm_batch_* over the journal) is a settlement batch —
   a different record from this POS's day-close; the parity map says so.
+- Simulation executed (Oct 28): deployed to gol-pos-sim (gol-pos-dev
+  untouched), basic proofs over HTTPS (3 sales, stock Q&A, staged
+  receive, binding contract incl. a refused Lucky launch), then the
+  month run — 100 txns/day × 30 days (Sep 29–Oct 28), 3,000 sales,
+  $57,301.04 gross; every day closed; stock equation verified 28/28 by
+  ordered replay; 3 sample days cross-checked line-by-line against
+  MR.STORE's own card report over the journal; Gol's month answer
+  ($53,580.05, October) matches the POS log to the cent; Lucky + 123
+  state files md5-identical before/after. Full evidence:
+  docs/mrstore-sim-evidence.md. Parity: docs/mrstore-parity-map.md
+  (10 wired-in-sim · 10 already chat-native · 10 remaining).
