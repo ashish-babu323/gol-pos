@@ -19,6 +19,9 @@
 // GET  ?pending             -> the staged card, if any
 // GET  ?inbox&session=      -> scan-by-phone results waiting for this
 //                              register session (read-and-clear)
+// GET  ?gap&session=&cart=&idle= -> the price-gap engine's idle prompt
+//                              for the signed-in employee (at most one,
+//                              only at a calm moment; pricegap.php)
 // GET  ?settings            -> receipt print settings (one store, two doors)
 // POST {settings:{...}}     -> settings save, same store; an admin
 //                              write (sheet PIN gate) except a save of
@@ -213,6 +216,32 @@ if ($method === 'GET' && isset($_GET['inbox'])) {
                      JSON_UNESCAPED_UNICODE);
     exit;
 }
+if ($method === 'GET' && isset($_GET['gap'])) {
+    // The price-gap engine's idle door (Oct 28): the client polls with
+    // the till's truth — cart size and idle seconds — and the server
+    // answers with at most ONE prompt, only for the signed-in
+    // employee, only at a calm moment. Her identity comes from the
+    // session exactly as ?mytasks resolves it — never from a query
+    // parameter — and a locked or admin session gets silence. This
+    // read is a task sync point, like the other employee reads.
+    $sid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($_GET['session'] ?? ''));
+    $sess = $sid === '' ? [] : golpos_session($sid);
+    $email = null;
+    if (($sess['unlocked_role'] ?? '') === 'employee' && !empty($sess['unlocked_by'])) {
+        $email = (string)$sess['unlocked_by'];
+    } elseif (!empty($sess['employee'])) {
+        $email = (string)$sess['employee'];
+    }
+    if ($email === null) {
+        echo json_encode(['prompt' => null], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    golpos_tasks_sync();
+    $prompt = golpos_gap_prompt_for($sid, $email,
+        (int)($_GET['cart'] ?? 0), (int)($_GET['idle'] ?? 0));
+    echo json_encode(['prompt' => $prompt], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 if ($method === 'GET' && isset($_GET['lock'])) {
     // The register's lock state for THIS session (employee lane): the
     // UI raises the PIN screen from this read at boot and after any
@@ -279,9 +308,24 @@ if ($method === 'GET' && isset($_GET['team'])) {
             || golpos_task_status($t) === 'done') { continue; }
         $roleTasks[] = $t;
     }
+    // The unlock FEED shows opens and lockouts — 'lock' events are the
+    // pay lane's hours evidence, not feed rows.
+    $feedUnlocks = array_values(array_filter(golpos_unlocks(),
+        static fn($u) => in_array((string)($u['kind'] ?? 'unlock'), ['unlock', 'lockout'], true)));
+    $payReqs = [];
+    foreach (golpos_pay_pending_all() as $r) {
+        $payReqs[] = ['id' => (string)$r['id'], 'name' => (string)$r['employee_name'],
+                      'email' => (string)$r['employee_email'],
+                      'period' => golpos_pay_period_label((string)$r['period_from'], (string)$r['period_to']),
+                      'hours' => (float)$r['hours'], 'amount' => (float)$r['amount'],
+                      'segments' => (array)$r['segments'],
+                      'corrections' => (array)($r['corrections'] ?? []),
+                      'created' => (string)($r['created'] ?? '')];
+    }
     echo json_encode(['people' => $people, 'tasks' => golpos_tasks(), 'role_tasks' => $roleTasks,
-                      'unlocks' => array_slice(array_reverse(golpos_unlocks()), 0, 15),
+                      'unlocks' => array_slice(array_reverse($feedUnlocks), 0, 15),
                       'whatsout' => golpos_whatsout_open(),
+                      'pay_requests' => $payReqs,
                       'counts' => array_slice(array_reverse(golpos_counts()), 0, 20)],
                      JSON_UNESCAPED_UNICODE);
     exit;

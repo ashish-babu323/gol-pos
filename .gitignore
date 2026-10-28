@@ -13,6 +13,11 @@ data/settings.json
 data/closes.json
 data/people.json
 data/sessions.json
+data/pay_asks.json
+data/unlocks.json
+data/presence.json
+data/personas.json
+data/tasks.json
 data/batches.json
 data/link.json
 data/bind.json

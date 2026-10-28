@@ -1961,6 +1961,17 @@ function golpos_lock_state(array $session): bool {
 // Return a session to the PIN-please state (lock word, day close).
 function golpos_lock_session(string $sid): void {
     $s = golpos_session($sid);
+    // Journal the END of the stint before the identity is cleared: the
+    // unlock feed has always recorded who OPENED the register; the pay
+    // lane's hours evidence needs the other edge of the shift too. A
+    // 'lock' event is evidence, not a feed row — the ?team unlock feed
+    // filters to opens and lockouts.
+    if (!empty($s['unlocked_by'])) {
+        golpos_unlock_add(['kind' => 'lock',
+            'name' => (string)($s['unlocked_name'] ?? ''),
+            'email' => $s['unlocked_by'] === 'admin' ? '' : (string)$s['unlocked_by'],
+            'role' => (string)($s['unlocked_role'] ?? '')]);
+    }
     $s['locked'] = true;
     $s['admin'] = false;
     $s['unlocked_by'] = null;
@@ -2030,6 +2041,283 @@ function golpos_unlock_latest_for(string $email): ?array {
         if (($u['kind'] ?? '') === 'unlock' && ($u['email'] ?? '') === $email) { $found = $u; }
     }
     return $found;
+}
+
+// --- Pay lane: her hours, her rate, the owner's decision ---------------------
+// The Pay Ask (owner directive, Oct 28, 14:30): the employee asks for
+// her pay in her own Gol session; Gol prices her EVIDENCED hours at
+// her roster rate; her confirm sends one staged request up; the owner
+// approves or declines; approval books the pay ONCE — here, in
+// data/pay_asks.json, the register's own pay ledger (booking_ref is
+// the record's id). MR.STORE's Books salary write (store-api
+// staff-pay-once.php) is an HTTP endpoint, not a bridge lib — wiring
+// it is a named follow-up, never an invented path.
+//
+// Rate home (ONE pinned truth per the brief): the register's own
+// people record — 'rate' (current) + 'rate_history' [{rate, from}]
+// so a change never rewrites a past period: a period spanning the
+// change prices each day at the rate in force THAT day. In link mode
+// the same local record is the till's truth (the MR.STORE Settings
+// roster is not exposed by any bridge lib today — follow-up).
+//
+// Hours evidence: data/unlocks.json. An unlock event opens a stint;
+// the stint ends at the earliest of her own 'lock' event (journaled
+// by golpos_lock_session), the next unlock by anyone (the till
+// changed hands), or a day close (closes.json closed_at). A stint
+// with no evidenced end contributes NOTHING and is named as missing —
+// except a stint opened TODAY whose session still stands unlocked as
+// her, which counts to now and says so ('open' on that day).
+
+function golpos_pay_asks(): array {
+    $p = golpos_read('pay_asks.json', []);
+    return is_array($p) ? array_values(array_filter($p, 'is_array')) : [];
+}
+
+function golpos_pay_ask_add(array $rec): array {
+    $rec['id'] = 'pay_' . substr(sha1(uniqid('', true)), 0, 10);
+    $all = golpos_pay_asks();
+    $all[] = $rec;
+    golpos_write('pay_asks.json', $all);
+    return $rec;
+}
+
+function golpos_pay_ask_save(array $rec): void {
+    $all = golpos_pay_asks();
+    foreach ($all as $i => $r) {
+        if ((string)($r['id'] ?? '') === (string)($rec['id'] ?? '')) { $all[$i] = $rec; }
+    }
+    golpos_write('pay_asks.json', $all);
+}
+
+function golpos_pay_pending_for(string $email): ?array {
+    foreach (golpos_pay_asks() as $r) {
+        if (($r['employee_email'] ?? '') === $email && ($r['status'] ?? '') === 'pending') { return $r; }
+    }
+    return null;
+}
+
+function golpos_pay_latest_for(string $email): ?array {
+    $found = null;
+    foreach (golpos_pay_asks() as $r) {
+        if (($r['employee_email'] ?? '') === $email) { $found = $r; }
+    }
+    return $found;
+}
+
+function golpos_pay_pending_all(): array {
+    return array_values(array_filter(golpos_pay_asks(),
+        static fn($r) => ($r['status'] ?? '') === 'pending'));
+}
+
+// The rate history as a clean sorted list. A bare 'rate' with no
+// history is the rate since the roster record was created.
+function golpos_rate_history(array $emp): array {
+    $hist = [];
+    foreach ((array)($emp['rate_history'] ?? []) as $h) {
+        if (is_array($h) && isset($h['rate']) && is_numeric($h['rate']) && !empty($h['from'])) {
+            $hist[] = ['rate' => round((float)$h['rate'], 2), 'from' => substr((string)$h['from'], 0, 10)];
+        }
+    }
+    if (!$hist && isset($emp['rate']) && is_numeric($emp['rate'])) {
+        $hist[] = ['rate' => round((float)$emp['rate'], 2),
+                   'from' => substr((string)($emp['created'] ?? date('Y-m-d')), 0, 10)];
+    }
+    usort($hist, static fn($a, $b) => strcmp($a['from'], $b['from']));
+    return $hist;
+}
+
+// The rate in force on a day, or null when no rate reaches that day.
+function golpos_rate_on(array $emp, string $ymd): ?float {
+    $rate = null;
+    foreach (golpos_rate_history($emp) as $h) {
+        if ($h['from'] <= $ymd) { $rate = $h['rate']; }
+    }
+    return $rate;
+}
+
+// Set the rate from a day forward (same-day entries replace). Past
+// periods keep their own rates — history is append-only truth.
+function golpos_set_rate(array $emp, float $rate, string $fromYmd): void {
+    $hist = array_values(array_filter(golpos_rate_history($emp),
+        static fn($h) => $h['from'] !== $fromYmd));
+    $hist[] = ['rate' => round($rate, 2), 'from' => $fromYmd];
+    usort($hist, static fn($a, $b) => strcmp($a['from'], $b['from']));
+    $emp['rate'] = round($rate, 2);
+    $emp['rate_history'] = $hist;
+    golpos_save_employee($emp);
+}
+
+// "Oct 20 – 27" / "Oct 20 – Nov 2" / "Oct 20" — the period the way
+// the owner's card headline speaks it. Lives here (not brain.php) so
+// api.php's Team payload speaks the same words.
+function golpos_pay_period_label(string $from, string $to): string {
+    if ($from === $to) { return date('M j', strtotime($from)); }
+    if (substr($from, 0, 7) === substr($to, 0, 7)) {
+        return date('M j', strtotime($from)) . ' – ' . date('j', strtotime($to));
+    }
+    return date('M j', strtotime($from)) . ' – ' . date('M j', strtotime($to));
+}
+
+// Where the open (unpaid) period begins: ['from' => ymd, 'since' =>
+// ts|null]. A paid request covers time up to its 'covered_until'
+// (the latest stint end it priced) — NOT blindly to its period_to
+// day: hours she works later that same day are after covered_until
+// and price in the NEXT period, never lost, never double-counted.
+// With no paid request: her first unlock day, from its start.
+function golpos_pay_period_from(string $email): array {
+    $from = null; $since = null;
+    foreach (golpos_pay_asks() as $r) {
+        if (($r['employee_email'] ?? '') === $email && ($r['status'] ?? '') === 'paid') {
+            if (!empty($r['covered_until'])) {
+                $since = strtotime((string)$r['covered_until']) ?: null;
+                $from = $since !== null ? date('Y-m-d', $since) : null;
+            } elseif (!empty($r['period_to'])) {
+                $from = date('Y-m-d', strtotime((string)$r['period_to'] . ' +1 day'));
+                $since = null;
+            }
+        }
+    }
+    if ($from !== null) { return ['from' => $from, 'since' => $since]; }
+    $first = null;
+    foreach (golpos_unlocks() as $u) {
+        if (($u['kind'] ?? '') === 'unlock' && ($u['email'] ?? '') === $email) {
+            $d = substr((string)($u['at'] ?? ''), 0, 10);
+            if ($d !== '' && ($first === null || $d < $first)) { $first = $d; }
+        }
+    }
+    return ['from' => $first ?? date('Y-m-d'), 'since' => null];
+}
+
+// Her evidenced stints in [fromYmd, toYmd], split by local day.
+// Returns ['days' => [ymd => ['hours' => float, 'open' => bool]],
+//          'unended' => [['date' => ymd, 'at' => iso], ...] — stints
+// whose end no record proves; they price NOTHING and are named —,
+//          'last_end' => ts|null]. Time at or before $sinceTs is
+// already covered by a paid request and never prices again;
+// 'last_end' is the latest end that priced here (the next period's
+// covered_until).
+function golpos_pay_shifts(string $email, string $fromYmd, string $toYmd, ?int $sinceTs = null): array {
+    $unlocks = []; $locks = []; $anyUnlock = [];
+    foreach (golpos_unlocks() as $u) {
+        $k = (string)($u['kind'] ?? '');
+        if ($k === 'unlock') {
+            $anyUnlock[] = $u;
+            if ((string)($u['email'] ?? '') === $email) { $unlocks[] = $u; }
+        } elseif ($k === 'lock' && (string)($u['email'] ?? '') === $email) {
+            $locks[] = $u;
+        }
+    }
+    $closes = [];
+    foreach (golpos_read('closes.json', []) as $c) {
+        if (is_array($c) && !empty($c['closed_at'])) {
+            $closes[] = ['at' => (string)$c['closed_at'],
+                         'date' => substr((string)($c['date'] ?? $c['closed_at']), 0, 10)];
+        }
+    }
+    $liveOpen = false;
+    foreach (golpos_read('sessions.json', []) as $s) {
+        if (is_array($s) && empty($s['locked']) && ($s['unlocked_by'] ?? '') === $email) {
+            $liveOpen = true; break;
+        }
+    }
+    $ts = static fn($v) => strtotime((string)$v) ?: 0;
+    $days = []; $unended = []; $lastEnd = null;
+    foreach ($unlocks as $u) {
+        $start = $ts($u['at'] ?? '');
+        if ($start === 0) { continue; }
+        $startDay = date('Y-m-d', $start);
+        if ($startDay > $toYmd) { continue; }
+        // An ender proves an end only on the stint's OWN day: her
+        // lock, the next unlock (a shift change), or that day's
+        // close (matched by the close's business date, so a close
+        // stamped just past midnight still counts). A next-day
+        // unlock proves nothing about when she stopped — the stint
+        // is unended and named, never stretched across days.
+        $end = null;
+        foreach ($locks as $l) {
+            $lt = $ts($l['at'] ?? '');
+            if ($lt > $start && date('Y-m-d', $lt) === $startDay
+                && ($end === null || $lt < $end)) { $end = $lt; }
+        }
+        foreach ($anyUnlock as $a) {
+            $at2 = $ts($a['at'] ?? '');
+            if ($at2 > $start && date('Y-m-d', $at2) === $startDay
+                && ($end === null || $at2 < $end)) { $end = $at2; }
+        }
+        foreach ($closes as $c) {
+            $ct = $ts($c['at']);
+            if ($ct > $start && $c['date'] === $startDay
+                && ($end === null || $ct < $end)) { $end = $ct; }
+        }
+        $open = false;
+        if ($end === null) {
+            if ($liveOpen && $startDay === date('Y-m-d')) {
+                $end = time(); $open = true;
+            } else {
+                if ($startDay >= $fromYmd) {
+                    $unended[] = ['date' => $startDay, 'at' => (string)($u['at'] ?? '')];
+                }
+                continue;
+            }
+        }
+        if ($sinceTs !== null && $end <= $sinceTs) { continue; } // already paid
+        $cur = $sinceTs !== null ? max($start, $sinceTs) : $start;
+        $priced = false;
+        while ($cur < $end) {
+            $dayEnd = strtotime(date('Y-m-d', $cur) . ' 23:59:59') + 1;
+            $segEnd = min($end, $dayEnd);
+            $d = date('Y-m-d', $cur);
+            if ($d >= $fromYmd && $d <= $toYmd) {
+                if (!isset($days[$d])) { $days[$d] = ['hours' => 0.0, 'open' => false]; }
+                $days[$d]['hours'] += ($segEnd - $cur) / 3600;
+                if ($open) { $days[$d]['open'] = true; }
+                $priced = true;
+            }
+            $cur = $segEnd;
+        }
+        if ($priced && ($lastEnd === null || $end > $lastEnd)) { $lastEnd = $end; }
+    }
+    ksort($days);
+    foreach ($days as $d => $v) {
+        $days[$d]['hours'] = round((float)$v['hours'], 2);
+        if ($days[$d]['hours'] <= 0) { unset($days[$d]); }
+    }
+    return ['days' => $days, 'unended' => $unended, 'last_end' => $lastEnd];
+}
+
+// Price a period: per-day lines (day, hours, THAT day's rate, amount)
+// grouped into per-rate segments for the one-line owner headline.
+// Days whose rate is not on record stay in 'unrated' and price
+// nothing — the lane names them instead of inventing a number.
+function golpos_pay_compute(array $emp, string $fromYmd, string $toYmd, ?int $sinceTs = null): array {
+    $email = (string)($emp['email'] ?? '');
+    $sh = golpos_pay_shifts($email, $fromYmd, $toYmd, $sinceTs);
+    $lines = []; $segments = []; $unrated = [];
+    $totH = 0.0; $totA = 0.0;
+    foreach ($sh['days'] as $d => $v) {
+        $rate = golpos_rate_on($emp, (string)$d);
+        $line = ['date' => (string)$d, 'hours' => (float)$v['hours'],
+                 'rate' => $rate, 'open' => !empty($v['open']),
+                 'amount' => $rate === null ? 0.0 : round((float)$v['hours'] * $rate, 2)];
+        $lines[] = $line;
+        if ($rate === null) { $unrated[] = $line; continue; }
+        $totH += (float)$v['hours']; $totA += $line['amount'];
+        $last = count($segments) - 1;
+        if ($last >= 0 && $segments[$last]['rate'] === $rate
+            && $segments[$last]['to'] === date('Y-m-d', strtotime((string)$d . ' -1 day'))) {
+            $segments[$last]['to'] = (string)$d;
+            $segments[$last]['hours'] = round($segments[$last]['hours'] + (float)$v['hours'], 2);
+            $segments[$last]['amount'] = round($segments[$last]['amount'] + $line['amount'], 2);
+        } else {
+            $segments[] = ['from' => (string)$d, 'to' => (string)$d, 'rate' => $rate,
+                           'hours' => (float)$v['hours'], 'amount' => $line['amount']];
+        }
+    }
+    return ['lines' => $lines, 'segments' => $segments, 'unrated' => $unrated,
+            'hours' => round($totH, 2), 'amount' => round($totA, 2),
+            'unended' => $sh['unended'],
+            'covered_until' => !empty($sh['last_end'])
+                ? date('c', (int)$sh['last_end']) : null];
 }
 
 // --- tasks --------------------------------------------------------------------

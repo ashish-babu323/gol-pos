@@ -122,7 +122,10 @@ function golpos_lang(string $msg): string {
     // thapdinu" and "dudh chahiyo" and answered them in English.
     $np = ['kati', 'thap', 'mulya', 'hisab', 'aaja', 'chha', 'gara', 'deu', 'dinus',
            'chahiyo', 'chahinchha', 'bikri', 'becheu', 'rakha', 'badha', 'badal',
-           'bhannus', 'saman', 'naya', 'pasal', 'banda', ' kun ', ' tyo ', ' lekha ', ' din '];
+           'bhannus', 'saman', 'naya', 'pasal', 'banda', ' kun ', ' tyo ', ' lekha ', ' din ',
+           // Pay-lane vocabulary (Oct 28): without these, "mero talab
+           // paincha?" scored zero and Gol answered her in English.
+           'talab', 'paincha', 'jyala', 'ghanta', ' mero '];
     $hi = ['kitna', 'kitne', 'daam', 'jodo', 'lagao', 'saaman', 'karo', 'badlo',
            'hisaab', ' hai ', ' aaj ', ' mein '];
     $n = 0; foreach ($np as $w) { if (mb_strpos($t, $w) !== false) { $n++; } }
@@ -1020,6 +1023,61 @@ $S = [
     'np' => 'Ahile korna kei chhaina — yo range ma bikri chhaina.',
     'hi' => 'Abhi kuchh dikhane ko nahi hai — is range mein bikri nahi hai.',
     'dev' => 'अहिले कोर्न केही छैन — यो दायरामा बिक्री छैन।'],
+  'pay_pending' => [
+    'en' => 'Your pay request is already with the owner: %s for %s — waiting on the owner. I won\'t send a second one.',
+    'np' => 'Tapai ko talab ko anurodh pahile nai malik samma pugisakyo: %s (%s ko lagi) — malik ko jawaf parkhidaichha. Dosro pathaudina.',
+    'hi' => 'Aapki pay request pehle se hi owner ke paas hai: %s (%s ke liye) — owner ke jawab ka intezaar hai. Dusri nahi bhejunga.',
+    'dev' => 'तपाईंको तलबको अनुरोध पहिल्यै मालिकसम्म पुगिसक्यो: %s (%s को लागि) — मालिकको जवाफ पर्खिँदै छ। दोस्रो पठाउँदिनँ।'],
+  'pay_no_rate' => [
+    'en' => 'Your hourly rate is not on the register record yet, so I can\'t price your hours. The owner sets it in chat ("my rate" is his to change) — ask him to set it and I\'ll do the math right away.',
+    'np' => 'Tapai ko rate ahile register ko record ma chhaina, tesaile ghanta ko hisab garna mildaina. Malik le chat mai rate rakhchan — unlai bhannus, rate aune bittikai hisab garchhu.',
+    'hi' => 'Aapki rate abhi register record mein nahi hai, isliye ghante ka hisaab nahi ho payega. Owner chat mein rate rakhte hain — unse kahiye, rate aate hi hisaab karta hoon.',
+    'dev' => 'तपाईंको दर अहिले रजिस्टरको रेकर्डमा छैन, त्यसैले घण्टाको हिसाब गर्न मिल्दैन। मालिकले च्याटमै दर राख्छन् — उनलाई भन्नुस्, दर आउने बित्तिकै हिसाब गर्छु।'],
+  'pay_unrated' => [
+    'en' => 'Some of your hours fall on days with no rate on record (%s), so I can\'t price those yet — the owner sets the rate and then I can. Nothing was sent.',
+    'np' => 'Tapai ka kehi ghanta rate record nabhaeka din ma pare (%s) — tiniharu ko hisab ahile mildaina, malik le rate rakhepachhi hunchha. Kei pathaieko chhaina.',
+    'hi' => 'Aapke kuchh ghante un dinon par hain jinki rate record mein nahi (%s) — unka hisaab abhi nahi hoga, owner rate rakhe to hoga. Kuchh nahi bheja gaya.',
+    'dev' => 'तपाईंका केही घण्टा दर रेकर्ड नभएका दिनमा परे (%s) — तिनीहरूको हिसाब अहिले मिल्दैन, मालिकले दर राखेपछि हुन्छ। केही पठाइएको छैन।'],
+  'pay_no_hours' => [
+    'en' => 'I find no register hours on record for you since %s — no unlock-to-lock shift is recorded in that window, so there is nothing to price. If you worked a shift the register didn\'t record, tell me ("I worked Tuesday 4 hours") and it will ride to the owner as your correction, in your words.',
+    'np' => '%s dekhi tapai ko register ghanta record ma bhettina — tyo bich ma unlock dekhi lock samma ko shift record chhaina, hisab garne kei chhaina. Register le record nagareko shift garnubhaeko chha bhane bhannus ("ma mangalbar 4 ghanta thiye") — tapai kai shabda ma malik samma correction ko roop ma janchha.',
+    'hi' => '%s se aapke register ghante record mein nahi mile — us beech unlock se lock tak ki koi shift record nahi, hisaab ke liye kuchh nahi. Agar koi shift register mein record nahi hui to batayein ("main mangalvaar 4 ghante thi") — woh aapke hi shabdon mein owner tak correction ban kar jayegi.',
+    'dev' => '%s देखि तपाईंको रजिस्टर घण्टा रेकर्डमा भेटिनँ — त्यो बीचमा अनलकदेखि लकसम्मको शिफ्ट रेकर्ड छैन, हिसाब गर्ने केही छैन। रजिस्टरले रेकर्ड नगरेको शिफ्ट गर्नुभएको छ भने भन्नुस् ("म मंगलबार ४ घण्टा थिएँ") — तपाईं कै शब्दमा मालिकसम्म करेक्सनको रूपमा जान्छ।'],
+  'pay_sent' => [
+    'en' => 'Sent to the owner: %s is asking for pay — %s. You\'ll see his answer here.',
+    'np' => 'Malik lai pathaiyo: %s le talab mageko — %s. Jawaf yahi dekhna paunuhunchha.',
+    'hi' => 'Owner ko bheja gaya: %s pay maang rahi hai — %s. Jawab yahin dikhega.',
+    'dev' => 'मालिकलाई पठाइयो: %s ले तलब मागेको — %s। जवाफ यहीँ देख्न पाउनुहुनेछ।'],
+  'pay_declined_note' => [
+    'en' => 'The owner declined your last pay request (%s for %s). ',
+    'np' => 'Malik le tapai ko aghillo talab anurodh aswikar garnubhaeko chha (%s, %s ko lagi). ',
+    'hi' => 'Owner ne aapki pichhli pay request mana kar di thi (%s, %s ke liye). ',
+    'dev' => 'मालिकले तपाईंको अघिल्लो तलब अनुरोध अस्वीकार गर्नुभएको छ (%s, %s को लागि)। '],
+  'pay_paid_note' => [
+    'en' => 'Your last request was paid: %s for %s. ',
+    'np' => 'Tapai ko aghillo anurodh talab paiyo: %s, %s ko lagi. ',
+    'hi' => 'Aapki pichhli request ka pay ho gaya: %s, %s ke liye. ',
+    'dev' => 'तपाईंको अघिल्लो अनुरोधको तलब पाइयो: %s, %s को लागि। '],
+  'pay_approved' => [
+    'en' => 'Paid and booked (ref %s): %s — %s.',
+    'np' => 'Talab diyo, record ma chadhisakyo (ref %s): %s — %s.',
+    'hi' => 'Pay ho gaya aur book ho gaya (ref %s): %s — %s.',
+    'dev' => 'तलब दिइयो, रेकर्डमा चढिसक्यो (ref %s): %s — %s।'],
+  'pay_already_decided' => [
+    'en' => 'That request is no longer waiting — it was already decided.',
+    'np' => 'Tyo anurodh ab parkhiraheko chhaina — nirnaya bhaisakyo.',
+    'hi' => 'Woh request ab intezaar mein nahi hai — faisla ho chuka hai.',
+    'dev' => 'त्यो अनुरोध अब पर्खिरहेको छैन — निर्णय भइसक्यो।'],
+  'pay_declined_done' => [
+    'en' => 'Declined: %s\'s pay request (%s) is closed as declined. She\'ll see it in her session.',
+    'np' => 'Aswikar bhayo: %s ko talab anurodh (%s) aswikar ma banda bhayo. Usle aafno session ma dekhchhe.',
+    'hi' => 'Mana ho gaya: %s ki pay request (%s) declined band ho gayi. Use apne session mein dikhega.',
+    'dev' => 'अस्वीकार भयो: %s को तलब अनुरोध (%s) अस्वीकारमा बन्द भयो। उसले आफ्नो सेसनमा देख्छे।'],
+  'pay_owner_hint' => [
+    'en' => 'Pay asks belong to the employee\'s own session — she asks, you decide. Say "pay requests" to see what is waiting on you.',
+    'np' => 'Talab magne kaam employee kai session bata hunchha — usle magchha, tapai le nirnaya garnuhunchha. Parkhiraheko herna "pay requests" bhannus.',
+    'hi' => 'Pay maangna employee ke apne session se hota hai — woh maangti hai, aap faisla karte hain. Intezaar wala dekhne ke liye "pay requests" kahiye.',
+    'dev' => 'तलब माग्ने काम कर्मचारीकै सेसनबाट हुन्छ — उसले माग्छ, तपाईंले निर्णय गर्नुहुन्छ। पर्खिरहेको हेर्न "pay requests" भन्नुस्।'],
 ];
 function t(string $key, ...$args): string {
     global $S, $L;
@@ -1357,6 +1415,97 @@ function golpos_parse_time(string $msg, string $hint): ?string {
     elseif ($mer === '' && $hint === 'pm' && $h >= 1 && $h < 12) { $h += 12; }
     return sprintf('%02d:%02d', $h, $min);
 }
+// --- Pay Ask matchers + composition (owner directive, Oct 28, 14:30) ---------
+// Shared by the gate and the dispatch, like every access matcher. Her
+// pay ask is cashier-domain (her own facts); the rate change and the
+// owner's request work are admin-domain.
+
+// Her ask, in her shapes: "can I get my pay", "mero talab?", "talab
+// paincha?", a salary/paycheck ask in first person. Tight on purpose:
+// a bare "pay" in a customer sentence at the till is NOT this lane.
+function golpos_is_pay_ask(string $msg): bool {
+    if (preg_match('/(talab|talav|jyala|तलब|ज्याला)/iu', $msg)) {
+        // A rate fact about someone ("pranisha ko talab 13") is the
+        // owner's rate lane, not her ask — that shape carries a number
+        // or a change word next to the pay word; her ask never does.
+        if (golpos_parse_rate_change($msg) !== null) { return false; }
+        return true;
+    }
+    return preg_match('/\b(my\s+(pay|salary|paycheck|pay\s*check|wages?)'
+        . '|(can|could|may)\s+i\s+(get|have|take)\s+my\s+(pay|salary)'
+        . '|pay\s+me\b|get\s+paid|i\s+want\s+my\s+(pay|salary))\b/iu', $msg) === 1;
+}
+
+// The owner's side of the lane: what is waiting on him.
+function golpos_is_pay_requests_ask(string $msg): bool {
+    return preg_match('/(pay\s+requests?|talab\s+(mageko|anurodh)|kasle\s+(pay|talab)|pay\s+mageko'
+        . '|pending\s+pay|pay\s+pending)/iu', $msg) === 1;
+}
+
+// A refusal word over a staged card. With a pay_approve card staged
+// this is a DECISION (the request closes declined), intercepted before
+// the generic cancel check — plain "cancel/radda" still only clears
+// the card and leaves the request waiting.
+function golpos_is_decline_intent(string $msg): bool {
+    return preg_match('/^\s*(decline|declined|reject|rejected|nahune|hudaina|nagarne|no\s+gara)\s*[.!]?\s*$/iu', $msg) === 1;
+}
+
+// The owner's rate change: a roster name + a pay word + a number —
+// "Pranisha ko pay 13 bana", "Pranisha's rate is now $13", "pranisha
+// ko talab 2 le badha" (by $2). Returns ['emp', 'by', 'amount'] or
+// null. 'by' phrasing computes old+amount and the CARD shows the
+// resulting old→new, so a by/to misread is caught before "gol".
+function golpos_parse_rate_change(string $msg): ?array {
+    if (!preg_match('/(pay|rate|talab|talav|jyala|salary|तलब|ज्याला|दर)/iu', $msg)) { return null; }
+    $n = golpos_norm_digits($msg);
+    if (!preg_match('/\$?\s*(\d+(?:\.\d{1,2})?)/', $n, $m)) { return null; }
+    $amount = (float)$m[1];
+    if ($amount <= 0 || $amount > 500) { return null; }
+    $hits = [];
+    foreach (golpos_people()['employees'] as $e) {
+        if (($e['status'] ?? '') === 'removed') { continue; }
+        $names = [golpos_display_name($e), (string)($e['name'] ?? '')];
+        foreach ((array)($e['aliases'] ?? []) as $a) { $names[] = (string)$a; }
+        $first = explode(' ', golpos_display_name($e))[0] ?? '';
+        if ($first !== '') { $names[] = $first; }
+        foreach (array_unique(array_filter($names)) as $nm) {
+            if (preg_match('/(^|[^\p{L}])' . preg_quote($nm, '/') . '([^\p{L}]|$)/iu', $msg)) {
+                $hits[] = $e; break;
+            }
+        }
+    }
+    if (count($hits) !== 1) { return null; }
+    $by = preg_match('/(\bby\b|\ble\s+badha|\bbadha|\bincrease\b|\braise\b|\+)/iu', $msg) === 1
+        && !preg_match('/(is\s+now|aba|now\s*\$?\s*\d)/iu', $msg);
+    return ['emp' => $hits[0], 'by' => $by, 'amount' => $amount];
+}
+
+// A correction to a staged pay card: HER words about a shift the
+// register didn't evidence — a weekday and an hour count ("ma
+// mangalbar 4 ghanta thiye"), or an explicit "correction:" lead. The
+// line rides the owner's card VERBATIM; it never merges into the
+// evidenced hours (the spec's honesty rule).
+function golpos_is_pay_correction(string $msg): bool {
+    if (preg_match('/^\s*(correction|sachai|sudhaar)\s*[:\-]/iu', $msg)) { return true; }
+    $days = '(monday|tuesday|wednesday|thursday|friday|saturday|sunday'
+          . '|aaitabar|aitabar|sombar|mangalbar|budhabar|bihibar|shukrabar|shanibar'
+          . '|सोमबार|मंगलबार|बुधबार|बिहीबार|शुक्रबार|शनिबार|आइतबार)';
+    return preg_match('/' . $days . '/iu', $msg) === 1
+        && preg_match('/\d+\s*(ghanta|ghante|hour|hrs|hr\b|घण्टा)/iu', golpos_norm_digits($msg)) === 1;
+}
+
+// The one-line headline every brain surface shares: "38.5 hrs × $11
+// = $423.50" — or, across a rate change, one segment per rate:
+// "20 hrs × $11 + 18.5 hrs × $13 = $460.50". Hours trim trailing zeros.
+function golpos_pay_headline(array $segments, float $total): string {
+    $hrs = static fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
+    $parts = [];
+    foreach ($segments as $s) {
+        $parts[] = $hrs($s['hours']) . ' hrs × ' . money((float)$s['rate']);
+    }
+    return ($parts ? implode(' + ', $parts) : '0 hrs') . ' = ' . money($total);
+}
+
 // The invite link an employee receives. Derived from the request so the
 // same code works on the demo preview and any future install.
 function golpos_invite_link(string $token): string {
@@ -1803,6 +1952,10 @@ function golpos_card_summary(array $card): string {
         case 'price_change':
             return ($card['name'] ?? '') . ': ' . money((float)($card['old_price'] ?? 0))
                 . ' → ' . money((float)($card['new_price'] ?? 0));
+        case 'price_fill':
+            return ($card['name'] ?? '') . ': no shelf price yet → ' . money((float)($card['new_price'] ?? 0));
+        case 'cost_fill':
+            return ($card['name'] ?? '') . ': cost — none on record → ' . money((float)($card['new_cost'] ?? 0));
         case 'new_item':
             return 'new item ' . ($card['name'] ?? '') . ' — ' . money((float)($card['price'] ?? 0));
         case 'setting_change':
@@ -1833,6 +1986,22 @@ function golpos_card_summary(array $card): string {
                 . implode('; ', array_map('strval', (array)($card['items'] ?? [])));
         case 'team_note':
             return 'note to the boss from ' . ($card['from_name'] ?? '') . ' — "' . ($card['text'] ?? '') . '"';
+        case 'pay_send':
+            return 'pay request — ' . ($card['employee_name'] ?? '') . ': '
+                . golpos_pay_headline((array)($card['segments'] ?? []), (float)($card['amount'] ?? 0))
+                . ' · ' . golpos_pay_period_label((string)($card['period_from'] ?? ''), (string)($card['period_to'] ?? ''))
+                . (count((array)($card['corrections'] ?? []))
+                    ? ' · +' . count((array)$card['corrections']) . ' correction line(s) in her words' : '');
+        case 'pay_approve':
+            return 'pay approval — ' . ($card['employee_name'] ?? '') . ' is asking: '
+                . golpos_pay_headline((array)($card['segments'] ?? []), (float)($card['amount'] ?? 0))
+                . ' · ' . golpos_pay_period_label((string)($card['period_from'] ?? ''), (string)($card['period_to'] ?? ''))
+                . (count((array)($card['corrections'] ?? []))
+                    ? ' · she adds: "' . implode('" · "', array_map('strval', (array)$card['corrections'])) . '"' : '');
+        case 'rate_change':
+            return 'rate change — ' . ($card['employee_name'] ?? '') . ': '
+                . (($card['old_rate'] ?? null) === null ? 'no rate on record' : money((float)$card['old_rate']))
+                . ' → ' . money((float)($card['new_rate'] ?? 0)) . ' from today';
         case 'whats_out':
             return 'What\'s Out report — ' . ($card['name'] ?? '') . ' (by ' . ($card['by_name'] ?? '') . ')';
         case 'stock_count':
@@ -2605,6 +2774,14 @@ function golpos_team_line(): string {
         if (empty($n['read']) && strtotime((string)($n['at'] ?? '')) >= $since) { $notes++; }
     }
     if ($notes > 0) { $parts[] = t('overnight_notes', $notes); }
+    // Pay requests waiting on the owner ride the same line — her ask,
+    // his decision, named with hours × rate = amount + period.
+    foreach (golpos_pay_pending_all() as $r) {
+        $parts[] = (string)$r['employee_name'] . ' is asking for pay — '
+            . golpos_pay_headline((array)$r['segments'], (float)$r['amount'])
+            . ' · ' . golpos_pay_period_label((string)$r['period_from'], (string)$r['period_to'])
+            . ' — waiting on you ("pay requests").';
+    }
     return implode("\n", $parts);
 }
 
@@ -3237,6 +3414,33 @@ function golpos_dispatch(string $msg, array $in, array $catalog, array $products
     global $L;
     $L = golpos_lang($msg);
 
+// --- a decline word over a pay-approve card is a DECISION -------------------
+// "nahune / hudaina / decline" with the owner's pay card staged closes
+// the request DECLINED — it is not the generic cancel (which only
+// clears the card and leaves the request waiting). Checked before the
+// cancel block because the NP refusal words live in both matchers.
+$pendDecline = golpos_pending();
+if ($pendDecline !== null && ($pendDecline['type'] ?? '') === 'pay_approve'
+    && golpos_is_decline_intent($msg)) {
+    $req = null;
+    foreach (golpos_pay_asks() as $r) {
+        if ((string)($r['id'] ?? '') === (string)($pendDecline['request_id'] ?? '')) { $req = $r; }
+    }
+    golpos_clear_pending();
+    if ($req === null || ($req['status'] ?? '') !== 'pending') {
+        out(['reply' => t('pay_already_decided')]);
+    }
+    $req['status'] = 'declined';
+    $req['decided_at'] = date('c');
+    $req['decided_by'] = 'Owner';
+    $req['seen'] = false;
+    golpos_pay_ask_save($req);
+    out(['reply' => t('pay_declined_done', (string)$req['employee_name'],
+                      golpos_pay_headline((array)$req['segments'], (float)$req['amount'])
+                      . ' · ' . golpos_pay_period_label((string)$req['period_from'], (string)$req['period_to'])),
+         'done' => $pendDecline]);
+}
+
 // --- a staged card + a cancel word: cleared here, deterministically --------
 // The word alone, with a card waiting, is the whole instruction — it must
 // never fall through to the composer (hisab test R08b: "cancel" after a
@@ -3260,6 +3464,37 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
         golpos_save_catalog($catalog);
         golpos_clear_pending();
         out(['reply' => t('price_done', $card['name'], money((float)$card['old_price']), money((float)$card['new_price'])), 'done' => $card]);
+    }
+    // A price-gap fill (price-gap engine, Oct 28): the value she read
+    // off the shelf tag lands through the price lane's own write path —
+    // edit the products, save the catalog (the link sync carries it to
+    // MR.STORE). The gap TASK closes later, by evidence, when a scan
+    // sees the price on the record — never by this reply's say-so.
+    if ($card['type'] === 'price_fill') {
+        foreach ($products as &$p) {
+            if ($p['sku'] === $card['sku']) { $p['price'] = $card['new_price']; }
+        }
+        unset($p);
+        $catalog['products'] = $products;
+        golpos_save_catalog($catalog);
+        golpos_clear_pending();
+        out(['reply' => ($card['name'] ?? '') . ' ko shelf price ' . money((float)$card['new_price'])
+                      . ' bhayo' . (!empty($card['by_name']) ? ' — ' . $card['by_name'] . ' le hale, dhanyabad!' : '.'),
+             'done' => $card]);
+    }
+    // A cost-gap fill: the cost lands through the engine's one write
+    // door (pricegap.php — local catalog standalone, the MR.STORE
+    // record in link mode). A refused write is reported as a refusal
+    // and the gap stays open; the card is consumed either way.
+    if ($card['type'] === 'cost_fill') {
+        $okFill = golpos_gap_write_cost($card);
+        golpos_clear_pending();
+        if (!$okFill) {
+            out(['reply' => ($card['name'] ?? '') . ' ko cost record ma halna sakiyena — gap khula nai chha, owner le dekhcha.']);
+        }
+        out(['reply' => ($card['name'] ?? '') . ' ko cost ' . money((float)$card['new_cost'])
+                      . ' record bhayo' . (!empty($card['by_name']) ? ' — ' . $card['by_name'] . ' le hale, dhanyabad!' : '.'),
+             'done' => $card]);
     }
     if ($card['type'] === 'new_item') {
         // A card carrying a barcode executes only if the code is still
@@ -3461,6 +3696,76 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
         golpos_clear_pending();
         if ($res === null) { out(['reply' => t('card_fail')]); }
         out(['reply' => t('stock_recv_done_local', $res['name'], $fmt($res['before']), $fmt($res['after'])), 'done' => $card]);
+    }
+    // A pay-send card (her confirm): the request RECORD is the write —
+    // one pending request per employee, enforced here as well as at
+    // staging, so a double confirm can never mint a second request.
+    if ($card['type'] === 'pay_send') {
+        golpos_clear_pending();
+        $existing = golpos_pay_pending_for((string)($card['employee_email'] ?? ''));
+        if ($existing !== null) {
+            out(['reply' => t('pay_pending', money((float)$existing['amount']),
+                              golpos_pay_period_label((string)$existing['period_from'], (string)$existing['period_to'])),
+                 'done' => $card]);
+        }
+        $rec = golpos_pay_ask_add([
+            'employee_email' => (string)$card['employee_email'],
+            'employee_name' => (string)$card['employee_name'],
+            'period_from' => (string)$card['period_from'],
+            'period_to' => (string)$card['period_to'],
+            'lines' => (array)($card['lines'] ?? []),
+            'segments' => (array)($card['segments'] ?? []),
+            'hours' => (float)($card['hours'] ?? 0),
+            'amount' => (float)($card['amount'] ?? 0),
+            'corrections' => array_values(array_map('strval', (array)($card['corrections'] ?? []))),
+            'unended' => (array)($card['unended'] ?? []),
+            'covered_until' => $card['covered_until'] ?? null,
+            'status' => 'pending', 'created' => date('c'),
+            'decided_at' => null, 'decided_by' => null, 'booking_ref' => null, 'seen' => true,
+        ]);
+        out(['reply' => t('pay_sent', (string)$rec['employee_name'],
+                          golpos_pay_headline($rec['segments'], (float)$rec['amount'])
+                          . ' · ' . golpos_pay_period_label($rec['period_from'], $rec['period_to'])),
+             'done' => $card]);
+    }
+    // A pay-approve card (the owner's confirm): approval books the pay
+    // ONCE — the request record itself is the register's pay ledger
+    // entry, and its id is the booking reference. A request already
+    // decided cannot be paid twice: the status check is the lock.
+    if ($card['type'] === 'pay_approve') {
+        $req = null;
+        foreach (golpos_pay_asks() as $r) {
+            if ((string)($r['id'] ?? '') === (string)($card['request_id'] ?? '')) { $req = $r; }
+        }
+        golpos_clear_pending();
+        if ($req === null || ($req['status'] ?? '') !== 'pending') {
+            out(['reply' => t('pay_already_decided')]);
+        }
+        $req['status'] = 'paid';
+        $req['decided_at'] = date('c');
+        $req['decided_by'] = 'Owner';
+        $req['booking_ref'] = (string)$req['id'];
+        $req['seen'] = false;
+        golpos_pay_ask_save($req);
+        out(['reply' => t('pay_approved', (string)$req['booking_ref'],
+                          (string)$req['employee_name'],
+                          golpos_pay_headline($req['segments'], (float)$req['amount'])
+                          . ' · ' . golpos_pay_period_label($req['period_from'], $req['period_to'])),
+             'done' => $card]);
+    }
+    // A rate-change card: the new rate lands on the roster record
+    // effective TODAY, with its history — past periods keep the rates
+    // they were worked at (golpos_set_rate, store.php).
+    if ($card['type'] === 'rate_change') {
+        $emp = golpos_employee((string)($card['employee_email'] ?? ''));
+        golpos_clear_pending();
+        if ($emp === null) { out(['reply' => t('card_fail')]); }
+        golpos_set_rate($emp, (float)$card['new_rate'], date('Y-m-d'));
+        $oldTxt = ($card['old_rate'] ?? null) === null ? 'no rate on record' : money((float)$card['old_rate']);
+        out(['reply' => (string)($card['employee_name'] ?? '') . "'s rate: " . $oldTxt
+                      . ' → ' . money((float)$card['new_rate']) . ' — from today ('
+                      . date('M j', strtotime((string)($card['effective'] ?? 'now'))) . ').',
+             'done' => $card]);
     }
     // A task assignment (employee lane): the record lands in the task
     // store AND the numbered list is emailed to the employee's address
@@ -4055,6 +4360,186 @@ if (preg_match('/(mero|my)\s+(duty|duties|job|kartabya|कर्तव्य)/iu
     foreach ($pack as $i => $d) { $lines[] = ($i + 1) . '. ' . $d; }
     out(['reply' => implode("\n", $lines)]);
 }
+// --- Pay Ask lane (owner directive, Oct 28, 14:30) -----------------------------
+// She asks in her own session; Gol prices her EVIDENCED hours at her
+// roster rate and stages a pay_send card; her "gol" creates the ONE
+// pending request; the owner meets it as a pay_approve card and his
+// "gol" books it once (the decline word closes it instead). Money
+// never moves on her word, and hours never pad themselves.
+
+// A correction rides the staged pay_send card — her words, verbatim,
+// appended for the owner's eyes; evidenced hours never change.
+$pendPay = golpos_pending();
+if ($pendPay !== null && ($pendPay['type'] ?? '') === 'pay_send'
+    && golpos_is_pay_correction($msg)) {
+    $actorC = golpos_actor();
+    if ($actorC !== null && ($actorC['role'] ?? '') === 'employee'
+        && (string)($actorC['email'] ?? '') === (string)($pendPay['employee_email'] ?? '')) {
+        $pendPay['corrections'] = array_values(array_map('strval', (array)($pendPay['corrections'] ?? [])));
+        $pendPay['corrections'][] = trim($msg);
+        $card = golpos_stage($pendPay);
+        out(['reply' => 'Correction added to your card, in your words: "' . trim($msg) . '"'
+                      . ' — the owner sees it on the request. Say "gol" to send, or tell me another.',
+             'card' => $card]);
+    }
+}
+
+if (golpos_is_pay_ask($msg)) {
+    $actor = golpos_actor();
+    if ($actor === null || ($actor['role'] ?? '') !== 'employee' || ($actor['record'] ?? null) === null) {
+        out(['reply' => t('pay_owner_hint')]);
+    }
+    $emp = $actor['record'];
+    $email = (string)$emp['email'];
+    $name = golpos_display_name($emp);
+    $np = in_array($L, ['np', 'dev'], true);
+    $hrs = static fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
+    // A request already waiting: its status is the whole answer.
+    $pendReq = golpos_pay_pending_for($email);
+    if ($pendReq !== null) {
+        out(['reply' => t('pay_pending', money((float)$pendReq['amount']),
+                          golpos_pay_period_label((string)$pendReq['period_from'], (string)$pendReq['period_to']))]);
+    }
+    // The owner's last decision on her, delivered once, in her session.
+    $prefix = '';
+    $latest = golpos_pay_latest_for($email);
+    if ($latest !== null && empty($latest['seen'])) {
+        if (($latest['status'] ?? '') === 'declined') {
+            $prefix = t('pay_declined_note', money((float)$latest['amount']),
+                golpos_pay_period_label((string)$latest['period_from'], (string)$latest['period_to']));
+        } elseif (($latest['status'] ?? '') === 'paid') {
+            $prefix = t('pay_paid_note', money((float)$latest['amount']),
+                golpos_pay_period_label((string)$latest['period_from'], (string)$latest['period_to']));
+        }
+        if ($prefix !== '') {
+            $latest['seen'] = true;
+            golpos_pay_ask_save($latest);
+        }
+    }
+    $pf = golpos_pay_period_from($email);
+    $from = (string)$pf['from'];
+    $to = date('Y-m-d');
+    $comp = golpos_pay_compute($emp, $from, $to, $pf['since'] ?? null);
+    if (!$comp['lines'] && !$comp['unended']) {
+        out(['reply' => $prefix . t('pay_no_hours', date('M j', strtotime($from)))]);
+    }
+    if ($comp['unrated']) {
+        $days = implode(', ', array_map(
+            static fn($l) => date('M j', strtotime((string)$l['date'])), $comp['unrated']));
+        if (!$comp['segments']) {
+            out(['reply' => $prefix . t('pay_no_rate')]);
+        }
+        out(['reply' => $prefix . t('pay_unrated', $days)]);
+    }
+    if (!$comp['lines']) {
+        // Only unended stints: nothing evidenced to price.
+        $u = $comp['unended'][0];
+        out(['reply' => $prefix . t('pay_no_hours', date('M j', strtotime((string)$u['date'])))]);
+    }
+    $period = golpos_pay_period_label($from, $to);
+    $lines = [$prefix . ($np ? 'Tapai ko talab — ' : 'Your pay — ') . $period . ':'];
+    $dayLines = array_slice($comp['lines'], 0, 14);
+    foreach ($dayLines as $l) {
+        $lines[] = '• ' . date('D M j', strtotime((string)$l['date'])) . ': ' . $hrs($l['hours']) . ' hrs'
+            . (!empty($l['open']) ? ($np ? ' (ahile khula chha — ahile samma)' : ' (still open — counted to now)') : '');
+    }
+    if (count($comp['lines']) > count($dayLines)) {
+        $lines[] = '• +' . (count($comp['lines']) - count($dayLines)) . ' more day(s) on the card';
+    }
+    foreach ($comp['unended'] as $u) {
+        $lines[] = '• ' . date('D M j', strtotime((string)$u['date']))
+            . ($np ? ': yo shift ko anta record chhaina — gineko chhaina.'
+                   : ': this shift has no recorded end — not counted.');
+    }
+    $lines[] = golpos_pay_headline($comp['segments'], (float)$comp['amount']);
+    $lines[] = $np
+        ? 'Card tayar chha — malik lai pathauna "gol" bhannus. Kunai shift छुटेको chha bhane bhannus (jastai "ma mangalbar 4 ghanta thiye") — tapai kai shabda ma card ma baschha.'
+        : 'Card ready — say "gol" to send this to the owner. If a shift is missing, tell me (e.g. "ma mangalbar 4 ghanta thiye") and it rides on the card in your words.';
+    $card = golpos_stage(['type' => 'pay_send',
+        'employee_email' => $email, 'employee_name' => $name,
+        'period_from' => $from, 'period_to' => $to,
+        'lines' => $comp['lines'], 'segments' => $comp['segments'],
+        'hours' => (float)$comp['hours'], 'amount' => (float)$comp['amount'],
+        'covered_until' => $comp['covered_until'] ?? null,
+        'corrections' => [], 'unended' => $comp['unended']]);
+    out(['reply' => implode("\n", $lines), 'card' => $card]);
+}
+
+// The owner's request work (admin domain — the gate has run): what is
+// waiting, and the approve card for one of them.
+if (golpos_is_pay_requests_ask($msg)) {
+    $actor = golpos_actor();
+    if ($actor === null || ($actor['role'] ?? '') !== 'admin') {
+        out(['reply' => t('pay_owner_hint')]);
+    }
+    $waiting = golpos_pay_pending_all();
+    if (!$waiting) { out(['reply' => 'No pay requests waiting on you.']); }
+    $pick = null;
+    foreach ($waiting as $r) {
+        $nm = (string)($r['employee_name'] ?? '');
+        $first = explode(' ', $nm)[0] ?? '';
+        foreach (array_unique(array_filter([$nm, $first])) as $cand) {
+            if (preg_match('/(^|[^\p{L}])' . preg_quote($cand, '/') . '([^\p{L}]|$)/iu', $msg)) {
+                $pick = $r; break 2;
+            }
+        }
+    }
+    if ($pick === null && count($waiting) === 1) { $pick = $waiting[0]; }
+    if ($pick === null) {
+        $ls = ['Pay requests waiting on you:'];
+        foreach ($waiting as $r) {
+            $ls[] = '• ' . (string)$r['employee_name'] . ' — '
+                . golpos_pay_headline((array)$r['segments'], (float)$r['amount'])
+                . ' · ' . golpos_pay_period_label((string)$r['period_from'], (string)$r['period_to']);
+        }
+        $ls[] = 'Say her name and I\'ll bring her card.';
+        out(['reply' => implode("\n", $ls)]);
+    }
+    $card = golpos_stage(['type' => 'pay_approve',
+        'request_id' => (string)$pick['id'],
+        'employee_email' => (string)$pick['employee_email'],
+        'employee_name' => (string)$pick['employee_name'],
+        'period_from' => (string)$pick['period_from'],
+        'period_to' => (string)$pick['period_to'],
+        'segments' => (array)$pick['segments'],
+        'hours' => (float)$pick['hours'], 'amount' => (float)$pick['amount'],
+        'corrections' => (array)($pick['corrections'] ?? [])]);
+    out(['reply' => (string)$pick['employee_name'] . ' is asking for pay — '
+                  . golpos_pay_headline((array)$pick['segments'], (float)$pick['amount'])
+                  . ' · ' . golpos_pay_period_label((string)$pick['period_from'], (string)$pick['period_to'])
+                  . '. Card ready — say "gol" to approve and book it, or "decline" to decline.',
+         'card' => $card]);
+}
+
+// The owner's rate change (admin domain — the gate has run): staged
+// old→new, effective today; "gol" writes the roster record.
+$rateChange = golpos_parse_rate_change($msg);
+if ($rateChange !== null) {
+    $actor = golpos_actor();
+    if ($actor === null || ($actor['role'] ?? '') !== 'admin') {
+        out(['reply' => t('pay_owner_hint')]);
+    }
+    $emp = $rateChange['emp'];
+    $today = date('Y-m-d');
+    $old = golpos_rate_on($emp, $today);
+    if ($rateChange['by'] && $old === null) {
+        out(['reply' => golpos_display_name($emp)
+            . ' has no rate on record yet — say the new rate itself ("'
+            . golpos_display_name($emp) . ' ko pay 13") and I\'ll stage it.']);
+    }
+    $new = $rateChange['by'] ? round($old + $rateChange['amount'], 2) : round($rateChange['amount'], 2);
+    if ($old !== null && abs($new - $old) < 0.001) {
+        out(['reply' => golpos_display_name($emp) . "'s rate is already " . money($old) . ' — nothing to change.']);
+    }
+    $card = golpos_stage(['type' => 'rate_change',
+        'employee_email' => (string)$emp['email'],
+        'employee_name' => golpos_display_name($emp),
+        'old_rate' => $old, 'new_rate' => $new, 'effective' => $today]);
+    out(['reply' => 'Rate change staged — ' . golpos_card_summary($card)
+                  . '. Say "gol" to set it from today; past periods keep the old rate.',
+         'card' => $card]);
+}
+
 // --- AI Calendar + AI Notes: read / create, both domains -------------------
 // Her own calendar and notes are cashier domain (the gate has already
 // run: a by-name read or a for-someone-else create arrived here only
@@ -4936,7 +5421,14 @@ function golpos_needs_admin(string $msg, array $in): bool {
         return $pend !== null && in_array($pend['type'] ?? '', [
             'price_change', 'new_item', 'setting_change', 'batch_close', 'employee_remove', 'employee_add',
             'stock_receive', 'bill', 'order_prep', 'vendor_teach', 'task_assign',
+            'pay_approve', 'rate_change',
+            // Price-gap fills (Oct 28) execute through the price lane's
+            // own gate: a fill is a price/cost write, so its confirm
+            // demands the admin PIN exactly as a price change does.
+            'price_fill', 'cost_fill',
         ], true);
+        // pay_send is deliberately absent: her confirm sends HER OWN
+        // request up — cashier-domain, like the credit-attach card.
     }
     if (preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', $msg)) { return true; }
     // A refund ask is never an admin ask and never a price ask — it has
@@ -4945,6 +5437,13 @@ function golpos_needs_admin(string $msg, array $in): bool {
     if (golpos_is_refund_ask($msg)) { return false; }
     // A credit balance read is a cashier-domain read, like a price ask.
     if (golpos_is_credit_ask($msg)) { return false; }
+    // Pay lane (Oct 28): the owner's rate change and his request work
+    // are admin asks; HER pay ask is cashier-domain — her own hours,
+    // her own rate, her own total, like her tasks and her note back.
+    // Rate change first: "Pranisha ko pay 13" names her but is HIS act.
+    if (golpos_parse_rate_change($msg) !== null) { return true; }
+    if (golpos_is_pay_requests_ask($msg)) { return true; }
+    if (golpos_is_pay_ask($msg)) { return false; }
     // The owner's team domain (employee lane): assigning work, reading
     // a person's notes, team progress, and the presence read are admin
     // asks. The employee's own lanes (her tasks, her note back, her

@@ -821,6 +821,26 @@ function chatCard(card) {
   } else if (card.type === 'team_note') {
     body = `<div class="sc-what">Note to the boss — from ${esc(card.from_name || '')}</div>` +
       `<div class="sc-line">"${esc(card.text || '')}"</div>`;
+  } else if (card.type === 'pay_send') {
+    const hrs = (v) => String(Number(v) || 0);
+    const segs = (card.segments || []).map(s => `${hrs(s.hours)} hrs × ${money(s.rate)}`).join(' + ');
+    const corr = (card.corrections || []).map(c => `<div class="sc-line">Her words: "${esc(c)}"</div>`).join('');
+    body = `<div class="sc-what">Pay request — ${esc(card.employee_name || '')}</div>` +
+      `<div class="sc-line">${esc(card.period_from || '')} → ${esc(card.period_to || '')}</div>` +
+      `<div class="sc-prices"><span class="sc-new">${segs ? segs + ' = ' : ''}${money(card.amount)}</span></div>${corr}` +
+      `<div class="sc-line">Confirm sends this to the owner — he decides; nothing is paid on this card.</div>`;
+  } else if (card.type === 'pay_approve') {
+    const hrs = (v) => String(Number(v) || 0);
+    const segs = (card.segments || []).map(s => `${hrs(s.hours)} hrs × ${money(s.rate)}`).join(' + ');
+    const corr = (card.corrections || []).map(c => `<div class="sc-line">She adds, in her words: "${esc(c)}"</div>`).join('');
+    body = `<div class="sc-what">Pay approval — ${esc(card.employee_name || '')} is asking</div>` +
+      `<div class="sc-line">${esc(card.period_from || '')} → ${esc(card.period_to || '')} · evidenced hours only</div>` +
+      `<div class="sc-prices"><span class="sc-new">${segs ? segs + ' = ' : ''}${money(card.amount)}</span></div>${corr}` +
+      `<div class="sc-line">Confirm approves and books the pay once. To decline, say "decline" in chat.</div>`;
+  } else if (card.type === 'rate_change') {
+    body = `<div class="sc-what">Rate change — ${esc(card.employee_name || '')}</div>` +
+      `<div class="sc-prices"><span class="sc-old">${card.old_rate === null || card.old_rate === undefined ? 'no rate on record' : money(card.old_rate)}</span><span class="sc-arrow">→</span><span class="sc-new">${money(card.new_rate)}</span></div>` +
+      `<div class="sc-line">From today. Past periods keep the rate they were worked at.</div>`;
   } else if (card.type === 'whats_out') {
     body = `<div class="sc-what">What's Out report — ${esc(card.name || '')}</div>` +
       `<div class="sc-line">By ${esc(card.by_name || 'Register')} · the stock count does not change — this files the report only.</div>`;
@@ -1475,7 +1495,15 @@ $('ownerBtn').addEventListener('click', async () => {
             `<div class="sc-line">Din bhari: ${(tr.done || []).length} done · ${(tr.notes || []).length} note(s) · ${(tr.outs || []).length} out report(s) · ${(tr.counts || []).length} count(s) · ${(tr.questions || []).length} question(s)</div></div>`;
         }).join('') : '<p class="owner-muted">No employees yet — add one in the Gol chat.</p>') +
         ((tm.role_tasks || []).length
-          ? '<p class="owner-muted">Unassigned (role) tasks: ' + tm.role_tasks.flatMap(t => (t.items || []).filter(i => !i.done).map(i => esc(i.text))).join(' · ') + '</p>' : '');
+          ? '<p class="owner-muted">Unassigned (role) tasks: ' + tm.role_tasks.flatMap(t => (t.items || []).filter(i => !i.done).map(i => esc(i.text))).join(' · ') + '</p>' : '') +
+        ((tm.pay_requests || []).length
+          ? '<h3 class="ocard-title">Pay requests <small>— waiting on you; decide in the Gol chat ("pay requests")</small></h3>' +
+            tm.pay_requests.map(r => {
+              const segs = (r.segments || []).map(s => `${String(Number(s.hours) || 0)} hrs × ${money(s.rate)}`).join(' + ');
+              const corr = (r.corrections || []).map(c => `<div class="sc-line">Her words: "${esc(c)}"</div>`).join('');
+              return `<div class="team-person"><b>${esc(r.name)}</b> <small>${esc(r.period)} · ${segs} = ${money(r.amount)}</small>${corr}</div>`;
+            }).join('')
+          : '');
       $('ownerUnlocks').innerHTML =
         `<h3 class="ocard-title">Unlock feed <small>— who opened the register, and when</small></h3>` +
         ((tm.unlocks || []).length ? tm.unlocks.map(u =>
