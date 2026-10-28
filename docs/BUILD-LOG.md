@@ -305,3 +305,38 @@ One entry per day; the git history carries the same dates.
   state files md5-identical before/after. Full evidence:
   docs/mrstore-sim-evidence.md. Parity: docs/mrstore-parity-map.md
   (10 wired-in-sim · 10 already chat-native · 10 remaining).
+
+## Day 3 (Oct 28) — MERGE: the access build × the MR.STORE link land on master (41c8c00)
+
+- Branch `mrstore-link` (bridge + month simulation) merged into master
+  (access layer + Nepali report gate). Three textual conflicts, all
+  resolved by hand as unions, never by taking a side: BUILD-LOG keeps
+  both Day-3 entries; index.html keeps the access chips (the script
+  stamp line was the only collision); brain.php's confirm handler keeps
+  BOTH card-execution sets — batch_close + employee_remove from master,
+  stock_receive from the branch, sharing the one card_fail tail.
+- Interaction rules in the merged tree: link mode stays behind
+  LINK_MRSTORE (default off; standalone Sunrise behavior is the
+  default). `stock_receive` joins the gate's admin card-type list, so a
+  stock write executes only past the PIN, exactly like a price change;
+  stock reads stay cashier domain, like price queries. The gate still
+  classifies first (report/month/stock-admin asks follow the admin
+  rules), and the branch's one-word `mahina` analysis-lane fix
+  survives, so an elevated admin's month question gets a real month
+  answer instead of the day lane. web/app.js gains a stock_receive
+  card renderer (the generic card body would have shown the receive's
+  qty as a price). .gitignore covers the link runtime stores
+  (link.json, bind.json, mrstore_link_log.jsonl).
+- Verified on the merged tree (php -l + node --check clean throughout):
+  access battery 43/43 + auto-batch battery 16/16 + Nepali gate battery
+  17/17 on throwaway copies (mail sunk). Standalone regression on a
+  throwaway server dir: 62-product Sunrise catalog, Coke $2.19, cash
+  sale $4.73 with change, day total, Receipt Loyalty register →
+  SM-10482 counted $12.92 → duplicate rejected → leaderboard correct.
+  Link-lane proof on the same dir with LINK on + QA binding: launch
+  bind engaged for the QA store only, stock question read MR.STORE
+  live (Coke 12pk 2131 — the sim month's closing shelf), ONE card sale
+  moved MR.STORE stock to 2130 with its journal ticket written, and a
+  fresh session's "yo mahina kati bikri bho?" demanded the PIN, then
+  answered $14.44 (the two test sales) after create-PIN elevation.
+  The throwaway server dir was deleted completely afterward.
