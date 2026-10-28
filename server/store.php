@@ -663,11 +663,16 @@ function golpos_size_pick(array $products, string $t): ?array {
             foreach ($pm[1] as $v) { $sizes[] = $canon($v); }
         }
         if (!array_intersect($named, $sizes)) { continue; }
+        // Identity words are NON-SIZE words: a token carrying a digit
+        // ('20oz') is the size itself, never identity — with it, every
+        // 20oz sibling "shared a word" with the text and the pick
+        // drowned (battery catch on the QA catalog, Oct 28: 'coca cola
+        // 20oz' tied Coke 20oz against Mountain Dew 20oz Bottles).
         $words = array_filter(preg_split('/[^a-z0-9]+/u', mb_strtolower($p['name'])) ?: [],
-                              fn($w) => $w !== '' && !is_numeric($w));
+                              fn($w) => $w !== '' && !preg_match('/\d/', $w));
         foreach (($p['aliases'] ?? []) as $a) {
             foreach (preg_split('/\s+/u', mb_strtolower((string)$a)) ?: [] as $w) {
-                if ($w !== '') { $words[] = $w; }
+                if ($w !== '' && !preg_match('/\d/u', $w)) { $words[] = $w; }
             }
         }
         if (array_intersect($words, $textWords)) { $found[] = $p; }
