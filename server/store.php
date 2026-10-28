@@ -43,7 +43,53 @@ function golpos_catalog(): array {
         golpos_write('catalog.live.json', $seed);
         return $seed;
     }
+    return golpos_catalog_fill_shelf($live);
+}
+
+// The living shelf (owner directive, Oct 28) rides on three seed-owned
+// fields — stock (on hand), par (shelf capacity) and img (packshot). A
+// live catalog written before the shelf existed carries none of them, so
+// any product the seed knows gets the missing fields filled in from the
+// seed on every read. Name, price and every other live value stay the
+// live file's — a staged price change is never rolled back by the fill.
+// A product the seed does not know (added in chat) has no stock to fill:
+// stock stays unset, which the register reads as "not tracked".
+function golpos_catalog_fill_shelf(array $live): array {
+    $seed = golpos_read('catalog.seed.json', ['products' => []]);
+    $bySku = [];
+    foreach (($seed['products'] ?? []) as $sp) {
+        if (isset($sp['sku'])) { $bySku[(string)$sp['sku']] = $sp; }
+    }
+    if (!$bySku) { return $live; }
+    foreach ($live['products'] as $i => $p) {
+        $sp = $bySku[(string)($p['sku'] ?? '')] ?? null;
+        if ($sp === null) { continue; }
+        foreach (['stock', 'par', 'img'] as $k) {
+            if (!isset($p[$k]) && isset($sp[$k])) { $live['products'][$i][$k] = $sp[$k]; }
+        }
+    }
     return $live;
+}
+
+// A rung sale takes its units off the shelf (standalone mode only — the
+// API gates the call on the link being off; in link mode MR.STORE moves
+// its own stock and there is nothing local to decrement). Stock floors
+// at zero: the shelf can read empty, never negative. Untracked products
+// (no stock field) are skipped, exactly as MR.STORE skips its untracked.
+function golpos_decrement_stock(array $lines): void {
+    $cat = golpos_catalog();
+    $idx = [];
+    foreach ($cat['products'] as $i => $p) { $idx[(string)($p['sku'] ?? '')] = $i; }
+    $moved = false;
+    foreach ($lines as $l) {
+        $sku = (string)($l['sku'] ?? '');
+        if ($sku === '' || !isset($idx[$sku])) { continue; }
+        $i = $idx[$sku];
+        if (!isset($cat['products'][$i]['stock']) || !is_numeric($cat['products'][$i]['stock'])) { continue; }
+        $cat['products'][$i]['stock'] = max(0, $cat['products'][$i]['stock'] - max(1, (int)($l['qty'] ?? 1)));
+        $moved = true;
+    }
+    if ($moved) { golpos_write('catalog.live.json', $cat); }
 }
 
 function golpos_save_catalog(array $catalog): void {

@@ -106,22 +106,94 @@ function renderCats() {
 function artClass(p) {
   return 'art-' + String(p.category || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
+// --- the living shelf ---------------------------------------------------------
+// Every tile carries its live inventory: the packshot, the count on hand,
+// a state light, and a fill bar against the product's par (shelf capacity).
+// Stock is tracked two ways on purpose: standalone products carry `stock`
+// (the POS's own shelf, decremented by api.php as sales record); linked
+// MR.STORE products carry `onHand` (already net of the sale by the time
+// the payload lands). A product with neither is untracked — no bar, no
+// count, and it rings exactly as before.
+function stockOf(p) {
+  const v = (p.stock !== undefined && p.stock !== null) ? p.stock
+    : (p.onHand !== undefined ? p.onHand : null);
+  if (v === null || v === undefined || isNaN(Number(v))) { return null; }
+  return Number(v);
+}
+const PAR_BY_CAT = { 'Drinks': 24, 'Snacks': 20, 'Grocery': 12, 'Household': 10,
+                     'Health': 15, 'Beer and Wine': 24, 'Counter': 30 };
+function parOf(p) {
+  const par = Number(p.par);
+  return par > 0 ? par : (PAR_BY_CAT[p.category] || 24);
+}
+// The bar wears the product's nature: liquids (Drinks, Beer and Wine —
+// and their MR.STORE namesakes) pour, solids sit. In link mode every
+// product arrives under one category, so the name carries the nature.
+const LIQUID_WORDS = /(cola|pepsi|sprite|dew|pepper|gatorade|red bull|monster|tea|coffee|juice|water|beer|wine|heineken|bud light|corona|milk)/i;
+function isLiquid(p) {
+  if (p.category === 'Drinks' || p.category === 'Beer and Wine') { return true; }
+  if (p.category && p.category !== 'MR.STORE') { return false; }
+  return LIQUID_WORDS.test(p.name || '');
+}
+function stockState(stock, par) {
+  if (stock <= 0) { return 'out'; }
+  const pct = par > 0 ? (stock / par) * 100 : 100;
+  return pct < 20 ? 'crit' : (pct < 50 ? 'low' : 'ok');
+}
+const fmtCount = (n) => Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
+function stockHtml(p) {
+  const s = stockOf(p);
+  if (s === null) { return ''; }
+  const par = parOf(p);
+  const pct = Math.max(0, Math.min(100, par > 0 ? (s / par) * 100 : 0));
+  const state = stockState(s, par);
+  const count = s <= 0 ? 'Out of stock'
+    : (state === 'ok' ? fmtCount(s) + ' in stock' : 'Only ' + fmtCount(s) + ' left');
+  return `<span class="tile-stock">
+      <span class="tile-stock-row"><span class="tile-dot st-${state}"></span><span class="tile-count st-${state}">${count}</span></span>
+      <span class="stockbar"><span class="stockfill ${isLiquid(p) ? 'liquid' : 'solid'} st-${state}" data-sku="${p.sku}" data-pct="${pct}" style="width:${pct}%"></span></span>
+    </span>`;
+}
+// The last fill each tile showed, by sku — a refresh starts the bar at
+// the level it last showed and lets the CSS transition pour/drain it to
+// the new one, instead of snapping.
+let lastFill = {};
 function renderGrid() {
   const q = $('searchInput').value.trim().toLowerCase();
   const items = catalog.products.filter(p =>
     (activeCat === 'All' || p.category === activeCat) &&
     (!q || p.name.toLowerCase().includes(q) || p.barcode.includes(q)));
-  $('grid').innerHTML = items.map(p =>
-    `<button type="button" class="tile" data-sku="${p.sku}">
-       <span class="tile-art ${artClass(p)}">${(p.name || 'G').trim().charAt(0).toUpperCase()}</span>
-       <span class="tile-name">${p.name}</span><span class="tile-price">${money(p.price)}</span>
-     </button>`).join('') || '<p class="empty">No products match.</p>';
+  $('grid').innerHTML = items.map(p => {
+    const s = stockOf(p);
+    const out = s !== null && s <= 0;
+    return `<button type="button" class="tile${out ? ' is-out' : ''}" data-sku="${p.sku}">
+       <span class="tile-media"><span class="tile-art ${artClass(p)}">${(p.name || 'G').trim().charAt(0).toUpperCase()}</span>${p.img ? `<img class="tile-img" src="${esc(p.img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}${out ? '<span class="tile-out-tag">OUT</span>' : ''}</span>
+       <span class="tile-name">${p.name}</span>${stockHtml(p)}<span class="tile-price">${money(p.price)}</span>
+     </button>`;
+  }).join('') || '<p class="empty">No products match.</p>';
   $('grid').querySelectorAll('.tile').forEach(t =>
     t.addEventListener('click', () => addToCart(t.dataset.sku)));
+  $('grid').querySelectorAll('.stockfill').forEach(f => {
+    const pct = parseFloat(f.dataset.pct);
+    const prev = lastFill[f.dataset.sku];
+    if (prev !== undefined && Math.abs(prev - pct) > 0.01) {
+      f.style.width = prev + '%';
+      requestAnimationFrame(() => requestAnimationFrame(() => { f.style.width = pct + '%'; }));
+    }
+    lastFill[f.dataset.sku] = pct;
+  });
 }
-function addToCart(sku) {
+function addToCart(sku, opts) {
   if (!storeIsOpen()) { storeClosedNote(); return; }
-  cart.set(sku, (cart.get(sku) || 0) + 1);
+  const p = catalog.products.find(x => x.sku === sku);
+  // An empty shelf refuses the tap with plain words (the Gol chat's add
+  // path passes viaChat and keeps its own behavior, untouched).
+  if (p && !(opts && opts.viaChat)) {
+    const s = stockOf(p);
+    if (s !== null && s <= 0) { showToast('Out of stock'); return; }
+  }
+  const n = (opts && opts.qty) ? Math.max(1, Math.floor(opts.qty)) : 1;
+  cart.set(sku, (cart.get(sku) || 0) + n);
   renderCart();
 }
 function renderCart() {
@@ -140,6 +212,13 @@ function renderCart() {
     `<div class="line" title="Manual amount — remove and re-add to change the amount"><div class="line-info"><div class="line-name">Manual amount<span class="line-tag ${m.taxable ? 'tax' : 'notax'}">${m.taxable ? 'TAX' : 'NO-TAX'}</span></div><div class="line-sub">${money(m.price)}</div></div>
        <div class="stepper"><button type="button" data-mremove="${m.id}" aria-label="Remove manual amount">×</button></div>
        <div class="line-total">${money(m.price)}</div></div>`).join('');
+  if (!lines.length && !manualLines.length && taxExempt) {
+    // An exemption armed for a sale that no longer exists dies with it —
+    // a lingering EXEMPT badge on an empty cart reads as a bug, not a
+    // setting (owner screenshot, Oct 28). The Settings toggle re-reads
+    // this same flag on open, so the menu never disagrees.
+    taxExempt = false; setToggle($('smTaxBtn'), false);
+  }
   $('cartLines').innerHTML = (lines.length || manualLines.length) ? catHtml + manHtml
     : '<p class="empty">Cart is empty — tap a product or scan.</p>';
   const count = lines.reduce((s, l) => s + l.qty, 0) + manualLines.length;
@@ -230,6 +309,7 @@ async function tender(kind, tendered) {
     return false;
   }
   await loadSettings();
+  await loadCatalog(); // the rung units leave the shelf — counts and bars move
   const st = receiptSettings || {};
   taxExempt = false; // the exemption dies with the sale it was set for
   setToggle($('smTaxBtn'), false);
@@ -322,7 +402,7 @@ function chatCard(card) {
       body: JSON.stringify(brainPayload({ confirm: true })) });
     const r = await res.json();
     chatMsg(r.reply, 'gol');
-    if (r.action && r.action.type === 'add') { addToCart(r.action.sku); }
+    if (r.action && r.action.type === 'add') { addToCart(r.action.sku, { viaChat: true, qty: r.action.qty || 1 }); }
     loadCatalog(); loadSettings();
   });
   $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
@@ -349,7 +429,7 @@ async function sendChat(text) {
   if (r.pin_mask && mine) { mine.textContent = '••••'; }
   if (r.reply) { chatMsg(r.reply, 'gol'); }
   if (r.card) { chatCard(r.card); }
-  if (r.action && r.action.type === 'add') { addToCart(r.action.sku); }
+  if (r.action && r.action.type === 'add') { addToCart(r.action.sku, { viaChat: true, qty: r.action.qty || 1 }); }
   if (r.done) { loadCatalog(); loadSettings(); }
 }
 
@@ -380,7 +460,7 @@ $('clearBtn').addEventListener('click', () => {
 });
 $('receiptClose').addEventListener('click', () => $('receiptModal').classList.add('hidden'));
 $('golBtn').addEventListener('click', () => { $('chatDrawer').classList.remove('hidden'); $('chatInput').focus(); });
-$('chatClose').addEventListener('click', () => $('chatDrawer').classList.add('hidden'));
+$('chatClose').addEventListener('click', () => { $('chatDrawer').classList.add('hidden'); loadCatalog(); });
 // --- quick-ask chips: one tap sends the everyday asks — no typing at the till.
 document.querySelectorAll('[data-chip]').forEach(b =>
   b.addEventListener('click', () => sendChat(b.dataset.chip)));

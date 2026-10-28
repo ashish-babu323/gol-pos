@@ -1,732 +1,918 @@
 {
  "products": [
   {
-   "barcode": "049000000443",
-   "category": "Drinks",
-   "name": "Coca-Cola 20oz",
-   "price": 2.19,
-   "sku": "1001",
    "aliases": [
     "coke",
     "coca cola",
     "कोक"
-   ]
+   ],
+   "barcode": "049000000443",
+   "category": "Drinks",
+   "img": "assets/products/1001.webp",
+   "name": "Coca-Cola 20oz",
+   "par": 24,
+   "price": 2.19,
+   "sku": "1001",
+   "stock": 18
   },
   {
-   "barcode": "049000050103",
-   "category": "Drinks",
-   "name": "Pepsi 20oz",
-   "price": 2.19,
-   "sku": "1002",
    "aliases": [
     "pepsi",
     "पेप्सी"
-   ]
+   ],
+   "barcode": "049000050103",
+   "category": "Drinks",
+   "img": "assets/products/1002.webp",
+   "name": "Pepsi 20oz",
+   "par": 24,
+   "price": 2.19,
+   "sku": "1002",
+   "stock": 24
   },
   {
-   "barcode": "073360003516",
-   "category": "Drinks",
-   "name": "Red Bull 8.4oz",
-   "price": 3.49,
-   "sku": "1003",
    "aliases": [
     "redbull",
     "energy drink",
     "रेड बुल"
-   ]
+   ],
+   "barcode": "073360003516",
+   "category": "Drinks",
+   "img": "assets/products/1003.webp",
+   "name": "Red Bull 8.4oz",
+   "par": 24,
+   "price": 3.49,
+   "sku": "1003",
+   "stock": 9
   },
   {
-   "barcode": "030000010174",
-   "category": "Drinks",
-   "name": "Gatorade Cool Blue 20oz",
-   "price": 2.49,
-   "sku": "1004",
    "aliases": [
     "gatorade"
-   ]
+   ],
+   "barcode": "030000010174",
+   "category": "Drinks",
+   "img": "assets/products/1004.webp",
+   "name": "Gatorade Cool Blue 20oz",
+   "par": 24,
+   "price": 2.49,
+   "sku": "1004",
+   "stock": 24
   },
   {
-   "barcode": "041220871320",
-   "category": "Drinks",
-   "name": "Bottled Water 16.9oz",
-   "price": 1.29,
-   "sku": "1005",
    "aliases": [
     "water",
     "pani",
     "पानी"
-   ]
+   ],
+   "barcode": "041220871320",
+   "category": "Drinks",
+   "img": "assets/products/1005.webp",
+   "name": "Bottled Water 16.9oz",
+   "par": 24,
+   "price": 1.29,
+   "sku": "1005",
+   "stock": 22
   },
   {
-   "barcode": "028400064057",
-   "category": "Snacks",
-   "name": "Lays Classic Chips 1oz",
-   "price": 1.19,
-   "sku": "1006",
    "aliases": [
     "lays",
     "chips",
     "चिप्स"
-   ]
+   ],
+   "barcode": "028400064057",
+   "category": "Snacks",
+   "img": "assets/products/1006.webp",
+   "name": "Lays Classic Chips 1oz",
+   "par": 20,
+   "price": 1.19,
+   "sku": "1006",
+   "stock": 20
   },
   {
-   "barcode": "028400064064",
-   "category": "Snacks",
-   "name": "Doritos Nacho 1oz",
-   "price": 1.19,
-   "sku": "1007",
    "aliases": [
     "doritos",
     "chips",
     "चिप्स"
-   ]
+   ],
+   "barcode": "028400064064",
+   "category": "Snacks",
+   "img": "assets/products/1007.webp",
+   "name": "Doritos Nacho 1oz",
+   "par": 20,
+   "price": 1.19,
+   "sku": "1007",
+   "stock": 20
   },
   {
-   "barcode": "040000575698",
-   "category": "Snacks",
-   "name": "Snickers Bar",
-   "price": 1.49,
-   "sku": "1008",
    "aliases": [
     "snickers",
     "chocolate",
     "चकलेट"
-   ]
+   ],
+   "barcode": "040000575698",
+   "category": "Snacks",
+   "img": "assets/products/1008.webp",
+   "name": "Snickers Bar",
+   "par": 20,
+   "price": 1.49,
+   "sku": "1008",
+   "stock": 14
   },
   {
-   "barcode": "034000040305",
-   "category": "Snacks",
-   "name": "Chewing Gum Mint Pack",
-   "price": 1.09,
-   "sku": "1009",
    "aliases": [
     "gum"
-   ]
+   ],
+   "barcode": "034000040305",
+   "category": "Snacks",
+   "img": "assets/products/1009.webp",
+   "name": "Chewing Gum Mint Pack",
+   "par": 20,
+   "price": 1.09,
+   "sku": "1009",
+   "stock": 3
   },
   {
-   "barcode": "038000138416",
-   "category": "Snacks",
-   "name": "Pringles Sour Cream 2.5oz",
-   "price": 2.29,
-   "sku": "1010",
    "aliases": [
     "pringles",
     "chips",
     "चिप्स"
-   ]
+   ],
+   "barcode": "038000138416",
+   "category": "Snacks",
+   "img": "assets/products/1010.webp",
+   "name": "Pringles Sour Cream 2.5oz",
+   "par": 20,
+   "price": 2.29,
+   "sku": "1010",
+   "stock": 16
   },
   {
-   "barcode": "0078742100686",
-   "category": "Grocery",
-   "name": "Whole Milk 1 Gallon",
-   "price": 4.29,
-   "sku": "1011",
    "aliases": [
     "milk",
     "dudh",
     "doodh",
     "दूध"
-   ]
+   ],
+   "barcode": "0078742100686",
+   "category": "Grocery",
+   "img": "assets/products/1011.webp",
+   "name": "Whole Milk 1 Gallon",
+   "par": 12,
+   "price": 4.29,
+   "sku": "1011",
+   "stock": 5
   },
   {
-   "barcode": "041800001117",
-   "category": "Grocery",
-   "name": "White Bread Loaf",
-   "price": 2.79,
-   "sku": "1012",
    "aliases": [
     "bread",
     "pau roti",
     "पाउरोटी"
-   ]
+   ],
+   "barcode": "041800001117",
+   "category": "Grocery",
+   "img": "assets/products/1012.webp",
+   "name": "White Bread Loaf",
+   "par": 12,
+   "price": 2.79,
+   "sku": "1012",
+   "stock": 12
   },
   {
-   "barcode": "030000010051",
-   "category": "Grocery",
-   "name": "Eggs 12 Count",
-   "price": 3.99,
-   "sku": "1013",
    "aliases": [
     "eggs",
     "anda",
     "अण्डा",
     "अंडा"
-   ]
+   ],
+   "barcode": "030000010051",
+   "category": "Grocery",
+   "img": "assets/products/1013.webp",
+   "name": "Eggs 12 Count",
+   "par": 12,
+   "price": 3.99,
+   "sku": "1013",
+   "stock": 2
   },
   {
-   "barcode": "011110821033",
-   "category": "Grocery",
-   "name": "Basmati Rice 2lb",
-   "price": 5.49,
-   "sku": "1014",
    "aliases": [
     "chamal",
     "chawal",
     "basmati",
     "चामल"
-   ]
+   ],
+   "barcode": "011110821033",
+   "category": "Grocery",
+   "img": "assets/products/1014.webp",
+   "name": "Basmati Rice 2lb",
+   "par": 12,
+   "price": 5.49,
+   "sku": "1014",
+   "stock": 12
   },
   {
-   "barcode": "048500013189",
-   "category": "Grocery",
-   "name": "Instant Noodles Pack",
-   "price": 0.89,
-   "sku": "1015",
    "aliases": [
     "noodles",
     "chow chow",
     "wai wai",
     "चाउचाउ",
     "वाइवाइ"
-   ]
+   ],
+   "barcode": "048500013189",
+   "category": "Grocery",
+   "img": "assets/products/1015.webp",
+   "name": "Instant Noodles Pack",
+   "par": 12,
+   "price": 0.89,
+   "sku": "1015",
+   "stock": 12
   },
   {
-   "barcode": "0852394001690",
-   "category": "Beer and Wine",
-   "name": "Heineken 6 Pack",
-   "price": 10.99,
-   "sku": "1016",
    "aliases": [
     "heineken",
     "beer",
     "बियर"
-   ]
+   ],
+   "barcode": "0852394001690",
+   "category": "Beer and Wine",
+   "img": "assets/products/1016.webp",
+   "name": "Heineken 6 Pack",
+   "par": 24,
+   "price": 10.99,
+   "sku": "1016",
+   "stock": 12
   },
   {
-   "barcode": "0852394001522",
-   "category": "Beer and Wine",
-   "name": "Bud Light 6 Pack",
-   "price": 9.49,
-   "sku": "1017",
    "aliases": [
     "bud light",
     "beer",
     "बियर"
-   ]
+   ],
+   "barcode": "0852394001522",
+   "category": "Beer and Wine",
+   "img": "assets/products/1017.webp",
+   "name": "Bud Light 6 Pack",
+   "par": 24,
+   "price": 9.49,
+   "sku": "1017",
+   "stock": 24
   },
   {
-   "barcode": "089819009403",
-   "category": "Beer and Wine",
-   "name": "Red Wine 750ml",
-   "price": 12.99,
-   "sku": "1018",
    "aliases": [
     "wine",
     "red wine",
     "वाइन"
-   ]
+   ],
+   "barcode": "089819009403",
+   "category": "Beer and Wine",
+   "img": "assets/products/1018.webp",
+   "name": "Red Wine 750ml",
+   "par": 24,
+   "price": 12.99,
+   "sku": "1018",
+   "stock": 24
   },
   {
-   "barcode": "037600244157",
-   "category": "Household",
-   "name": "Paper Towels Single Roll",
-   "price": 1.79,
-   "sku": "1019",
    "aliases": [
     "paper towel",
     "tissue"
-   ]
+   ],
+   "barcode": "037600244157",
+   "category": "Household",
+   "img": "assets/products/1019.webp",
+   "name": "Paper Towels Single Roll",
+   "par": 10,
+   "price": 1.79,
+   "sku": "1019",
+   "stock": 10
   },
   {
-   "barcode": "037000127548",
-   "category": "Household",
-   "name": "Laundry Detergent 50oz",
-   "price": 8.99,
-   "sku": "1020",
    "aliases": [
     "detergent",
     "surf",
     "सर्फ"
-   ]
+   ],
+   "barcode": "037000127548",
+   "category": "Household",
+   "img": "assets/products/1020.webp",
+   "name": "Laundry Detergent 50oz",
+   "par": 10,
+   "price": 8.99,
+   "sku": "1020",
+   "stock": 10
   },
   {
-   "barcode": "300450451127",
-   "category": "Health",
-   "name": "Pain Relief Tablets 24ct",
-   "price": 6.49,
-   "sku": "1021",
    "aliases": [
     "pain relief",
     "medicine",
     "औषधि",
     "दवाई"
-   ]
+   ],
+   "barcode": "300450451127",
+   "category": "Health",
+   "img": "assets/products/1021.webp",
+   "name": "Pain Relief Tablets 24ct",
+   "par": 15,
+   "price": 6.49,
+   "sku": "1021",
+   "stock": 15
   },
   {
-   "barcode": "041100181746",
-   "category": "Household",
-   "name": "AA Batteries 4 Pack",
-   "price": 5.99,
-   "sku": "1022",
    "aliases": [
     "battery",
     "batteries",
     "ब्याट्री"
-   ]
+   ],
+   "barcode": "041100181746",
+   "category": "Household",
+   "img": "assets/products/1022.webp",
+   "name": "AA Batteries 4 Pack",
+   "par": 10,
+   "price": 5.99,
+   "sku": "1022",
+   "stock": 10
   },
   {
-   "barcode": "075678001226",
-   "category": "Counter",
-   "name": "Phone Charger Cable USB-C",
-   "price": 7.99,
-   "sku": "1023",
    "aliases": [
     "charger",
     "cable",
     "चार्जर"
-   ]
+   ],
+   "barcode": "075678001226",
+   "category": "Counter",
+   "img": "assets/products/1023.webp",
+   "name": "Phone Charger Cable USB-C",
+   "par": 30,
+   "price": 7.99,
+   "sku": "1023",
+   "stock": 30
   },
   {
-   "barcode": "070847022338",
-   "category": "Counter",
-   "name": "Disposable Lighter",
-   "price": 1.59,
-   "sku": "1024",
    "aliases": [
     "lighter",
     "लाइटर"
-   ]
+   ],
+   "barcode": "070847022338",
+   "category": "Counter",
+   "img": "assets/products/1024.webp",
+   "name": "Disposable Lighter",
+   "par": 30,
+   "price": 1.59,
+   "sku": "1024",
+   "stock": 27
   },
   {
-   "barcode": "200010250000",
-   "category": "Drinks",
-   "name": "Sprite 20oz",
-   "price": 2.19,
-   "sku": "1025",
    "aliases": [
     "sprite",
     "स्प्राइट"
-   ]
+   ],
+   "barcode": "200010250000",
+   "category": "Drinks",
+   "img": "assets/products/1025.webp",
+   "name": "Sprite 20oz",
+   "par": 24,
+   "price": 2.19,
+   "sku": "1025",
+   "stock": 24
   },
   {
-   "barcode": "200010260009",
-   "category": "Drinks",
-   "name": "Mountain Dew 20oz",
-   "price": 2.19,
-   "sku": "1026",
    "aliases": [
     "mountain dew",
     "dew"
-   ]
+   ],
+   "barcode": "200010260009",
+   "category": "Drinks",
+   "img": "assets/products/1026.webp",
+   "name": "Mountain Dew 20oz",
+   "par": 24,
+   "price": 2.19,
+   "sku": "1026",
+   "stock": 24
   },
   {
-   "barcode": "200010270008",
-   "category": "Drinks",
-   "name": "Dr Pepper 20oz",
-   "price": 2.19,
-   "sku": "1027",
    "aliases": [
     "dr pepper",
     "dr. pepper"
-   ]
+   ],
+   "barcode": "200010270008",
+   "category": "Drinks",
+   "img": "assets/products/1027.webp",
+   "name": "Dr Pepper 20oz",
+   "par": 24,
+   "price": 2.19,
+   "sku": "1027",
+   "stock": 24
   },
   {
-   "barcode": "200010280007",
-   "category": "Drinks",
-   "name": "Monster Energy 16oz",
-   "price": 3.29,
-   "sku": "1028",
    "aliases": [
     "monster",
     "energy drink"
-   ]
+   ],
+   "barcode": "200010280007",
+   "category": "Drinks",
+   "img": "assets/products/1028.webp",
+   "name": "Monster Energy 16oz",
+   "par": 24,
+   "price": 3.29,
+   "sku": "1028",
+   "stock": 24
   },
   {
-   "barcode": "200010290006",
-   "category": "Drinks",
-   "name": "Lemon Iced Tea 18.5oz",
-   "price": 1.99,
-   "sku": "1029",
    "aliases": [
     "iced tea",
     "lemon tea"
-   ]
+   ],
+   "barcode": "200010290006",
+   "category": "Drinks",
+   "img": "assets/products/1029.webp",
+   "name": "Lemon Iced Tea 18.5oz",
+   "par": 24,
+   "price": 1.99,
+   "sku": "1029",
+   "stock": 24
   },
   {
-   "barcode": "200010300002",
-   "category": "Drinks",
-   "name": "Orange Juice 12oz",
-   "price": 2.69,
-   "sku": "1030",
    "aliases": [
     "orange juice",
     "juice",
     "जुस"
-   ]
+   ],
+   "barcode": "200010300002",
+   "category": "Drinks",
+   "img": "assets/products/1030.webp",
+   "name": "Orange Juice 12oz",
+   "par": 24,
+   "price": 2.69,
+   "sku": "1030",
+   "stock": 24
   },
   {
-   "barcode": "200010310001",
-   "category": "Drinks",
-   "name": "Hot Coffee 16oz",
-   "price": 1.99,
-   "sku": "1031",
    "aliases": [
     "hot coffee",
     "coffee",
     "कफी"
-   ]
+   ],
+   "barcode": "200010310001",
+   "category": "Drinks",
+   "img": "assets/products/1031.webp",
+   "name": "Hot Coffee 16oz",
+   "par": 24,
+   "price": 1.99,
+   "sku": "1031",
+   "stock": 24
   },
   {
-   "barcode": "200010320000",
-   "category": "Drinks",
-   "name": "Cold Brew Coffee 11oz",
-   "price": 3.79,
-   "sku": "1032",
    "aliases": [
     "cold brew",
     "iced coffee",
     "coffee",
     "कफी"
-   ]
+   ],
+   "barcode": "200010320000",
+   "category": "Drinks",
+   "img": "assets/products/1032.webp",
+   "name": "Cold Brew Coffee 11oz",
+   "par": 24,
+   "price": 3.79,
+   "sku": "1032",
+   "stock": 24
   },
   {
-   "barcode": "200010330009",
-   "category": "Drinks",
-   "name": "Masala Chiya 12oz",
-   "price": 1.79,
-   "sku": "1033",
    "aliases": [
     "chiya",
     "masala tea",
     "चिया"
-   ]
+   ],
+   "barcode": "200010330009",
+   "category": "Drinks",
+   "img": "assets/products/1033.webp",
+   "name": "Masala Chiya 12oz",
+   "par": 24,
+   "price": 1.79,
+   "sku": "1033",
+   "stock": 24
   },
   {
-   "barcode": "200010340008",
-   "category": "Snacks",
-   "name": "Cheetos Crunchy 1oz",
-   "price": 1.19,
-   "sku": "1034",
    "aliases": [
     "cheetos"
-   ]
+   ],
+   "barcode": "200010340008",
+   "category": "Snacks",
+   "img": "assets/products/1034.webp",
+   "name": "Cheetos Crunchy 1oz",
+   "par": 20,
+   "price": 1.19,
+   "sku": "1034",
+   "stock": 20
   },
   {
-   "barcode": "200010350007",
-   "category": "Snacks",
-   "name": "Oreo Cookies 6ct",
-   "price": 1.89,
-   "sku": "1035",
    "aliases": [
     "oreo",
     "biscuit",
     "बिस्कुट"
-   ]
+   ],
+   "barcode": "200010350007",
+   "category": "Snacks",
+   "img": "assets/products/1035.webp",
+   "name": "Oreo Cookies 6ct",
+   "par": 20,
+   "price": 1.89,
+   "sku": "1035",
+   "stock": 20
   },
   {
-   "barcode": "200010360006",
-   "category": "Snacks",
-   "name": "Kit Kat Bar",
-   "price": 1.49,
-   "sku": "1036",
    "aliases": [
     "kit kat",
     "kitkat",
     "chocolate",
     "चकलेट"
-   ]
+   ],
+   "barcode": "200010360006",
+   "category": "Snacks",
+   "img": "assets/products/1036.webp",
+   "name": "Kit Kat Bar",
+   "par": 20,
+   "price": 1.49,
+   "sku": "1036",
+   "stock": 20
   },
   {
-   "barcode": "200010370005",
-   "category": "Snacks",
-   "name": "M&M's Peanut",
-   "price": 1.69,
-   "sku": "1037",
    "aliases": [
     "m&m",
     "mnm",
     "m and m"
-   ]
+   ],
+   "barcode": "200010370005",
+   "category": "Snacks",
+   "img": "assets/products/1037.webp",
+   "name": "M&M's Peanut",
+   "par": 20,
+   "price": 1.69,
+   "sku": "1037",
+   "stock": 20
   },
   {
-   "barcode": "200010380004",
-   "category": "Snacks",
-   "name": "Trail Mix 2oz",
-   "price": 2.49,
-   "sku": "1038",
    "aliases": [
     "trail mix",
     "badam",
     "बदाम"
-   ]
+   ],
+   "barcode": "200010380004",
+   "category": "Snacks",
+   "img": "assets/products/1038.webp",
+   "name": "Trail Mix 2oz",
+   "par": 20,
+   "price": 2.49,
+   "sku": "1038",
+   "stock": 20
   },
   {
-   "barcode": "200010390003",
-   "category": "Snacks",
-   "name": "Beef Jerky 1oz",
-   "price": 3.99,
-   "sku": "1039",
    "aliases": [
     "jerky"
-   ]
+   ],
+   "barcode": "200010390003",
+   "category": "Snacks",
+   "img": "assets/products/1039.webp",
+   "name": "Beef Jerky 1oz",
+   "par": 20,
+   "price": 3.99,
+   "sku": "1039",
+   "stock": 20
   },
   {
-   "barcode": "200010400009",
-   "category": "Snacks",
-   "name": "Sunflower Seeds 2oz",
-   "price": 1.29,
-   "sku": "1040",
    "aliases": [
     "sunflower",
     "seeds"
-   ]
+   ],
+   "barcode": "200010400009",
+   "category": "Snacks",
+   "img": "assets/products/1040.webp",
+   "name": "Sunflower Seeds 2oz",
+   "par": 20,
+   "price": 1.29,
+   "sku": "1040",
+   "stock": 20
   },
   {
-   "barcode": "200010410008",
-   "category": "Snacks",
-   "name": "Sour Candy Strips",
-   "price": 1.39,
-   "sku": "1041",
    "aliases": [
     "candy",
     "sour strips"
-   ]
+   ],
+   "barcode": "200010410008",
+   "category": "Snacks",
+   "img": "assets/products/1041.webp",
+   "name": "Sour Candy Strips",
+   "par": 20,
+   "price": 1.39,
+   "sku": "1041",
+   "stock": 20
   },
   {
-   "barcode": "200010420007",
-   "category": "Snacks",
-   "name": "Bhujia Namkeen 7oz",
-   "price": 2.99,
-   "sku": "1042",
    "aliases": [
     "bhujia",
     "namkeen",
     "भुजिया"
-   ]
+   ],
+   "barcode": "200010420007",
+   "category": "Snacks",
+   "img": "assets/products/1042.webp",
+   "name": "Bhujia Namkeen 7oz",
+   "par": 20,
+   "price": 2.99,
+   "sku": "1042",
+   "stock": 6
   },
   {
-   "barcode": "200010430006",
-   "category": "Grocery",
-   "name": "Banana (each)",
-   "price": 0.35,
-   "sku": "1043",
    "aliases": [
     "banana",
     "kera",
     "केरा"
-   ]
+   ],
+   "barcode": "200010430006",
+   "category": "Grocery",
+   "img": "assets/products/1043.webp",
+   "name": "Banana (each)",
+   "par": 12,
+   "price": 0.35,
+   "sku": "1043",
+   "stock": 9
   },
   {
-   "barcode": "200010440005",
-   "category": "Grocery",
-   "name": "Apple (each)",
-   "price": 0.89,
-   "sku": "1044",
    "aliases": [
     "apple",
     "syau",
     "स्याउ"
-   ]
+   ],
+   "barcode": "200010440005",
+   "category": "Grocery",
+   "img": "assets/products/1044.webp",
+   "name": "Apple (each)",
+   "par": 12,
+   "price": 0.89,
+   "sku": "1044",
+   "stock": 12
   },
   {
-   "barcode": "200010450004",
-   "category": "Grocery",
-   "name": "Sugar 4lb",
-   "price": 3.89,
-   "sku": "1045",
    "aliases": [
     "sugar",
     "chini",
     "चिनी"
-   ]
+   ],
+   "barcode": "200010450004",
+   "category": "Grocery",
+   "img": "assets/products/1045.webp",
+   "name": "Sugar 4lb",
+   "par": 12,
+   "price": 3.89,
+   "sku": "1045",
+   "stock": 12
   },
   {
-   "barcode": "200010460003",
-   "category": "Grocery",
-   "name": "Masoor Dal 2lb",
-   "price": 3.49,
-   "sku": "1046",
    "aliases": [
     "masoor",
     "dal",
     "daal",
     "दाल"
-   ]
+   ],
+   "barcode": "200010460003",
+   "category": "Grocery",
+   "img": "assets/products/1046.webp",
+   "name": "Masoor Dal 2lb",
+   "par": 12,
+   "price": 3.49,
+   "sku": "1046",
+   "stock": 12
   },
   {
-   "barcode": "200010470002",
-   "category": "Grocery",
-   "name": "Cooking Oil 48oz",
-   "price": 5.99,
-   "sku": "1047",
    "aliases": [
     "cooking oil",
     "tel",
     "तेल"
-   ]
+   ],
+   "barcode": "200010470002",
+   "category": "Grocery",
+   "img": "assets/products/1047.webp",
+   "name": "Cooking Oil 48oz",
+   "par": 12,
+   "price": 5.99,
+   "sku": "1047",
+   "stock": 12
   },
   {
-   "barcode": "200010480001",
-   "category": "Grocery",
-   "name": "Salt 26oz",
-   "price": 1.29,
-   "sku": "1048",
    "aliases": [
     "salt",
     "nun",
     "नुन"
-   ]
+   ],
+   "barcode": "200010480001",
+   "category": "Grocery",
+   "img": "assets/products/1048.webp",
+   "name": "Salt 26oz",
+   "par": 12,
+   "price": 1.29,
+   "sku": "1048",
+   "stock": 12
   },
   {
-   "barcode": "200010490000",
-   "category": "Grocery",
-   "name": "Butter 1lb",
-   "price": 4.99,
-   "sku": "1049",
    "aliases": [
     "butter",
     "makhan",
     "मक्खन"
-   ]
+   ],
+   "barcode": "200010490000",
+   "category": "Grocery",
+   "img": "assets/products/1049.webp",
+   "name": "Butter 1lb",
+   "par": 12,
+   "price": 4.99,
+   "sku": "1049",
+   "stock": 12
   },
   {
-   "barcode": "200010500006",
-   "category": "Grocery",
-   "name": "Plain Yogurt 32oz",
-   "price": 3.79,
-   "sku": "1050",
    "aliases": [
     "yogurt",
     "dahi",
     "दही"
-   ]
+   ],
+   "barcode": "200010500006",
+   "category": "Grocery",
+   "img": "assets/products/1050.webp",
+   "name": "Plain Yogurt 32oz",
+   "par": 12,
+   "price": 3.79,
+   "sku": "1050",
+   "stock": 12
   },
   {
-   "barcode": "200010510005",
-   "category": "Grocery",
-   "name": "Atta Flour 10lb",
-   "price": 8.99,
-   "sku": "1051",
    "aliases": [
     "atta",
     "flour",
     "pitho",
     "आटा"
-   ]
+   ],
+   "barcode": "200010510005",
+   "category": "Grocery",
+   "img": "assets/products/1051.webp",
+   "name": "Atta Flour 10lb",
+   "par": 12,
+   "price": 8.99,
+   "sku": "1051",
+   "stock": 12
   },
   {
-   "barcode": "200010520004",
-   "category": "Grocery",
-   "name": "Onions 2lb Bag",
-   "price": 2.49,
-   "sku": "1052",
    "aliases": [
     "onion",
     "pyaj",
     "प्याज"
-   ]
+   ],
+   "barcode": "200010520004",
+   "category": "Grocery",
+   "img": "assets/products/1052.webp",
+   "name": "Onions 2lb Bag",
+   "par": 12,
+   "price": 2.49,
+   "sku": "1052",
+   "stock": 12
   },
   {
-   "barcode": "200010530003",
-   "category": "Household",
-   "name": "Dish Soap 24oz",
-   "price": 2.99,
-   "sku": "1053",
    "aliases": [
     "dish soap",
     "bhada sabun"
-   ]
+   ],
+   "barcode": "200010530003",
+   "category": "Household",
+   "img": "assets/products/1053.webp",
+   "name": "Dish Soap 24oz",
+   "par": 10,
+   "price": 2.99,
+   "sku": "1053",
+   "stock": 10
   },
   {
-   "barcode": "200010540002",
-   "category": "Household",
-   "name": "Hand Sanitizer 8oz",
-   "price": 2.79,
-   "sku": "1054",
    "aliases": [
     "sanitizer"
-   ]
+   ],
+   "barcode": "200010540002",
+   "category": "Household",
+   "img": "assets/products/1054.webp",
+   "name": "Hand Sanitizer 8oz",
+   "par": 10,
+   "price": 2.79,
+   "sku": "1054",
+   "stock": 10
   },
   {
-   "barcode": "200010550001",
-   "category": "Household",
-   "name": "Trash Bags 20ct",
-   "price": 4.49,
-   "sku": "1055",
    "aliases": [
     "trash bag",
     "garbage bag"
-   ]
+   ],
+   "barcode": "200010550001",
+   "category": "Household",
+   "img": "assets/products/1055.webp",
+   "name": "Trash Bags 20ct",
+   "par": 10,
+   "price": 4.49,
+   "sku": "1055",
+   "stock": 10
   },
   {
-   "barcode": "200010560000",
-   "category": "Household",
-   "name": "Toothpaste 4oz",
-   "price": 2.89,
-   "sku": "1056",
    "aliases": [
     "toothpaste",
     "manjan",
     "मन्जन"
-   ]
+   ],
+   "barcode": "200010560000",
+   "category": "Household",
+   "img": "assets/products/1056.webp",
+   "name": "Toothpaste 4oz",
+   "par": 10,
+   "price": 2.89,
+   "sku": "1056",
+   "stock": 10
   },
   {
-   "barcode": "200010570009",
-   "category": "Household",
-   "name": "Toothbrush",
-   "price": 1.99,
-   "sku": "1057",
    "aliases": [
     "toothbrush"
-   ]
+   ],
+   "barcode": "200010570009",
+   "category": "Household",
+   "img": "assets/products/1057.webp",
+   "name": "Toothbrush",
+   "par": 10,
+   "price": 1.99,
+   "sku": "1057",
+   "stock": 10
   },
   {
-   "barcode": "200010580008",
-   "category": "Health",
-   "name": "Cough Drops 30ct",
-   "price": 2.49,
-   "sku": "1058",
    "aliases": [
     "cough drop",
     "khoki"
-   ]
+   ],
+   "barcode": "200010580008",
+   "category": "Health",
+   "img": "assets/products/1058.webp",
+   "name": "Cough Drops 30ct",
+   "par": 15,
+   "price": 2.49,
+   "sku": "1058",
+   "stock": 11
   },
   {
-   "barcode": "200010590007",
-   "category": "Health",
-   "name": "Band-Aid Strips 30ct",
-   "price": 3.29,
-   "sku": "1059",
    "aliases": [
     "band aid",
     "band-aid",
     "plaster"
-   ]
+   ],
+   "barcode": "200010590007",
+   "category": "Health",
+   "img": "assets/products/1059.webp",
+   "name": "Band-Aid Strips 30ct",
+   "par": 15,
+   "price": 3.29,
+   "sku": "1059",
+   "stock": 15
   },
   {
-   "barcode": "200010600003",
-   "category": "Counter",
-   "name": "Ice Bag 7lb",
-   "price": 2.49,
-   "sku": "1060",
    "aliases": [
     "ice bag",
     "baraf",
     "बरफ"
-   ]
+   ],
+   "barcode": "200010600003",
+   "category": "Counter",
+   "img": "assets/products/1060.webp",
+   "name": "Ice Bag 7lb",
+   "par": 30,
+   "price": 2.49,
+   "sku": "1060",
+   "stock": 3
   },
   {
-   "barcode": "200010610002",
-   "category": "Counter",
-   "name": "Hot Dog",
-   "price": 1.99,
-   "sku": "1061",
    "aliases": [
     "hot dog",
     "hotdog"
-   ]
+   ],
+   "barcode": "200010610002",
+   "category": "Counter",
+   "img": "assets/products/1061.webp",
+   "name": "Hot Dog",
+   "par": 30,
+   "price": 1.99,
+   "sku": "1061",
+   "stock": 0
   },
   {
-   "barcode": "200010620001",
-   "category": "Beer and Wine",
-   "name": "Corona 6 Pack",
-   "price": 11.49,
-   "sku": "1062",
    "aliases": [
     "corona",
     "beer",
     "बियर"
-   ]
+   ],
+   "barcode": "200010620001",
+   "category": "Beer and Wine",
+   "img": "assets/products/1062.webp",
+   "name": "Corona 6 Pack",
+   "par": 24,
+   "price": 11.49,
+   "sku": "1062",
+   "stock": 24
   }
  ],
  "store": {

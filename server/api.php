@@ -211,6 +211,13 @@ if ($method === 'POST') {
             $recordData['change_due'] = round($tendered - $total, 2);
         }
         $record = golpos_append_sale($recordData);
+        if (!golpos_link_on()) {
+            // STANDALONE: the sale takes its units off this POS's own
+            // shelf, so the grid's live counts and fill bars move with
+            // every ring. (Link mode moves MR.STORE stock instead, in
+            // the branch below — never both.)
+            golpos_decrement_stock($record['lines']);
+        }
         if (golpos_link_on()) {
             // LINK MODE: the same sale moves the linked MR.STORE store's
             // real stock, the way a live POS feed would. The note rides in
