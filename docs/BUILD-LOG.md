@@ -1906,3 +1906,39 @@ catalog is an owner decision, not an engine gap; (ii) prompts are
 v1-capped at 2/day — the cap lives in golpos_gap_prompt_for if the
 owner wants a different patience; (iii) the mid-shift surface is the
 15s poll — no push channel exists at the till, by design.
+
+---
+
+## Oct 28 (evening) — THE VERIFY LOOP tap (gol-pos side)
+
+The register now journals every checkable figure it speaks. `out()`
+in brain.php and `pout()` in photo.php append claims to
+`data/verify_journal.jsonl`: money_day_total / money_range_total
+(graph bars/spark points now carry their ymd), best_seller_rev,
+close_figure, pay_math (staged pay cards: lines, segments, hours,
+covered_until, unlock prefix), price_shelf, stock_count (link and
+local modes), bill_arithmetic (photo.php bill cards; line identity
+journaled as an explicitly uncheckable facet — a same-sum item swap
+passes any arithmetic and is never asserted). Money claims carry the
+append-only sales/refunds prefix counts, so the verifier re-derives
+against exactly the journal the lane saw. The verifier itself lives
+server-side (store-api/gol-verify.php, cron every 10 min): verdicts
+ok / WRONG / uncheckable / superseded; on WRONG it tickets, births a
+permanent battery case, and corrects in-thread on QA/sim/throwaway
+targets only (gol-pos-sim active, gol-pos-dev observe; live stores
+observe-only until the owner hears the battery result).
+
+WRONG-PLANT battery (throwaway copy gol-pos-vtest, deleted after):
+16/16 — wrong day total, wrong price, wrong best-seller, bill sum
+off, close-record poisoned after the fact (kind: source), catalog
+twin row (kind: source), pay understated and overstated — all caught
+with the recomputed truth; the hand-computed correct pay claim and
+the matching close claim verified ok; the same-sum swapped bill
+landed arithmetic-ok with identity recorded uncheckable, never
+passed silently and never convicted. One battery lesson worth
+keeping: the first "correct pay" plant was itself wrong — it forgot
+the day's close ends the last stint (4.5h + 2h + 9h = 15.5h, $232.50);
+the verifier's recompute was right and the plant was fixed, not the
+verifier. Deployed to sim + dev (backups under ~/backups/verify-tap-*);
+sim month 3,000 / $57,301.04 and dev month 887 / $9,178.79 verified
+intact after deploy.
