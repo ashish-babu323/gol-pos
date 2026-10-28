@@ -693,6 +693,23 @@ function chatCard(card) {
     }).join('');
     body = `<div class="sc-what">Bill${card.vendor ? ' — ' + esc(card.vendor) : ''} · ${money(card.total)}</div>${lineHtml}` +
       (card.image ? `<img src="${card.image}" alt="Bill photo">` : '');
+  } else if (card.type === 'order_prep') {
+    // The vendor order draft: every suggested line with the shelf truth
+    // that earned it (OUT / on hand vs par / sold since last delivery)
+    // and its recorded cost — the owner edits in chat before confirming.
+    const flag = (l) => l.flag === 'out' ? ' · OUT'
+      : (l.on_hand !== null && l.on_hand !== undefined
+        ? ` · ${fmtCount(l.on_hand)} on hand${l.par ? ' / par ' + l.par : ''}${l.sold ? ' · sold ' + l.sold : ''}` : '');
+    const lineHtml = (card.lines || []).map(l =>
+      `<div class="sc-line">${esc(l.name)} × ${l.qty}${l.cost !== null && l.cost !== undefined ? ' · ' + money(l.cost) + ' ea' : ''}${flag(l)}</div>`).join('');
+    body = `<div class="sc-what">Order — ${esc(card.vendor)} · est. ${money(card.est_total)}</div>${lineHtml}` +
+      (card.uncosted ? `<div class="sc-line">${card.uncosted} line(s) have no cost on record — outside the estimate</div>` : '');
+  } else if (card.type === 'vendor_teach') {
+    const dayName = (k) => ({ sun: 'Sunday', mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday' }[k] || k);
+    const val = (v) => Array.isArray(v) ? (v.length ? v.map(dayName).join(' + ') : '—') : dayName(v);
+    const field = card.field === 'delivery_day' ? 'Delivery day' : 'Rep day';
+    body = `<div class="sc-what">${card.create ? 'New vendor' : 'Vendor'} — ${esc(card.vendor_name)}</div>` +
+      `<div class="sc-prices"><span class="sc-old">${field}: ${esc(val(card.old))}</span><span class="sc-arrow">→</span><span class="sc-new">${esc(val(card.new))}</span></div>`;
   } else if (card.type === 'photo_read') {
     const found = card.regions === null || card.regions === undefined
       ? 'SAM gave no read on this photo'
@@ -805,6 +822,52 @@ $('clearBtn').addEventListener('click', () => {
   setToggle($('smTaxBtn'), false); renderCart();
 });
 $('receiptClose').addEventListener('click', () => $('receiptModal').classList.add('hidden'));
+// --- order sheet: the confirmed vendor order, printed or shared for the rep --
+let orderSheetRec = null;
+function orderSheetText(rec) {
+  const store = (receiptSettings && receiptSettings.store_name) || $('storeName').textContent || 'Store';
+  const dayFull = new Date(rec.date + 'T12:00:00').toLocaleDateString('en-US',
+    { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const lines = [store.toUpperCase() + ' — ORDER', 'Vendor: ' + rec.vendor,
+    'Rep day: ' + dayFull + ' · Status: ' + String(rec.status || '').toUpperCase(),
+    '----------------------------------------'];
+  (rec.lines || []).forEach(l => {
+    lines.push(l.name + ' × ' + l.qty + (l.cost !== null && l.cost !== undefined
+      ? ' — ' + money(l.cost) + ' ea = ' + money(l.line_total || 0) : ''));
+  });
+  lines.push('----------------------------------------');
+  lines.push('Estimated total: ' + money(rec.est_total || 0));
+  if (rec.uncosted) { lines.push('(' + rec.uncosted + ' line(s) have no cost on record — outside the estimate.)'); }
+  lines.push('Prepared by Gol at the register; confirmed by the owner.');
+  lines.push('Handed to the rep in person — nothing was sent electronically.');
+  return lines.join('\n');
+}
+async function openOrderSheet(id) {
+  try {
+    const rec = await (await fetch(API + '?order_sheet=' + encodeURIComponent(id))).json();
+    if (!rec || !rec.id) { showToast('That order sheet is gone.'); return; }
+    orderSheetRec = rec;
+    $('orderSheetTitle').textContent = 'Order — ' + rec.vendor;
+    $('orderSheetBody').textContent = orderSheetText(rec);
+    $('orderSheetModal').classList.remove('hidden');
+  } catch (e) { showToast('The order sheet could not be read.'); }
+}
+$('orderSheetClose').addEventListener('click', () => $('orderSheetModal').classList.add('hidden'));
+$('orderSheetPrint').addEventListener('click', () => window.print());
+$('orderSheetShare').addEventListener('click', async () => {
+  if (!orderSheetRec) { return; }
+  const text = orderSheetText(orderSheetRec);
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Order — ' + orderSheetRec.vendor, text }); return; }
+    catch (e) { if (e && e.name === 'AbortError') { return; } }
+  }
+  try { await navigator.clipboard.writeText(text); showToast('Order copied — paste it anywhere to send.'); return; } catch (e) { /* fall through */ }
+  const ta = document.createElement('textarea');
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); showToast('Order copied — paste it anywhere to send.'); }
+  catch (e) { showToast('Copy did not work here — the sheet is on screen to photograph.'); }
+  ta.remove();
+});
 $('golBtn').addEventListener('click', () => { $('chatDrawer').classList.remove('hidden'); $('chatInput').focus(); });
 $('chatClose').addEventListener('click', () => { $('chatDrawer').classList.add('hidden'); loadCatalog(); });
 // --- quick-ask chips: one tap sends the everyday asks — no typing at the till.
@@ -856,6 +919,28 @@ $('ownerBtn').addEventListener('click', async () => {
         `<span>${r.receipts} receipt${r.receipts === 1 ? '' : 's'}</span></div>`).join('')
         : '<p class="owner-muted">No loyalty receipts yet.</p>');
   } catch (e) { $('ownerLoyalty').innerHTML = ''; }
+  // Today's rep visits — the register order prep state: which vendors are
+  // due today and where each order stands (prepared / confirmed / given).
+  // The sheet button opens the confirmed order to print or share for the
+  // rep; staging and confirming themselves live in the Gol chat.
+  try {
+    const od = await (await fetch(API + '?orders')).json();
+    const stWord = { prepared: 'Prepared — waiting for "gol"', confirmed: 'Confirmed — sheet ready', given: 'Given to the rep', none: 'Not prepared yet' };
+    const dayName = (k) => ({ sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' }[k] || k);
+    const due = (od.visits || []).filter(v => v.due_today);
+    const rest = (od.visits || []).filter(v => !v.due_today);
+    const sheetBtn = (oid) => oid ? ` <button type="button" class="rep-sheet-btn" data-sheet="${esc(oid)}">Order sheet</button>` : '';
+    $('ownerVendors').innerHTML =
+      `<h3 class="ocard-title">Today's rep visits <small>— orders are prepared in the Gol chat</small></h3>` +
+      (due.length ? due.map(v =>
+        `<div class="rep-row"><span>${esc(v.name)}</span><b>${stWord[v.status] || v.status}</b>` +
+        `<span>${v.est_total !== null && v.est_total !== undefined ? 'est. ' + money(v.est_total) : ''}${sheetBtn(v.order_id)}</span></div>`).join('')
+        : '<p class="owner-muted">No rep visits today.</p>') +
+      (rest.length ? '<p class="owner-muted">Pack: ' + rest.map(v =>
+        esc(v.name) + ' — rep ' + (v.rep_days || []).map(dayName).join(' + ')).join(' · ') + '</p>' : '');
+    $('ownerVendors').querySelectorAll('[data-sheet]').forEach(b =>
+      b.addEventListener('click', () => openOrderSheet(b.dataset.sheet)));
+  } catch (e) { $('ownerVendors').innerHTML = ''; }
   await loadSettings(); renderSettingsForm();
   renderDayClose();
   showReport('today');

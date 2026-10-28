@@ -1101,6 +1101,83 @@ function golpos_batch_auto_sweep(): ?array {
     return golpos_seal_batch($seg, 'auto', $close);
 }
 
+// --- Vendors + register order prep (owner directive, Oct 28) -----------------
+// The vendor pack lives per store in data/vendors.json: one record per
+// vendor — name, aliases, rep visiting day(s) (3-letter weekday keys
+// mon..sun), delivery day, cadence (weekly / biweekly + a due-week anchor
+// date), account / phone where known, the last bill, and the typical
+// lines from bill history (name, usual qty, last cost, par). The pack is
+// taught by Gol chat ("lipton ko rep sombar aaucha") through a staged
+// card; this layer only stores it. Prepared orders live in
+// data/orders.json — one record per vendor per rep day, moving
+// prepared -> confirmed -> given. An order record is the register's own
+// sheet: NOTHING here submits anything to a vendor, ever.
+function golpos_vendors(): array {
+    $v = golpos_read('vendors.json', []);
+    return is_array($v) ? array_values(array_filter($v, 'is_array')) : [];
+}
+
+function golpos_save_vendors(array $vendors): void {
+    golpos_write('vendors.json', array_values($vendors));
+}
+
+function golpos_vendor_by_id(string $id): ?array {
+    foreach (golpos_vendors() as $v) {
+        if ((string)($v['id'] ?? '') === $id) { return $v; }
+    }
+    return null;
+}
+
+// A vendor is due on a date when the weekday is one of its rep days and,
+// for a biweekly cadence, the week parity matches the anchor (a known due
+// date). No anchor yet -> due every rep day until one is taught.
+function golpos_vendor_due_on(array $v, string $ymd): bool {
+    $dow = strtolower(date('D', strtotime($ymd)));
+    if (!in_array($dow, (array)($v['rep_days'] ?? []), true)) { return false; }
+    if ((string)($v['cadence'] ?? 'weekly') !== 'biweekly') { return true; }
+    $anchor = (string)($v['anchor'] ?? '');
+    if ($anchor === '' || strtotime($anchor) === false) { return true; }
+    $weeks = (int)floor((strtotime($ymd) - strtotime($anchor)) / 604800);
+    return (($weeks % 2) + 2) % 2 === 0;
+}
+
+function golpos_vendors_due(string $ymd): array {
+    return array_values(array_filter(golpos_vendors(),
+        static fn($v) => golpos_vendor_due_on($v, $ymd)));
+}
+
+function golpos_orders(): array {
+    $o = golpos_read('orders.json', []);
+    return is_array($o) ? array_values(array_filter($o, 'is_array')) : [];
+}
+
+// Upsert one order record by id (a re-stage refreshes the same record's
+// lines; a confirm/given moves its status). Returns the stored record.
+function golpos_order_put(array $rec): array {
+    $all = golpos_orders();
+    foreach ($all as $i => $o) {
+        if ((string)($o['id'] ?? '') === (string)($rec['id'] ?? '')) {
+            $all[$i] = $rec;
+            golpos_write('orders.json', $all);
+            return $rec;
+        }
+    }
+    $all[] = $rec;
+    golpos_write('orders.json', $all);
+    return $rec;
+}
+
+// The latest order record for one vendor on one date, if any.
+function golpos_order_for(string $vendorId, string $ymd): ?array {
+    $found = null;
+    foreach (golpos_orders() as $o) {
+        if ((string)($o['vendor_id'] ?? '') === $vendorId && (string)($o['date'] ?? '') === $ymd) {
+            $found = $o;
+        }
+    }
+    return $found;
+}
+
 // --- Scan-by-phone pairing + the session inbox (owner directive, Oct 28) -----
 // A register without a camera borrows the owner's phone: the register
 // mints a short-lived pairing token bound to ITS chat session, the phone

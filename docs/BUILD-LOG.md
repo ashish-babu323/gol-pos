@@ -1291,3 +1291,46 @@ One entry per day; the git history carries the same dates.
   sequence verbatim). Two harness setups that leaned on the old
   read-arms-create behaviour now elevate via the owner's real explicit
   "admin" path. php -l clean. Nothing deployed.
+
+## Day 3 (Oct 28) — Register order prep + D-12 day aggregates
+- ORDER PREP (owner directive, Oct 28): ALL vendor work happens at the
+  register. The vendor pack lives per store in data/vendors.json (name,
+  aliases, rep days, delivery day, cadence + biweekly anchor, last bill,
+  typical lines) and is taught by chat — "lipton ko rep sombar aaucha"
+  stages a vendor_teach card (the candidate name decides: a name equal
+  to a pack vendor's name/alias re-times THAT vendor; any other real
+  name creates a new one — "Valley Dairy" never snaps onto "Sunrise
+  Dairy Fresh" via the shared word "dairy").
+- On a rep day ("X ko order bana", or the morning greeting card, or the
+  rep-day list), Gol drafts ONE order_prep card per vendor from three
+  inputs in order: (1) What's Out + below-par shelf state, (2) sales
+  velocity since the vendor's last delivery, (3) the vendor's typical
+  lines (pack records + the register's executed purchases). Suggested
+  qty = max(sold since last delivery, refill-to-par); an OUT line with
+  no signal falls back to its usual bill qty — never an invented number.
+  Lines carry last cost; the estimate sums costed lines only and says so.
+- The staged card is edited in chat ("coke 12 hata", "pepsi 20 thap") —
+  resolution is name/alias/distinctive-token only, never the resolver's
+  token score (it once set the Coke line for a Sprite edit via "20oz").
+  Confirm ("gol", PIN-gated like every business write) marks the order
+  record (data/orders.json: prepared -> confirmed -> given) — the sheet
+  the Owner panel's new "Today's rep visits" card prints/shares for the
+  rep. "X lai order diye" records the handover. NOTHING is ever
+  submitted to a vendor in the owner's name (Superior rule).
+- D-12 (hisab): the register brain now answers day aggregates from its
+  OWN sales log — best sellers by quantity and by revenue for today /
+  yesterday, and yesterday-vs-today comparison (EN + Nepali), in a
+  deterministic lane ahead of the deep-think lane; the gate treats them
+  as the day total's family (cashier-domain reads). Week/month scopes
+  stay with the deep lane. Best-seller matcher now hears "sold best"
+  and "best seller", not only "best selling".
+- D-11 / D-13 regressions re-run on this build and green (pinflow +
+  cancel cases inside the battery below).
+- Verified on a throwaway battery instance over real HTTPS: 41/41 —
+  D-11 (3), D-12 (3), rep-day/morning (2), D-13 (4), order prep full
+  circle stage->edit->PIN-create confirm->given->panel/sheet (16),
+  teach create + re-time + nameless ask (8), sale-law/poster/price/day
+  regressions (5). php -l clean; app.js node-checked. Deployed to
+  gol-pos-dev + gol-pos-sim with FICTIONAL sim vendor packs seeded as
+  data/vendors.json on both stages (Sunrise pack on dev, QA-flavoured
+  pack on sim — no real Lucky/123 vendors, bills or figures anywhere).

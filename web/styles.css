@@ -708,7 +708,17 @@ body.loyalty { background: linear-gradient(180deg, #f7faff 0%, #eff5fe 100%); ba
   #receiptModal { position: absolute; inset: 0; background: #fff; display: block; }
   #receiptModal .receipt-card { box-shadow: none; margin: 0 auto; }
   #receiptModal button { display: none !important; }
+  #orderSheetModal, #orderSheetModal * { visibility: visible; }
+  #orderSheetModal { position: absolute; inset: 0; background: #fff; display: block; }
+  #orderSheetModal .receipt-card { box-shadow: none; margin: 0 auto; }
+  #orderSheetModal button { display: none !important; }
 }
+/* The order sheet is a hand-to-the-rep document — a little wider than a
+   receipt, same card dress. */
+.sheet-card { width: min(440px, 94vw); }
+.sheet-card button { margin-right: 8px; }
+.rep-sheet-btn { border: 1px solid var(--line); background: var(--field-bg); color: var(--ink);
+  border-radius: 8px; padding: 4px 10px; font-weight: 700; font-size: 12.5px; cursor: pointer; }
 
 /* ---------- add-product sheet (the catalog's door on the register) ---------- */
 /* The Add Product button rides the tab row's right edge; the sheet is a

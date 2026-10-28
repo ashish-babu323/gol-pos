@@ -557,6 +557,148 @@ $S = [
     'np' => 'Receipt Loyalty — leaderboard:',
     'hi' => 'Receipt Loyalty — leaderboard:',
     'dev' => 'रसिद लोयाल्टी — लिडरबोर्ड:'],
+  // --- register order prep (owner directive, Oct 28) -------------------------
+  'ord_none_needed' => [
+    'en' => '%s — nothing needs ordering today: every line on its list is covered (%d lines checked). No card staged.',
+    'np' => '%s — aaja order chahinna: usko list ko sabai line covered chha (%d line heriyo). Card stage bhayena.',
+    'hi' => '%s — aaj order ki zaroorat nahi: uski list ki har line covered hai (%d line dekhi). Card stage nahi hua.',
+    'dev' => '%s — आज अर्डर चाहिन्न: उसको सूचीको सबै लाइन covered छ (%d लाइन हेरियो)। कार्ड स्टेज भएन।'],
+  'ord_head' => [
+    'en' => 'Order draft for %s (rep day %s) — Gol\'s draft from the shelf, sales since the last delivery, and the usual bill lines. Edit in chat ("Coke 12 hata", "Pepsi 20 thap"), then say "gol" to confirm the sheet.',
+    'np' => 'Order draft — %s (rep din %s) — shelf, pachhillo delivery pachhi ko bikri, ra sadhain ko bill line bata Gol ko draft. Chat ma edit garnus ("Coke 12 hata", "Pepsi 20 thap"), ani sheet pakka garna "gol" bhannus.',
+    'hi' => 'Order draft — %s (rep din %s) — shelf, pichhli delivery ke baad ki bikri, aur aam bill lines se Gol ka draft. Chat mein edit kijiye ("Coke 12 hata", "Pepsi 20 thap"), phir sheet pakka karne ke liye "gol" kahiye.',
+    'dev' => 'अर्डर ड्राफ्ट — %s (रेप दिन %s) — सेल्फ, पछिल्लो डेलिभरीपछिको बिक्री, र सधैंको बिल लाइनबाट Gol को ड्राफ्ट। च्याटमा edit गर्नुस् ("Coke 12 hata", "Pepsi 20 thap"), अनि sheet पक्का गर्न "गोल" भन्नुस्।'],
+  'ord_line' => [
+    'en' => '• %s × %d%s',
+    'np' => '• %s × %d%s',
+    'hi' => '• %s × %d%s',
+    'dev' => '• %s × %d%s'],
+  'ord_est' => [
+    'en' => 'Estimated total: %s%s.',
+    'np' => 'Anumanit jamma: %s%s.',
+    'hi' => 'Andaz kul: %s%s.',
+    'dev' => 'अनुमानित जम्मा: %s%s।'],
+  'ord_uncosted' => [
+    'en' => ' (%d line(s) have no cost on record, so they are outside the estimate)',
+    'np' => ' (%d line ko cost record chhaina, tyasaile anumaan bhitra chhaina)',
+    'hi' => ' (%d line ki cost record nahi hai, isliye andaz mein nahi)',
+    'dev' => ' (%d लाइनको लागत रेकर्ड छैन, त्यसैले अनुमानभित्र छैन)'],
+  'ord_fine' => [
+    'en' => '%d more line(s) on its list are covered.',
+    'np' => 'Us ko list ka aru %d line covered chha.',
+    'hi' => 'Uski list ki aur %d line covered hain.',
+    'dev' => 'उसको सूचीका अरू %d लाइन covered छन्।'],
+  'ord_edited' => [
+    'en' => 'Order updated — %s now has %d line(s), est. %s. Say "gol" to confirm the sheet, or keep editing.',
+    'np' => 'Order update bhayo — %s ma aba %d line, anumaan %s. Sheet pakka garna "gol" bhannus, wa edit gardai garnus.',
+    'hi' => 'Order update ho gaya — %s mein ab %d line, andaz %s. Sheet pakka karne ke liye "gol" kahiye, ya edit jaari rakhen.',
+    'dev' => 'अर्डर update भयो — %s मा अब %d लाइन, अनुमान %s। Sheet पक्का गर्न "गोल" भन्नुस्, वा edit गर्दै गर्नुस्।'],
+  'ord_edit_none' => [
+    'en' => 'I couldn\'t read that edit — say it like "Coke 12 hata" (strike) or "Pepsi 20 thap" (set 20). The order card is unchanged.',
+    'np' => 'Tyo edit bujhina — "Coke 12 hata" (kataune) wa "Pepsi 20 thap" (20 rakhne) jastai bhannus. Order card ustai chha.',
+    'hi' => 'Woh edit samajh nahi aaya — "Coke 12 hata" (kaatna) ya "Pepsi 20 thap" (20 rakhna) jaise kahiye. Order card waisa hi hai.',
+    'dev' => 'त्यो edit बुझिन — "Coke 12 hata" (काट्ने) वा "Pepsi 20 thap" (20 राख्ने) जस्तै भन्नुस्। अर्डर कार्ड उस्तै छ।'],
+  'ord_done' => [
+    'en' => 'Order confirmed for %s — %d lines, est. %s. The order sheet is in the Owner panel (Today\'s rep visits → Print / Share) to hand to the rep. Nothing has been sent to the vendor.',
+    'np' => 'Order pakka bhayo — %s, %d line, anumaan %s. Order sheet Owner panel ma chha (Today\'s rep visits → Print / Share) — rep lai dina. Vendor lai kehi pathaieko chhaina.',
+    'hi' => 'Order pakka ho gaya — %s, %d line, andaz %s. Order sheet Owner panel mein hai (Today\'s rep visits → Print / Share) — rep ko dene ke liye. Vendor ko kuchh nahi bheja gaya.',
+    'dev' => 'अर्डर पक्का भयो — %s, %d लाइन, अनुमान %s। अर्डर sheet Owner panel मा छ (Today\'s rep visits → Print / Share) — rep लाई दिन। Vendor लाई केही पठाइएको छैन।'],
+  'ord_given' => [
+    'en' => 'Marked — the %s order (%s) is recorded as given to the rep.',
+    'np' => 'Mark bhayo — %s ko order (%s) rep lai diyeko record bhayo.',
+    'hi' => 'Mark ho gaya — %s ka order (%s) rep ko diya record ho gaya.',
+    'dev' => 'Mark भयो — %s को अर्डर (%s) rep लाई दिएको रेकर्ड भयो।'],
+  'ord_given_none' => [
+    'en' => 'There is no confirmed order for %s to mark as given — prepare it first ("%s ko order bana") and confirm with "gol".',
+    'np' => '%s ko pakka order chhaina given mark garna — pahile tayar garnus ("%s ko order bana") ani "gol" le pakka garnus.',
+    'hi' => '%s ka koi pakka order nahi hai given mark karne ko — pehle taiyaar kijiye ("%s ko order bana") aur "gol" se pakka kijiye.',
+    'dev' => '%s को पक्का अर्डर छैन given mark गर्न — पहिले तयार गर्नुस् ("%s को अर्डर बना") अनि "गोल" ले पक्का गर्नुस्।'],
+  'ord_status' => [
+    'en' => '%s order for %s: %s.',
+    'np' => '%s ko %s order: %s.',
+    'hi' => '%s ka %s order: %s.',
+    'dev' => '%s को %s अर्डर: %s।'],
+  'ord_status_none' => [
+    'en' => 'No order prepared for %s today yet — say "%s ko order bana" and I\'ll draft it from the shelf.',
+    'np' => '%s ko aaja ko order ajhai tayar chhaina — "%s ko order bana" bhannus, shelf bata draft banauchhu.',
+    'hi' => '%s ka aaj ka order abhi taiyaar nahi — "%s ko order bana" kahiye, shelf se draft bana dunga.',
+    'dev' => '%s को आजको अर्डर अझै तयार छैन — "%s को अर्डर बना" भन्नुस्, shelf बाट draft बनाउँछु।'],
+  'ord_which_vendor' => [
+    'en' => 'Which vendor\'s order? Today\'s rep day: %s. Or name any vendor from the pack: %s.',
+    'np' => 'Kun vendor ko order? Aaja ko rep din: %s. Wa pack ko kunai vendor ko naam linus: %s.',
+    'hi' => 'Kis vendor ka order? Aaj ka rep din: %s. Ya pack ke kisi vendor ka naam lijiye: %s.',
+    'dev' => 'कुन vendor को अर्डर? आजको रेप दिन: %s। वा pack को कुनै vendor को नाम लिनुस्: %s।'],
+  'ord_no_vendors' => [
+    'en' => 'No vendors are in the pack yet. Teach me one — "Lipton ko rep sombar aaucha" — and I\'ll keep its days, cadence and usual lines here at the register.',
+    'np' => 'Pack ma ajhai vendor chhaina. Euta sikaunus — "Lipton ko rep sombar aaucha" — tesko din, cadence ra sadhain ko line yahi register ma rakhchhu.',
+    'hi' => 'Pack mein abhi koi vendor nahi hai. Ek sikhaaiye — "Lipton ko rep sombar aaucha" — uske din, cadence aur aam lines yahi register par rakhunga.',
+    'dev' => 'Pack मा अझै vendor छैन। एउटा सिकाउनुस् — "Lipton को rep sombar aaucha" — त्यसको दिन, cadence र सधैंको लाइन यहीँ register मा राख्छु।'],
+  'ord_vendor_unknown' => [
+    'en' => 'I don\'t have that vendor in the pack. The pack has: %s. Teach a new one with "X ko rep sombar aaucha".',
+    'np' => 'Tyo vendor pack ma chhaina. Pack ma chha: %s. Naya "X ko rep sombar aaucha" bhani sikaunus.',
+    'hi' => 'Woh vendor pack mein nahi hai. Pack mein hai: %s. Naya "X ko rep sombar aaucha" karke sikhaaiye.',
+    'dev' => 'त्यो vendor pack मा छैन। Pack मा छ: %s। नयाँ "X ko rep sombar aaucha" भनी सिकाउनुस्।'],
+  'rep_today_none' => [
+    'en' => 'No rep is due today. Next visits: %s.',
+    'np' => 'Aaja kohi rep aaudaina. Arko bhraman: %s.',
+    'hi' => 'Aaj koi rep nahi aayega. Agli visits: %s.',
+    'dev' => 'आज कोही rep आउँदैन। अर्को भ्रमण: %s।'],
+  'rep_today_head' => [
+    'en' => 'Today\'s rep visits at %s:',
+    'np' => 'Aaja %s ma rep bhraman:',
+    'hi' => 'Aaj %s mein rep visits:',
+    'dev' => 'आज %s मा rep भ्रमण:'],
+  'rep_hint' => [
+    'en' => 'To draft one, say "%s ko order bana".',
+    'np' => 'Draft banauna "%s ko order bana" bhannus.',
+    'hi' => 'Draft banane ke liye "%s ko order bana" kahiye.',
+    'dev' => 'Draft बनाउन "%s को अर्डर बना" भन्नुस्।'],
+  'teach_done' => [
+    'en' => 'Saved — %s: %s is now %s.',
+    'np' => 'Save bhayo — %s: %s aba %s bhayo.',
+    'hi' => 'Save ho gaya — %s: %s ab %s hai.',
+    'dev' => 'Save भयो — %s: %s अब %s भयो।'],
+  'teach_ask' => [
+    'en' => 'Which vendor? Say it like "Lipton ko rep sombar aaucha" — the vendor\'s name and the rep\'s day.',
+    'np' => 'Kun vendor? "Lipton ko rep sombar aaucha" jastai bhannus — vendor ko naam ra rep ko din.',
+    'hi' => 'Kaun sa vendor? "Lipton ko rep sombar aaucha" jaise kahiye — vendor ka naam aur rep ka din.',
+    'dev' => 'कुन vendor? "Lipton को rep sombar aaucha" जस्तै भन्नुस् — vendor को नाम र rep को दिन।'],
+  'morning_due' => [
+    'en' => 'Good morning. Today is %s\'s rep day — the order isn\'t prepared yet. Say "%s ko order bana" and I\'ll draft it from the shelf.',
+    'np' => 'Good morning. Aaja %s ko rep din ho — order ajhai tayar chhaina. "%s ko order bana" bhannus, shelf bata draft banauchhu.',
+    'hi' => 'Good morning. Aaj %s ka rep din hai — order abhi taiyaar nahi. "%s ko order bana" kahiye, shelf se draft bana dunga.',
+    'dev' => 'Good morning। आज %s को rep दिन हो — अर्डर अझै तयार छैन। "%s को अर्डर बना" भन्नुस्, shelf बाट draft बनाउँछु।'],
+  // --- day aggregates: best sellers + day compare (hisab D-12) ---------------
+  'best_none' => [
+    'en' => 'No sales recorded %s yet, so there is no best seller to name.',
+    'np' => '%s ahile samma bikri record chhaina, tyasaile best seller bhanna mildaina.',
+    'hi' => '%s abhi tak koi bikri record nahi hai, isliye best seller nahi bata sakta.',
+    'dev' => '%s अहिलेसम्म बिक्री रेकर्ड छैन, त्यसैले best seller भन्न मिल्दैन।'],
+  'best_line' => [
+    'en' => 'Best sellers %s — by quantity: %s. By sales: %s.',
+    'np' => '%s ko best seller — sankhya le: %s. Bikri le: %s.',
+    'hi' => '%s ke best seller — sankhya se: %s. Bikri se: %s.',
+    'dev' => '%s को best seller — संख्याले: %s। बिक्रीले: %s।'],
+  'cmp_line' => [
+    'en' => '%s: %s across %d sales. %s: %s across %d sales. %s',
+    'np' => '%s: %s, %d ota sale. %s: %s, %d ota sale. %s',
+    'hi' => '%s: %s, %d sale. %s: %s, %d sale. %s',
+    'dev' => '%s: %s, %d वटा बिक्री। %s: %s, %d वटा बिक्री। %s'],
+  'cmp_diff_up' => [
+    'en' => '%s is %s higher.',
+    'np' => '%s %s le badhi chha.',
+    'hi' => '%s %s zyada hai.',
+    'dev' => '%s %s ले बढी छ।'],
+  'cmp_diff_down' => [
+    'en' => '%s is %s lower.',
+    'np' => '%s %s le kam chha.',
+    'hi' => '%s %s kam hai.',
+    'dev' => '%s %s ले कम छ।'],
+  'cmp_diff_even' => [
+    'en' => 'The two days are level.',
+    'np' => 'Dui din barabar chha.',
+    'hi' => 'Dono din barabar hain.',
+    'dev' => 'दुवै दिन बराबर छ।'],
 ];
 function t(string $key, ...$args): string {
     global $S, $L;
@@ -1073,6 +1215,16 @@ function golpos_card_summary(array $card): string {
             return 'batch close — ' . (int)($card['count'] ?? 0) . ' card sales, ' . money((float)($card['total'] ?? 0));
         case 'bill':
             return 'bill — ' . money((float)($card['total'] ?? 0));
+        case 'order_prep':
+            return 'order — ' . ($card['vendor'] ?? '') . ' · '
+                . count((array)($card['lines'] ?? [])) . ' lines, est. '
+                . money((float)($card['est_total'] ?? 0));
+        case 'vendor_teach':
+            return ($card['create'] ?? false ? 'new vendor ' : 'vendor ')
+                . ($card['vendor_name'] ?? '') . ' — '
+                . (($card['field'] ?? '') === 'delivery_day' ? 'delivery day' : 'rep day')
+                . ': ' . (is_array($card['new'] ?? null)
+                    ? golpos_day_names($card['new']) : golpos_day_name((string)($card['new'] ?? '')));
         case 'employee_remove':
             return 'remove employee — ' . ($card['email'] ?? '');
         case 'poster':
@@ -1273,6 +1425,444 @@ function golpos_stage_new_item(string $name, float $price, string $barcode = '')
     out(['reply' => t('card_staged'), 'card' => $card]);
 }
 
+// --- register order prep: vendors, rep days, the draft ------------------------
+// The pack (store.php golpos_vendors) is taught and read here. Weekday keys
+// are 3-letter lowercase (mon..sun); the owner's words for them are English
+// (full + short), Romanized Nepali (-bar forms) and Devanagari.
+function golpos_weekday_map(): array {
+    return [
+        'sun' => ['sunday', 'sun', 'aitabar', 'आइतबार'],
+        'mon' => ['monday', 'mon', 'sombar', 'सोमबार'],
+        'tue' => ['tuesday', 'tue', 'tues', 'mangalbar', 'मङ्गलबार', 'मंगलवार'],
+        'wed' => ['wednesday', 'wed', 'budhabar', 'बुधबार'],
+        'thu' => ['thursday', 'thu', 'thur', 'thurs', 'bihibar', 'बिहीबार', 'बिहिवार'],
+        'fri' => ['friday', 'fri', 'shukrabar', 'शुक्रबार'],
+        'sat' => ['saturday', 'sat', 'shanibar', 'शनिबार'],
+    ];
+}
+// Every weekday the message names, in spoken order, deduped.
+function golpos_weekdays_in(string $msg): array {
+    $low = ' ' . mb_strtolower(golpos_norm_digits($msg)) . ' ';
+    $found = []; // word position -> day key
+    foreach (golpos_weekday_map() as $key => $words) {
+        foreach ($words as $w) {
+            $pos = preg_match('/[\x{0900}-\x{097F}]/u', $w)
+                ? mb_strpos($low, $w)
+                : (preg_match('/\b' . preg_quote($w, '/') . '\b/u', $low, $mm, PREG_OFFSET_CAPTURE) ? $mm[0][1] : false);
+            if ($pos !== false) { $found[(int)$pos] = $key; }
+        }
+    }
+    ksort($found);
+    return array_values(array_unique(array_values($found)));
+}
+function golpos_day_name(string $key): string {
+    return ['sun' => 'Sunday', 'mon' => 'Monday', 'tue' => 'Tuesday', 'wed' => 'Wednesday',
+            'thu' => 'Thursday', 'fri' => 'Friday', 'sat' => 'Saturday'][$key] ?? $key;
+}
+function golpos_day_names(array $keys): string {
+    return implode(' + ', array_map('golpos_day_name', $keys));
+}
+// (The due-day rule itself lives with the data layer in store.php —
+// golpos_vendor_due_on / golpos_vendors_due — because the Owner panel's
+// API reads it too.)
+// Resolve a vendor from the owner's words: the full name key inside the
+// text wins, then an alias, then one distinctive name token (4+ letters,
+// not a generic company word). Same one/many/none shape as resolve_item.
+function golpos_vendor_resolve(array $vendors, string $text): array {
+    $t = ' ' . golpos_name_key($text) . ' ';
+    foreach ($vendors as $v) {
+        $k = golpos_name_key((string)($v['name'] ?? ''));
+        if ($k !== '' && mb_strpos($t, ' ' . $k . ' ') !== false) { return ['one' => $v]; }
+    }
+    $hits = [];
+    foreach ($vendors as $v) {
+        foreach ((array)($v['aliases'] ?? []) as $a) {
+            $a = golpos_name_key((string)$a);
+            if ($a !== '' && mb_strpos($t, ' ' . $a . ' ') !== false) { $hits[] = $v; break; }
+        }
+    }
+    if (count($hits) === 1) { return ['one' => $hits[0]]; }
+    if (count($hits) > 1) { return ['many' => $hits]; }
+    $generic = ['co', 'company', 'inc', 'llc', 'distributors', 'distributor', 'supply', 'supplies',
+                'beverage', 'beverages', 'foods', 'group', 'sales', 'mart', 'store'];
+    $tokHits = [];
+    foreach ($vendors as $v) {
+        foreach (preg_split('/\s+/u', golpos_name_key((string)($v['name'] ?? ''))) ?: [] as $tok) {
+            if (mb_strlen((string)$tok) >= 4 && !in_array($tok, $generic, true)
+                && mb_strpos($t, ' ' . $tok . ' ') !== false) { $tokHits[] = $v; break; }
+        }
+    }
+    if (count($tokHits) === 1) { return ['one' => $tokHits[0]]; }
+    if (count($tokHits) > 1) { return ['many' => $tokHits]; }
+    return ['none' => true];
+}
+// The draft for one vendor, built from the three inputs IN ORDER:
+// (1) What's Out + below-par shelf state, (2) sales velocity since the
+// vendor's last delivery, (3) the vendor's typical lines from bill
+// history (this pack's records + the register's executed purchases).
+// A line earns a suggested quantity of max(what sold since the last
+// delivery, what refills the shelf to par); an OUT line with no signal
+// falls back to its usual bill quantity — never to an invented number.
+function golpos_prep_build(array $vendor, array $products): array {
+    $seeds = []; // name key -> seed line
+    $addSeed = static function (array $s) use (&$seeds): void {
+        $k = golpos_bill_name_key((string)($s['name'] ?? ''));
+        if ($k === '') { return; }
+        if (!isset($seeds[$k])) { $seeds[$k] = $s; return; }
+        foreach (['qty', 'cost', 'par'] as $f) {
+            if (!isset($seeds[$k][$f]) && isset($s[$f])) { $seeds[$k][$f] = $s[$f]; }
+        }
+    };
+    foreach ((array)($vendor['typical'] ?? []) as $tl) {
+        if (is_array($tl)) {
+            $addSeed(['name' => (string)($tl['name'] ?? ''),
+                      'qty' => isset($tl['qty']) && is_numeric($tl['qty']) ? (int)$tl['qty'] : null,
+                      'cost' => isset($tl['cost']) && is_numeric($tl['cost']) ? (float)$tl['cost'] : null,
+                      'par' => isset($tl['par']) && is_numeric($tl['par']) ? (int)$tl['par'] : null]);
+        }
+    }
+    foreach (golpos_read('purchases.json', []) as $rec) {
+        if (!is_array($rec)) { continue; }
+        if (!golpos_names_equal((string)($rec['vendor'] ?? ''), (string)($vendor['name'] ?? ''))) { continue; }
+        foreach ((array)($rec['lines'] ?? []) as $l) {
+            if (!is_array($l)) { continue; }
+            $addSeed(['name' => (string)($l['name'] ?? ''),
+                      'qty' => isset($l['qty']) && is_numeric($l['qty']) ? (int)$l['qty'] : null,
+                      'cost' => isset($l['unit_cost']) && is_numeric($l['unit_cost']) ? (float)$l['unit_cost'] : null]);
+        }
+    }
+    $since = (string)($vendor['last_delivery'] ?? ($vendor['last_bill']['date'] ?? ''));
+    if ($since === '' || strtotime($since) === false) { $since = date('Y-m-d', strtotime('-7 days')); }
+    $since = substr($since, 0, 10);
+    $soldBy = []; // sku and name key -> units sold strictly after the delivery day
+    foreach (golpos_sales() as $s) {
+        if (substr((string)($s['at'] ?? ''), 0, 10) <= $since) { continue; }
+        foreach ((array)($s['lines'] ?? []) as $l) {
+            $q = max(1, (int)($l['qty'] ?? 1));
+            if (!empty($l['sku'])) { $soldBy['sku:' . $l['sku']] = ($soldBy['sku:' . $l['sku']] ?? 0) + $q; }
+            $nk = golpos_bill_name_key((string)($l['name'] ?? ''));
+            if ($nk !== '') { $soldBy['nm:' . $nk] = ($soldBy['nm:' . $nk] ?? 0) + $q; }
+        }
+    }
+    $lines = []; $fine = 0; $est = 0.0; $uncosted = 0;
+    foreach ($seeds as $k => $seed) {
+        $p = golpos_bill_match($products, (string)$seed['name']);
+        $name = $p !== null ? (string)$p['name'] : (string)$seed['name'];
+        $sku = $p !== null ? (string)$p['sku'] : '';
+        $onHand = null; $par = $seed['par'] ?? null;
+        if ($p !== null) {
+            if (isset($p['onHand']) && is_numeric($p['onHand'])) { $onHand = $p['onHand'] + 0; }
+            elseif (isset($p['stock']) && is_numeric($p['stock'])) { $onHand = $p['stock'] + 0; }
+            if (isset($p['par']) && is_numeric($p['par'])) { $par = (int)$p['par']; }
+        }
+        $sold = $sku !== '' && isset($soldBy['sku:' . $sku]) ? $soldBy['sku:' . $sku]
+            : ($soldBy['nm:' . $k] ?? 0);
+        $topup = ($par !== null && $onHand !== null) ? max(0, (int)$par - (int)$onHand) : 0;
+        $sug = max((int)$sold, $topup);
+        if ($sug === 0 && $onHand !== null && $onHand <= 0) {
+            $sug = (int)($seed['qty'] ?? 0) > 0 ? (int)$seed['qty'] : 1; // OUT, no signal: the usual line
+        }
+        if ($sug <= 0) { $fine++; continue; }
+        $cost = $seed['cost'] ?? null;
+        if ($cost === null && $p !== null && isset($p['cost']) && is_numeric($p['cost'])) {
+            $cost = (float)$p['cost'];
+        }
+        $flag = ($onHand !== null && $onHand <= 0) ? 'out'
+            : ($topup > 0 ? 'low' : 'sold');
+        $line = ['sku' => $sku, 'name' => $name, 'qty' => $sug,
+                 'cost' => $cost !== null ? round((float)$cost, 2) : null,
+                 'line_total' => $cost !== null ? round($sug * (float)$cost, 2) : null,
+                 'on_hand' => $onHand, 'par' => $par, 'sold' => (int)$sold, 'flag' => $flag];
+        if ($cost !== null) { $est += $line['line_total']; } else { $uncosted++; }
+        $lines[] = $line;
+    }
+    $rank = ['out' => 0, 'low' => 1, 'sold' => 2];
+    usort($lines, static fn($a, $b) => (($rank[$a['flag']] ?? 3) <=> ($rank[$b['flag']] ?? 3))
+        ?: ((float)($b['line_total'] ?? 0) <=> (float)($a['line_total'] ?? 0)));
+    return ['lines' => $lines, 'fine' => $fine, 'est_total' => round($est, 2),
+            'uncosted' => $uncosted, 'since' => $since];
+}
+// One line of a staged order card, spoken: name × qty, its cost when one is
+// on record, and the shelf truth that earned it (OUT / on hand vs par /
+// sold since the last delivery).
+function golpos_order_line_text(array $l): string {
+    $tail = '';
+    if (($l['flag'] ?? '') === 'out') { $tail .= ' — OUT'; }
+    elseif (isset($l['on_hand']) && $l['on_hand'] !== null) {
+        $tail .= ' — ' . rtrim(rtrim(number_format((float)$l['on_hand'], 2, '.', ''), '0'), '.') . ' on hand'
+            . (isset($l['par']) && $l['par'] !== null ? ' / par ' . (int)$l['par'] : '')
+            . (!empty($l['sold']) ? ' · sold ' . (int)$l['sold'] : '');
+    }
+    if (isset($l['cost']) && $l['cost'] !== null) { $tail .= ' · ' . money((float)$l['cost']) . ' ea'; }
+    return t('ord_line', (string)$l['name'], (int)$l['qty'], $tail);
+}
+function golpos_order_status_word(string $st): string {
+    return ['prepared' => 'prepared (draft staged)', 'confirmed' => 'confirmed — sheet ready for the rep',
+            'given' => 'given to the rep', 'none' => 'not prepared yet'][$st] ?? $st;
+}
+// A rep-day / order ask about a vendor Gol does not know gets the pack
+// list, never a guess.
+function golpos_order_ask(string $msg, array $products): void {
+    $vendors = golpos_vendors();
+    if (!$vendors) { out(['reply' => t('ord_no_vendors')]); }
+    $r = golpos_vendor_resolve($vendors, $msg);
+    if (!empty($r['one'])) { golpos_stage_order_prep($r['one'], $products); }
+    if (!empty($r['many'])) {
+        out(['reply' => t('ord_which_vendor', golpos_vendors_due(date('Y-m-d'))
+                ? implode(', ', array_map(static fn($v) => $v['name'], golpos_vendors_due(date('Y-m-d'))))
+                : 'none',
+            implode(', ', array_map(static fn($v) => $v['name'], $vendors)))]);
+    }
+    // No vendor named: exactly one due today -> that one; several -> ask.
+    $due = golpos_vendors_due(date('Y-m-d'));
+    if (count($due) === 1) { golpos_stage_order_prep($due[0], $products); }
+    if (count($due) > 1) {
+        out(['reply' => t('ord_which_vendor',
+            implode(', ', array_map(static fn($v) => $v['name'], $due)),
+            implode(', ', array_map(static fn($v) => $v['name'], $vendors)))]);
+    }
+    out(['reply' => t('ord_vendor_unknown',
+        implode(', ', array_map(static fn($v) => $v['name'], $vendors)))]);
+}
+// Build the draft, keep it as the vendor's order record for today
+// (prepared), and stage the ONE card. A draft with nothing to order is
+// answered, never staged — an empty card is a bluff of its own kind.
+function golpos_stage_order_prep(array $vendor, array $products): void {
+    $today = date('Y-m-d');
+    $prep = golpos_prep_build($vendor, $products);
+    if (!$prep['lines']) {
+        out(['reply' => t('ord_none_needed', (string)$vendor['name'],
+                          count((array)($vendor['typical'] ?? [])) + $prep['fine'])]);
+    }
+    $existing = golpos_order_for((string)$vendor['id'], $today);
+    $rec = ['id' => $existing['id'] ?? ('ord_' . substr(sha1(uniqid('', true)), 0, 10)),
+            'vendor_id' => (string)$vendor['id'], 'vendor' => (string)$vendor['name'],
+            'date' => $today, 'lines' => $prep['lines'],
+            'est_total' => $prep['est_total'], 'uncosted' => $prep['uncosted'],
+            'fine' => $prep['fine'], 'status' => 'prepared',
+            'staged_at' => date('c'), 'confirmed_at' => $existing['confirmed_at'] ?? null,
+            'given_at' => null, 'since' => $prep['since']];
+    if (($existing['status'] ?? '') === 'given') { $rec['status'] = 'prepared'; }
+    golpos_order_put($rec);
+    $card = golpos_stage(['type' => 'order_prep', 'order_id' => $rec['id'],
+                          'vendor_id' => (string)$vendor['id'], 'vendor' => (string)$vendor['name'],
+                          'date' => $today, 'lines' => $prep['lines'],
+                          'est_total' => $prep['est_total'], 'uncosted' => $prep['uncosted'],
+                          'fine' => $prep['fine']]);
+    $lines = [t('ord_head', (string)$vendor['name'], golpos_day_name(strtolower(date('D'))))];
+    foreach ($prep['lines'] as $l) { $lines[] = golpos_order_line_text($l); }
+    if ($prep['fine'] > 0) { $lines[] = t('ord_fine', $prep['fine']); }
+    $lines[] = t('ord_est', money($prep['est_total']),
+                 $prep['uncosted'] > 0 ? t('ord_uncosted', $prep['uncosted']) : '');
+    out(['reply' => implode("\n", $lines), 'card' => $card]);
+}
+// The owner's edits to a staged order card: "coke 12 hata" strikes a line,
+// "pepsi 20 thap" sets its quantity (a catalog item not yet on the card
+// joins it at the vendor's recorded cost). Returns true when the message
+// was an edit (handled), false when it was something else entirely.
+function golpos_order_apply_edits(array $card, string $msg, array $products): bool {
+    $segments = preg_split('/[,;\n]|\band\b|\bani\b/iu', $msg) ?: [];
+    $lines = (array)($card['lines'] ?? []);
+    $changed = false;
+    foreach ($segments as $seg) {
+        $seg = trim((string)$seg);
+        if ($seg === '') { continue; }
+        $strike = preg_match('/(hata|hatau|remove|strike|nikal|हटाउ|निकाल)/iu', $seg) === 1;
+        $set = preg_match('/(thap|thapnus|add|jodo|set|rakha|थप|राख)/iu', $seg) === 1;
+        if (!$strike && !$set) { return false; }
+        // The quantity, by the shared meaning rules — a size inside an
+        // item's own name (20oz) is never the count: extraction runs on
+        // the size-masked string, and only a lone standing number counts.
+        $qty = null;
+        $maskedCount = golpos_extract_count($seg, null);
+        if ($maskedCount !== null) { $qty = (int)$maskedCount; }
+        else {
+            $bare = golpos_mask_sizes(golpos_norm_digits($seg), null);
+            if (preg_match_all('/\d+(?:\.\d+)?/u', $bare, $nm)) {
+                $nums = array_values(array_filter(array_map('floatval', $nm[0]),
+                    static fn($v) => $v > 0 && $v <= 9999));
+                if (count($nums) === 1) { $qty = (int)$nums[0]; }
+            }
+        }
+        // Resolve the item the segment names. An edit is a precise act:
+        // the segment must name the item by its name key or a known
+        // nickname, or share a DISTINCTIVE (non-size) name token with
+        // it. The generic resolver's token score is NOT used here — it
+        // once set the Coke line's quantity for a Sprite edit because
+        // both names carry "20oz".
+        $nameText = trim((string)preg_replace(
+            '/\b(hata|hatau|hataideu|remove|strike|nikal|thap|thapnus|thapdeu|add|jodo|set|rakha|ota|vata|pcs|pieces)\b/iu',
+            ' ', $seg));
+        $nameText = trim((string)preg_replace('/\s+/u', ' ', $nameText));
+        $candKey = golpos_bill_name_key($nameText);
+        $candDistinct = array_values(array_filter(
+            preg_split('/\s+/u', $candKey) ?: [],
+            static fn($w) => $w !== '' && !is_numeric($w)
+                && !in_array($w, ['oz', 'pk', 'ct', 'ml', 'gm', 'g', 'kg', 'lb', 'pack', 'count', 'fl'], true)));
+        $matchPool = static function (array $pool) use ($candKey, $candDistinct, $seg): ?array {
+            if ($candKey === '') { return null; }
+            foreach ($pool as $p) {
+                if (golpos_bill_name_key((string)$p['name']) === $candKey) { return $p; }
+                foreach ((array)($p['aliases'] ?? []) as $a) {
+                    $ak = golpos_bill_name_key((string)$a);
+                    if ($ak !== '' && ($ak === $candKey
+                        || preg_match('/\b' . preg_quote((string)$a, '/') . '(?:s|es)?\b/iu', $seg) === 1)) {
+                        return $p;
+                    }
+                }
+            }
+            foreach ($pool as $p) {
+                $pk = golpos_bill_name_key((string)$p['name']);
+                if ($pk !== '' && (mb_strpos($candKey, $pk) !== false || mb_strpos($pk, $candKey) !== false)) {
+                    return $p;
+                }
+                $shared = array_intersect($candDistinct,
+                    preg_split('/\s+/u', $pk) ?: []);
+                if ($shared) { return $p; }
+            }
+            return null;
+        };
+        $target = null; $targetIdx = null;
+        $aliasOf = [];
+        foreach ($products as $p) { $aliasOf[(string)($p['sku'] ?? '')] = (array)($p['aliases'] ?? []); }
+        $lineProducts = array_map(static fn($l) => ['name' => $l['name'], 'sku' => $l['sku'] ?? '',
+            'aliases' => $aliasOf[(string)($l['sku'] ?? '')] ?? []], $lines);
+        $hitLine = $matchPool($lineProducts);
+        if ($hitLine !== null) {
+            foreach ($lines as $i => $l) {
+                if (($l['sku'] ?? '') === ($hitLine['sku'] ?? '') || $l['name'] === $hitLine['name']) {
+                    $target = $l; $targetIdx = $i; break;
+                }
+            }
+        }
+        if ($target === null) {
+            $p = $matchPool($products);
+            if ($p !== null) {
+                // The vendor's own recorded cost for the line beats the
+                // catalog's (the bill history is where costs live).
+                $cost = null;
+                $vend = golpos_vendor_by_id((string)($card['vendor_id'] ?? ''));
+                foreach ((array)($vend['typical'] ?? []) as $tl) {
+                    if (is_array($tl) && golpos_names_equal((string)($tl['name'] ?? ''), (string)$p['name'])
+                        && isset($tl['cost']) && is_numeric($tl['cost'])) {
+                        $cost = (float)$tl['cost'];
+                        break;
+                    }
+                }
+                if ($cost === null && isset($p['cost']) && is_numeric($p['cost'])) {
+                    $cost = (float)$p['cost'];
+                }
+                $target = ['sku' => (string)$p['sku'], 'name' => (string)$p['name'],
+                           'qty' => 0, 'cost' => $cost, 'line_total' => null,
+                           'on_hand' => $p['onHand'] ?? ($p['stock'] ?? null),
+                           'par' => isset($p['par']) ? (int)$p['par'] : null, 'sold' => 0, 'flag' => 'sold'];
+                $targetIdx = count($lines);
+                $lines[] = $target;
+            }
+        }
+        if ($target === null || $targetIdx === null) { return false; }
+        if ($strike && $qty === null) {
+            array_splice($lines, $targetIdx, 1);
+            $changed = true;
+            continue;
+        }
+        $newQty = $qty ?? (int)($target['qty'] ?? 0);
+        if ($strike) { $newQty = max(0, (int)$target['qty'] - $newQty); }
+        if ($newQty <= 0) {
+            array_splice($lines, $targetIdx, 1);
+        } else {
+            $lines[$targetIdx]['qty'] = $newQty;
+            $lines[$targetIdx]['line_total'] = isset($lines[$targetIdx]['cost']) && $lines[$targetIdx]['cost'] !== null
+                ? round($newQty * (float)$lines[$targetIdx]['cost'], 2) : null;
+        }
+        $changed = true;
+    }
+    if (!$changed) { return false; }
+    if (!$lines) {
+        // Every line struck: the draft is empty, so the card clears —
+        // an empty order is never staged or confirmed.
+        golpos_clear_pending();
+        out(['reply' => t('ask_cancelled'), 'cancelled' => true]);
+    }
+    $est = 0.0; $uncosted = 0;
+    foreach ($lines as $l) {
+        if (isset($l['cost']) && $l['cost'] !== null) { $est += (float)($l['line_total'] ?? 0); }
+        else { $uncosted++; }
+    }
+    $card['lines'] = $lines;
+    $card['est_total'] = round($est, 2);
+    $card['uncosted'] = $uncosted;
+    $card = golpos_stage($card); // a fresh card id, the same order record
+    $rec = golpos_order_for((string)$card['vendor_id'], (string)$card['date']);
+    if ($rec !== null) {
+        $rec['lines'] = $lines; $rec['est_total'] = $card['est_total'];
+        $rec['uncosted'] = $uncosted; $rec['status'] = 'prepared';
+        golpos_order_put($rec);
+    }
+    out(['reply' => t('ord_edited', (string)$card['vendor'], count($lines), money($card['est_total'])),
+         'card' => $card]);
+}
+// --- order-prep intent matchers ------------------------------------------------
+function golpos_is_order_prep_ask(string $msg): bool {
+    if (!preg_match('/(order|अर्डर)/iu', $msg)) { return false; }
+    if (preg_match('/(status|diye|diyo|diyeko|given|handed|delivered|ke bhayo|k bhayo|भयो|दिए)/iu', $msg)) { return false; }
+    return preg_match('/(bana|banau|banaideu|banai|prepare|prep|tayar|tayaar|deu|dinus|chahiyo|चाहियो|बना|तयार)/iu', $msg) === 1;
+}
+function golpos_is_order_given(string $msg): bool {
+    return preg_match('/(order|अर्डर)/iu', $msg) === 1
+        && preg_match('/(diye|diyo|diyeko|diyisake|handed|delivered|rep lai|rep laai|दिए|दियो|गयो)/iu', $msg) === 1;
+}
+function golpos_is_order_status_ask(string $msg): bool {
+    return preg_match('/(order|अर्डर)/iu', $msg) === 1
+        && preg_match('/(status|k bhayo|ke bhayo|bhayo|ready|tayar|confirmed|pakka|भयो|तयार)/iu', $msg) === 1;
+}
+function golpos_is_repday_ask(string $msg): bool {
+    if (preg_match('/(aaja|today|आज)/iu', $msg) && preg_match('/(rep|vendor|ko aau|ko ko|aauch|आउँछ|come|visit)/iu', $msg)) { return true; }
+    return preg_match('/(rep|vendor).{0,16}(aaja|today|din|day|आज)/iu', $msg) === 1;
+}
+// A teach sentence names a weekday AND a rep/visit word ("lipton ko rep
+// sombar aaucha", "sunrise dairy — delivery mangalbar"). The weekday list
+// is read by golpos_weekdays_in; this matcher only decides the lane.
+function golpos_is_teach_ask(string $msg): bool {
+    if (golpos_weekdays_in($msg) === []) { return false; }
+    return preg_match('/(rep|visit|delivery|deliver|aauch|auchha|aaucha|comes|आउँछ)/iu', $msg) === 1;
+}
+// --- day aggregates the register already owns (hisab D-12) ---------------------
+// Best-seller and day-compare questions are READS over the till's own
+// sales log: top items by quantity and by revenue for a day, and two
+// days side by side. They are the same class as the running day total —
+// cashier-domain, answered deterministically, never composed.
+function golpos_day_items(string $ymd): array {
+    $items = [];
+    foreach (golpos_sales() as $s) {
+        if (substr((string)($s['at'] ?? ''), 0, 10) !== $ymd) { continue; }
+        foreach ((array)($s['lines'] ?? []) as $l) {
+            $n = (string)($l['name'] ?? '');
+            if ($n === '') { continue; }
+            if (!isset($items[$n])) { $items[$n] = ['name' => $n, 'qty' => 0, 'rev' => 0.0]; }
+            $items[$n]['qty'] += max(1, (int)($l['qty'] ?? 1));
+            $items[$n]['rev'] = round($items[$n]['rev'] + (float)($l['line_total'] ?? 0), 2);
+        }
+    }
+    return array_values($items);
+}
+function golpos_is_bestseller_ask(string $msg): bool {
+    if (preg_match('/(week|hapta|month|mahina|हप्ता|महिना)/iu', $msg)) { return false; }
+    return preg_match('/(best|top)[\s-]*(sell|selling|sold|seller)/iu', $msg) === 1
+        || preg_match('/sold\s+(the\s+)?(most|best)/iu', $msg) === 1
+        || preg_match('/(dherai|धेरै).{0,20}(bik|बिक)/iu', $msg) === 1;
+}
+function golpos_is_compare_ask(string $msg): bool {
+    if (preg_match('/(week|month|mahina|हप्ता|महिना)/iu', $msg)) { return false; }
+    if (!preg_match('/(compare|vs\.?|versus|difference|farak|फरक|तुलना)/iu', $msg)) { return false; }
+    return preg_match('/(hijo|yesterday|aaja|today|हिजो|आज)/iu', $msg) === 1;
+}
+function golpos_day_label(string $ymd): string {
+    if ($ymd === date('Y-m-d')) { return 'Today (' . date('M j', strtotime($ymd)) . ')'; }
+    if ($ymd === date('Y-m-d', strtotime('-1 day'))) { return 'Yesterday (' . date('M j', strtotime($ymd)) . ')'; }
+    return date('M j', strtotime($ymd));
+}
+
 // --- the dispatch -------------------------------------------------------------
 // Every intent below runs through this one function so the access layer (the
 // boot code at the bottom of this file) can replay the owner's original
@@ -1424,6 +2014,55 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
         }
         out(['reply' => implode("\n", $lines), 'done' => $card]);
     }
+    // An order-prep card: confirming marks the vendor's order record for
+    // today CONFIRMED — the sheet the Owner panel prints/shares for the
+    // rep. Nothing is submitted to the vendor; the rep gets the sheet
+    // from the owner's hand, exactly as the Superior rule demands.
+    if ($card['type'] === 'order_prep') {
+        $rec = golpos_order_for((string)$card['vendor_id'], (string)$card['date']);
+        golpos_clear_pending();
+        if ($rec === null) { out(['reply' => t('card_fail')]); }
+        $rec['status'] = 'confirmed';
+        $rec['confirmed_at'] = date('c');
+        $rec['lines'] = $card['lines'];
+        $rec['est_total'] = (float)$card['est_total'];
+        golpos_order_put($rec);
+        out(['reply' => t('ord_done', (string)$card['vendor'],
+                          count((array)$card['lines']), money((float)$card['est_total'])),
+             'done' => $card]);
+    }
+    // A vendor-teach card: the rep day / delivery day the owner stated
+    // lands in the pack — a new vendor record is born with the day on it,
+    // or an existing vendor's days are replaced by the taught ones.
+    if ($card['type'] === 'vendor_teach') {
+        $vendors = golpos_vendors();
+        $target = null;
+        foreach ($vendors as $i => $v) {
+            if ((string)($v['id'] ?? '') === (string)($card['vendor_id'] ?? '')) { $target = $i; break; }
+        }
+        golpos_clear_pending();
+        if ($target === null && empty($card['create'])) { out(['reply' => t('card_fail')]); }
+        if ($target === null) {
+            $vendors[] = ['id' => 'ven_' . substr(sha1(uniqid('', true)), 0, 8),
+                          'name' => (string)$card['vendor_name'], 'aliases' => [],
+                          'rep_days' => [], 'delivery_day' => null, 'cadence' => 'weekly',
+                          'anchor' => null, 'account' => '', 'phone' => '', 'channel' => 'rep',
+                          'last_bill' => null, 'typical' => []];
+            $target = count($vendors) - 1;
+        }
+        if (($card['field'] ?? '') === 'delivery_day') {
+            $vendors[$target]['delivery_day'] = (string)($card['new'] ?? '');
+            $shown = golpos_day_name((string)$card['new']);
+            $fieldWord = 'delivery day';
+        } else {
+            $vendors[$target]['rep_days'] = array_values((array)($card['new'] ?? []));
+            $shown = golpos_day_names((array)$card['new']);
+            $fieldWord = 'rep day';
+        }
+        golpos_save_vendors($vendors);
+        out(['reply' => t('teach_done', (string)$card['vendor_name'], $fieldWord, $shown),
+             'done' => $card]);
+    }
     out(['reply' => t('card_fail')]);
 }
 
@@ -1448,6 +2087,15 @@ if (preg_match('/(poster|banner)/iu', $msg) ||
     preg_match('/\boffer\s+posts?\b/iu', $msg) ||
     preg_match('/(make|create|bana|banau|बना).{0,24}\bpost\b/iu', $msg)) {
     out(['reply' => t('poster_route')]);
+}
+
+// --- edits to a staged ORDER card ---------------------------------------------
+// While an order_prep card waits, "coke 12 hata / pepsi 20 thap" edits its
+// lines and re-stages the same order. A message that parses as no edit at
+// all falls through untouched — the card simply stays where it is.
+$pendNow = golpos_pending();
+if ($pendNow !== null && ($pendNow['type'] ?? '') === 'order_prep') {
+    golpos_order_apply_edits($pendNow, $msg, $products);
 }
 
 // --- "stage it": speak only the truth about the card on the till -------------
@@ -1495,6 +2143,151 @@ if (golpos_is_batch_close_intent($msg)) {
         'from' => (string)($seg[0]['at'] ?? ''), 'to' => (string)($seg[count($seg) - 1]['at'] ?? ''),
         'sale_ids' => array_map(static fn($s) => (string)($s['id'] ?? ''), $seg)]);
     out(['reply' => t('card_staged'), 'card' => $card]);
+}
+
+// --- register order prep: teach, stage, confirm, hand over --------------------
+// The register prepares each vendor's order on the rep's visiting day
+// (owner directive, Oct 28). Teaching and confirming run through staged
+// cards like every business write; "given" is the owner reporting a fact
+// (the day-close precedent) and executes on his word. Nothing is ever
+// submitted to a vendor from here.
+$vendorsAll = golpos_vendors();
+if (golpos_is_teach_ask($msg)) {
+    $days = golpos_weekdays_in($msg);
+    $isDelivery = preg_match('/(delivery|deliver)/iu', $msg) === 1;
+    $field = $isDelivery ? 'delivery_day' : 'rep_days';
+    $newVal = $isDelivery ? $days[0] : $days;
+    // The words before the rep/delivery word are the vendor's name as the
+    // owner speaks it ("new valley dairy ko rep sombar aaucha"). The
+    // candidate name decides FIRST: a name that equals a pack vendor's
+    // name or alias re-times THAT vendor; any other real name is a NEW
+    // vendor — a shared word like "dairy" must never snap "Valley Dairy"
+    // onto "Sunrise Dairy Fresh".
+    $head = preg_split('/\b(rep|representative|delivery|deliver|visit)\b/iu', $msg)[0] ?? '';
+    $toks = array_values(array_filter(preg_split('/\s+/u', trim((string)preg_replace('/[^\p{L}\p{N}\s&.\'-]/u', ' ', $head))) ?: [],
+        static fn($w) => $w !== ''));
+    $dropTail = ['ko', 'को', 'the', 'a', 'an', 'ma', 'मा'];
+    while ($toks && in_array(mb_strtolower((string)end($toks)), $dropTail, true)) { array_pop($toks); }
+    if (count($toks) > 1 && in_array(mb_strtolower((string)$toks[0]), ['add', 'new', 'naya', 'teach'], true)) {
+        array_shift($toks);
+    }
+    $name = trim(implode(' ', array_slice($toks, -3)));
+    $named = null;
+    if ($name !== '' && golpos_weekdays_in($name) === []) {
+        foreach ($vendorsAll as $v) {
+            if (golpos_names_equal((string)$v['name'], $name)) { $named = $v; break; }
+            foreach ((array)($v['aliases'] ?? []) as $a) {
+                if (golpos_names_equal((string)$a, $name)) { $named = $v; break 2; }
+            }
+        }
+    }
+    if ($named !== null) {
+        $v = $named;
+        $card = golpos_stage(['type' => 'vendor_teach', 'vendor_id' => (string)$v['id'],
+            'vendor_name' => (string)$v['name'], 'field' => $field,
+            'old' => $isDelivery ? (string)($v['delivery_day'] ?? '') : (array)($v['rep_days'] ?? []),
+            'new' => $newVal, 'create' => false]);
+        out(['reply' => t('card_staged'), 'card' => $card]);
+    }
+    if ($name === '') {
+        // No name in the head: fall back to resolving the whole sentence
+        // (the vendor may be named after the day words).
+        $vr = $vendorsAll ? golpos_vendor_resolve($vendorsAll, $msg) : ['none' => true];
+        if (!empty($vr['one'])) {
+            $v = $vr['one'];
+            $card = golpos_stage(['type' => 'vendor_teach', 'vendor_id' => (string)$v['id'],
+                'vendor_name' => (string)$v['name'], 'field' => $field,
+                'old' => $isDelivery ? (string)($v['delivery_day'] ?? '') : (array)($v['rep_days'] ?? []),
+                'new' => $newVal, 'create' => false]);
+            out(['reply' => t('card_staged'), 'card' => $card]);
+        }
+        out(['reply' => t('teach_ask')]);
+    }
+    if (preg_match('/(order|aaja|today|rep|vendor)/iu', $name)
+        || golpos_weekdays_in($name) !== []) {
+        out(['reply' => t('teach_ask')]);
+    }
+    if ($name === mb_strtolower($name)) { $name = ucwords($name); }
+    $card = golpos_stage(['type' => 'vendor_teach', 'vendor_id' => '', 'vendor_name' => $name,
+        'field' => $field, 'old' => $isDelivery ? '' : [], 'new' => $newVal, 'create' => true]);
+    out(['reply' => t('card_staged'), 'card' => $card]);
+}
+if (golpos_is_order_given($msg)) {
+    if (!$vendorsAll) { out(['reply' => t('ord_no_vendors')]); }
+    $vr = golpos_vendor_resolve($vendorsAll, $msg);
+    if (empty($vr['one'])) {
+        out(['reply' => t('ord_vendor_unknown',
+            implode(', ', array_map(static fn($v) => $v['name'], $vendorsAll)))]);
+    }
+    $v = $vr['one'];
+    $target = null;
+    foreach (golpos_orders() as $o) {
+        if ((string)($o['vendor_id'] ?? '') === (string)$v['id'] && ($o['status'] ?? '') === 'confirmed') {
+            $target = $o;
+        }
+    }
+    if ($target === null) { out(['reply' => t('ord_given_none', (string)$v['name'], (string)$v['name'])]); }
+    $target['status'] = 'given';
+    $target['given_at'] = date('c');
+    golpos_order_put($target);
+    out(['reply' => t('ord_given', (string)$v['name'], date('M j', strtotime((string)$target['date'])))]);
+}
+if (golpos_is_order_prep_ask($msg)) {
+    golpos_order_ask($msg, $products);
+}
+if (golpos_is_order_status_ask($msg) && $vendorsAll) {
+    $vr = golpos_vendor_resolve($vendorsAll, $msg);
+    if (!empty($vr['one'])) {
+        $v = $vr['one'];
+        $rec = golpos_order_for((string)$v['id'], date('Y-m-d'));
+        if ($rec === null) { out(['reply' => t('ord_status_none', (string)$v['name'], (string)$v['name'])]); }
+        $st = golpos_order_status_word((string)$rec['status'])
+            . ' — ' . count((array)$rec['lines']) . ' lines, est. ' . money((float)$rec['est_total']);
+        out(['reply' => t('ord_status', (string)$v['name'], 'today', $st)]);
+    }
+}
+if (golpos_is_repday_ask($msg)) {
+    if (!$vendorsAll) { out(['reply' => t('ord_no_vendors')]); }
+    $today = date('Y-m-d');
+    $due = golpos_vendors_due($today);
+    if (!$due) {
+        $next = [];
+        for ($i = 1; $i <= 7 && count($next) < 4; $i++) {
+            $d = date('Y-m-d', strtotime("+{$i} days"));
+            foreach (golpos_vendors_due($d) as $v) {
+                $next[] = $v['name'] . ' — ' . date('D, M j', strtotime($d));
+            }
+        }
+        out(['reply' => t('rep_today_none', $next ? implode('; ', $next) : '—')]);
+    }
+    $pend = golpos_pending();
+    $lines = [t('rep_today_head', $shop)];
+    foreach ($due as $v) {
+        $rec = golpos_order_for((string)$v['id'], $today);
+        $st = $rec !== null ? (string)$rec['status']
+            : (($pend !== null && ($pend['type'] ?? '') === 'order_prep'
+                && ($pend['vendor_id'] ?? '') === (string)$v['id']) ? 'prepared' : 'none');
+        $lines[] = '• ' . $v['name'] . ' — ' . golpos_order_status_word($st)
+            . ($rec !== null ? ' · ' . count((array)$rec['lines']) . ' lines, est. '
+                . money((float)$rec['est_total']) : '');
+    }
+    $lines[] = t('rep_hint', (string)$due[0]['name']);
+    out(['reply' => implode("\n", $lines)]);
+}
+// A bare greeting on a rep day carries the morning card: a due vendor
+// whose order is not confirmed yet is named before anything else. With
+// nothing due, the greeting falls through to the normal conversation.
+if (preg_match('/^\s*(good\s*(morning|afternoon|evening)|namaste|namaskar|hello|hi|hey|suprabhat|नमस्ते|नमस्कार|शुभ\s*प्रभात)\s*[!.।]?\s*$/iu', $msg)) {
+    $waiting = [];
+    foreach (golpos_vendors_due(date('Y-m-d')) as $v) {
+        $rec = golpos_order_for((string)$v['id'], date('Y-m-d'));
+        if ($rec === null || ($rec['status'] ?? '') === 'prepared') { $waiting[] = $v; }
+    }
+    if ($waiting) {
+        out(['reply' => t('morning_due',
+            implode(' + ', array_map(static fn($v) => (string)$v['name'], $waiting)),
+            (string)$waiting[0]['name'])]);
+    }
 }
 
 // --- employees: add (invite by email), list, staged remove -------------------
@@ -1680,6 +2473,38 @@ if (golpos_link_on() && preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khata
         out(['reply' => t('which_one', $list)]);
     }
     out(['reply' => t('stock_notfound')]);
+}
+
+// --- day aggregates: best sellers + day compare (hisab D-12) -------------------
+// "What sold best today?" and "compare yesterday and today" are answered
+// from the register's OWN sales log, deterministically — the data was
+// always on this box; the lane didn't exist. Week/month scopes stay with
+// the deep-think lane below (the matchers refuse them).
+if (golpos_is_bestseller_ask($msg) || golpos_is_compare_ask($msg)) {
+    $today = date('Y-m-d');
+    $yday = date('Y-m-d', strtotime('-1 day'));
+    if (golpos_is_compare_ask($msg)) {
+        $a = golpos_day_summary($yday);
+        $b = golpos_day_summary($today);
+        $diff = round((float)$b['gross'] - (float)$a['gross'], 2);
+        $tail = $diff > 0 ? t('cmp_diff_up', 'Today', money($diff))
+            : ($diff < 0 ? t('cmp_diff_down', 'Today', money(abs($diff))) : t('cmp_diff_even'));
+        out(['reply' => t('cmp_line', golpos_day_label($yday), money((float)$a['gross']), (int)$a['txns'],
+                          golpos_day_label($today), money((float)$b['gross']), (int)$b['txns'], $tail)]);
+    }
+    $ymd = preg_match('/(hijo|yesterday|हिजो)/iu', $msg) === 1 ? $yday : $today;
+    $items = golpos_day_items($ymd);
+    if (!$items) { out(['reply' => t('best_none', golpos_day_label($ymd))]); }
+    $fmtTop = static function (array $list): string {
+        return implode('; ', array_map(static fn($i) => $i['name'] . ' ×' . $i['qty']
+            . ' (' . money((float)$i['rev']) . ')', $list));
+    };
+    $byQty = $items;
+    usort($byQty, static fn($x, $y) => ($y['qty'] <=> $x['qty']) ?: ($y['rev'] <=> $x['rev']));
+    $byRev = $items;
+    usort($byRev, static fn($x, $y) => ($y['rev'] <=> $x['rev']) ?: ($y['qty'] <=> $x['qty']));
+    out(['reply' => t('best_line', golpos_day_label($ymd),
+                      $fmtTop(array_slice($byQty, 0, 3)), $fmtTop(array_slice($byRev, 0, 3)))]);
 }
 
 // --- analysis / advice: the DEEP-THINK lane (Muse Wonder) --------------------
@@ -1948,11 +2773,15 @@ function golpos_needs_admin(string $msg, array $in): bool {
         $pend = golpos_pending();
         return $pend !== null && in_array($pend['type'] ?? '', [
             'price_change', 'new_item', 'setting_change', 'batch_close', 'employee_remove', 'stock_receive',
-            'bill',
+            'bill', 'order_prep', 'vendor_teach',
         ], true);
     }
     if (preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', $msg)) { return true; }
     if (preg_match('/(receipt|print|bill|paper).{0,30}settings|settings.{0,30}(receipt|print|bill)|settings\s+(ke|kasto)/iu', $msg)) { return false; }
+    // Day aggregates over the till's own log (best sellers, day compare)
+    // are the running day total's family — cashier-domain reads, never
+    // gated (hisab D-12).
+    if (golpos_is_bestseller_ask($msg) || golpos_is_compare_ask($msg)) { return false; }
     if (golpos_is_hours_read($msg) || golpos_is_batch_mode_set($msg) || golpos_is_hours_set($msg)) { return false; }
     if (golpos_is_batch_close_intent($msg)) { return true; }
     if (golpos_is_employee_intent($msg)) { return true; }

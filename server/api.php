@@ -166,6 +166,45 @@ if ($method === 'GET' && isset($_GET['report'])) {
                      JSON_UNESCAPED_UNICODE);
     exit;
 }
+if ($method === 'GET' && isset($_GET['orders'])) {
+    // Register order prep — the Owner panel's "Today's rep visits" card:
+    // every vendor due today with its prep status, plus the order
+    // records (newest first) whose sheets the panel prints/shares. Read
+    // only — orders are staged and confirmed in the Gol chat.
+    $today = date('Y-m-d');
+    $pend = golpos_pending();
+    $visits = [];
+    foreach (golpos_vendors() as $v) {
+        $due = golpos_vendor_due_on($v, $today);
+        $rec = golpos_order_for((string)($v['id'] ?? ''), $today);
+        $status = $rec !== null ? (string)$rec['status']
+            : (($pend !== null && ($pend['type'] ?? '') === 'order_prep'
+                && ($pend['vendor_id'] ?? '') === (string)($v['id'] ?? '')) ? 'prepared' : 'none');
+        $visits[] = ['id' => (string)($v['id'] ?? ''), 'name' => (string)($v['name'] ?? ''),
+                     'rep_days' => (array)($v['rep_days'] ?? []),
+                     'delivery_day' => $v['delivery_day'] ?? null,
+                     'cadence' => (string)($v['cadence'] ?? 'weekly'),
+                     'account' => (string)($v['account'] ?? ''),
+                     'due_today' => $due, 'status' => $due ? $status : 'none',
+                     'order_id' => $rec['id'] ?? null,
+                     'est_total' => $rec !== null ? (float)$rec['est_total'] : null];
+    }
+    $orders = golpos_orders();
+    usort($orders, static fn($a, $b) => strcmp((string)($b['date'] ?? ''), (string)($a['date'] ?? '')));
+    echo json_encode(['date' => $today, 'visits' => $visits, 'orders' => $orders],
+                     JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($method === 'GET' && isset($_GET['order_sheet'])) {
+    // One order record for the print/share sheet, or null.
+    $id = (string)($_GET['order_sheet'] ?? '');
+    $found = null;
+    foreach (golpos_orders() as $o) {
+        if ((string)($o['id'] ?? '') === $id) { $found = $o; break; }
+    }
+    echo json_encode($found, JSON_UNESCAPED_UNICODE);
+    exit;
+}
 if ($method === 'POST') {
     $in = json_decode(file_get_contents('php://input') ?: '{}', true) ?: [];
     if (isset($in['bind']) && is_array($in['bind'])) {
