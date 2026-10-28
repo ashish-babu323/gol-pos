@@ -354,6 +354,11 @@ function mrstore_catalog_with_stock(): ?array {
             'category' => 'MR.STORE',
             'price' => $price,
             'price_source' => $src,
+            // MR.STORE's own cost rides the projection when the record
+            // carries one (price-gap engine, Oct 28): the register's
+            // gap scan and cost answers read the same truth the store
+            // keeps. Absent stays absent — null is never a cost.
+            'cost' => (isset($p['cost']) && is_numeric($p['cost'])) ? (float)$p['cost'] : null,
             'aliases' => $aliases,
             'onHand' => $onHand,
         ];
@@ -644,6 +649,45 @@ function mrstore_create_product(array $f): ?array {
                 'aliases' => [], 'onHand' => $stock];
         if ($cost !== null) { $out['cost'] = $cost; }
         return $out;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+// --- writing ONE product's cost into MR.STORE (price-gap engine, Oct 28) --------
+// The cost twin of the price write above: a cost the till learned (her
+// answer to a gap prompt, staged and confirmed through the cost_fill
+// card) lands on the MR.STORE product record with the same load ->
+// edit -> save pattern and the same QA fence as every bridge write.
+// The match is the sync's own: barcode first, then the name key of the
+// register's mr_name. Returns true when the record now carries the
+// cost, false when the product is not in the store catalog, null when
+// the fence or the link refuses — the caller reports each honestly
+// and a refused write leaves the gap open.
+function mrstore_set_product_cost(array $posProduct, float $cost): ?bool {
+    if (!mrstore_write_allowed()) { return null; }
+    $pdo = mrstore_pdo();
+    if (!$pdo) { return null; }
+    $sid = golpos_link_config()['store_id'];
+    try {
+        $cat = mrstore_load_catalog($pdo, $sid);
+        $bc = (string)($posProduct['barcode'] ?? '');
+        $nk = mrstore_nk((string)($posProduct['mr_name'] ?? $posProduct['name'] ?? ''));
+        $idx = null;
+        foreach ($cat['products'] as $i => $pit) {
+            if (!is_array($pit)) { continue; }
+            if ($bc !== '' && (string)($pit['barcode'] ?? '') === $bc) { $idx = $i; break; }
+            if ($idx === null && $nk !== '' && mrstore_nk((string)($pit['name'] ?? '')) === $nk) {
+                $idx = $i;
+            }
+        }
+        if ($idx === null) { return false; }
+        $cat['products'][$idx]['cost'] = $cost;
+        $cat['products'][$idx]['updatedAt'] = date('c');
+        mrstore_save_catalog($pdo, $sid, $cat);
+        golpos_link_log(['kind' => 'cost_fill', 'name' => (string)($cat['products'][$idx]['name'] ?? ''),
+                         'barcode' => (string)($cat['products'][$idx]['barcode'] ?? ''), 'cost' => $cost]);
+        return true;
     } catch (Throwable $e) {
         return null;
     }

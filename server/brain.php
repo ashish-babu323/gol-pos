@@ -2782,6 +2782,11 @@ function golpos_team_line(): string {
             . ' · ' . golpos_pay_period_label((string)$r['period_from'], (string)$r['period_to'])
             . ' — waiting on you ("pay requests").';
     }
+    // Price gaps ride the same line (price-gap engine, Oct 28): what
+    // the till healed today and what is still waiting — from the
+    // records, and silent when there is nothing to report.
+    $gapLine = golpos_gap_owner_line();
+    if ($gapLine !== '') { $parts[] = $gapLine; }
     return implode("\n", $parts);
 }
 
@@ -2918,7 +2923,7 @@ function golpos_unlock_greeting(array $actor, bool $firstUnlock = false, ?string
             $rank = static function (array $it) use ($kindOf): int {
                 $k = $kindOf[golpos_bill_name_key($it['text'])] ?? 'manual';
                 return ['report_due' => 0, 'bill_waiting' => 1, 'whatsout_aging' => 2,
-                        'manual' => 3][$k] ?? 3;
+                        'manual' => 3, 'price_gap' => 4][$k] ?? 3;
             };
             usort($items, static fn($a, $b) => $rank($a) <=> $rank($b));
             $lines[] = 'Your tasks (' . count($items) . ' open):';
@@ -2927,6 +2932,10 @@ function golpos_unlock_greeting(array $actor, bool $firstUnlock = false, ?string
                     . ($it['source'] === 'gol' && $it['reason'] !== '' ? ' — from Gol: ' . $it['reason'] : '');
             }
         }
+        // A price gap waiting for her is promised here, in one line —
+        // the idle prompt later in her shift is then no surprise.
+        $gapBrief = golpos_gap_brief_line($email);
+        if ($gapBrief !== '') { $lines[] = $gapBrief; }
         return implode("\n", $lines);
     }
     $lines = [$greet . ' — admin mode, the register is open.'];
@@ -5745,6 +5754,18 @@ if (!empty($session['bill_await']) && golpos_pending() === null) {
         out(['reply' => t('bill_reask', golpos_bill_missing_list($updated))]);
     }
     out(['reply' => t('bill_reask', golpos_bill_missing_list($await))]);
+}
+
+// A price-gap prompt Gol put in her chat owns the follow-up the same
+// way (price-gap engine, Oct 28; pricegap.php): her number stages the
+// fill card, "thaha chhaina" parks the item under a long backoff, a
+// dismiss snoozes it for her shift, and anything else drops the wait
+// and runs its normal course. Cashier domain — the handler sits with
+// the other waits, before the gate; the fill card's EXECUTION carries
+// the price lane's own gate, not this conversation.
+if (!empty($session['gap_await']) && golpos_pending() === null) {
+    $gapResp = golpos_gap_await_reply($session, $sessionId, $msg, $products);
+    if ($gapResp !== null) { out($gapResp); }
 }
 
 // A price question Gol just asked owns the follow-up the same way a bill

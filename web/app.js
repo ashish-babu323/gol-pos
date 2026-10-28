@@ -129,6 +129,7 @@ let cart = new Map(); // sku -> qty
 let manualLines = []; // hand-typed amounts from the Keypad tab: {id, price, taxable}
 let manualSeq = 0;
 let cartTotals = { subtotal: 0, tax: 0, total: 0 };
+let lastBusyAt = Date.now(); // till activity clock — renderCart stamps it; the price-gap poll reads it
 let activeCat = 'All';
 let taxExempt = false; // Settings menu, current sale only — never persisted
 let cardTenderPreview = false; // a card payment is being taken: the totals
@@ -302,6 +303,7 @@ function renderKpList() {
   animateFills($('kpList'));
 }
 function renderCart() {
+  lastBusyAt = Date.now();
   const roundMoney = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
   const lines = [...cart.entries()].map(([sku, qty]) => {
     const p = catalog.products.find(x => x.sku === sku);
@@ -791,6 +793,14 @@ function chatCard(card) {
   if (card.type === 'price_change') {
     body = `<div class="sc-what">Price change — ${card.name}</div>` +
       `<div class="sc-prices"><span class="sc-old">${money(card.old_price)}</span><span class="sc-arrow">→</span><span class="sc-new">${money(card.new_price)}</span></div>`;
+  } else if (card.type === 'price_fill') {
+    body = `<div class="sc-what">Price fill — ${esc(card.name || '')}</div>` +
+      `<div class="sc-prices"><span class="sc-old">no price yet</span><span class="sc-arrow">→</span><span class="sc-new">${money(card.new_price)}</span></div>` +
+      `<div class="sc-line">Read off the shelf tag by ${esc(card.by_name || 'the till')} — confirm writes it to the catalog once, and the gap closes.</div>`;
+  } else if (card.type === 'cost_fill') {
+    body = `<div class="sc-what">Cost fill — ${esc(card.name || '')}</div>` +
+      `<div class="sc-prices"><span class="sc-old">no cost on record</span><span class="sc-arrow">→</span><span class="sc-new">${money(card.new_cost)}</span></div>` +
+      `<div class="sc-line">What the store pays, entered by ${esc(card.by_name || 'the till')} — confirm writes it to the product record once.</div>`;
   } else if (card.type === 'poster') {
     body = `<div class="sc-what">Poster — ${card.name} · ${money(card.price)}</div><img src="${card.image}" alt="Offer poster preview">`;
   } else if (card.type === 'setting_change') {
@@ -2713,6 +2723,28 @@ async function fetchInbox() {
   } catch (e) { /* polling never breaks the register */ }
 }
 setInterval(fetchInbox, 4000);
+
+// --- the price-gap prompt: Gol's small ask at a calm moment ----------------------
+// The server owns every rule (who, what, how often, which backoffs);
+// the client only reports the till's truth — the cart is empty and the
+// last activity is this long ago — and renders the one bubble it gets
+// back. Her answer goes through the ordinary chat send, where the
+// brain's gap wait is listening.
+async function fetchGap() {
+  try {
+    if (cart.size) { lastBusyAt = Date.now(); return; }
+    const idle = Math.floor((Date.now() - lastBusyAt) / 1000);
+    if (idle < 60) { return; }
+    const r = await fetch(API + '?gap&session=' + encodeURIComponent(SESSION_ID)
+      + '&cart=0&idle=' + idle);
+    const j = await r.json();
+    if (j && j.prompt && j.prompt.reply) {
+      chatMsg(j.prompt.reply, 'gol');
+      showToast('💲 Gol has one small price question.');
+    }
+  } catch (e) { /* polling never breaks the register */ }
+}
+setInterval(fetchGap, 15000);
 
 $('camBtn').addEventListener('click', () => openCam('photo'));
 $('voiceBtn').addEventListener('click', () => { $('chatDrawer').classList.remove('hidden'); startVoice(); });

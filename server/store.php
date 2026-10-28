@@ -5,6 +5,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/mrstore.php';
+require_once __DIR__ . '/pricegap.php';
 
 function golpos_data_dir(): string {
     $dir = __DIR__ . '/../data';
@@ -424,8 +425,11 @@ function golpos_execute_bill(array $card): array {
         }
     }
     // A matched line's bill cost refreshes the stored cost when the record
-    // carries one (standalone catalog; in link mode MR.STORE keeps its own
-    // cost from its own bill lane and the sync never writes cost back).
+    // carries one — and FILLS it when the record carries none: bills are
+    // the cost truth, so a bill line heals a cost gap with no ask
+    // (price-gap engine, Oct 28). Standalone catalog only; in link mode
+    // MR.STORE keeps its own cost from its own bill lane and the sync
+    // never writes cost back.
     if (!golpos_link_on()) {
         $cat = golpos_catalog();
         $dirty = false;
@@ -433,8 +437,8 @@ function golpos_execute_bill(array $card): array {
             if (!empty($l['new']) || empty($landed[$i])) { continue; }
             foreach ($cat['products'] as $pi => $p) {
                 if ((string)($p['sku'] ?? '') === (string)($l['sku'] ?? '')
-                    && array_key_exists('cost', $p)
-                    && abs((float)$p['cost'] - (float)$l['unit_cost']) > 0.0001) {
+                    && (!array_key_exists('cost', $p) || $p['cost'] === null
+                        || abs((float)$p['cost'] - (float)$l['unit_cost']) > 0.0001)) {
                     $cat['products'][$pi]['cost'] = (float)$l['unit_cost'];
                     $dirty = true;
                 }
@@ -2654,6 +2658,12 @@ function golpos_tasks_reconcile(): void {
                 if (golpos_bill_name_key((string)($c['name'] ?? '')) === $itemKey
                     && strtotime((string)($c['at'] ?? '')) >= $created) { $closeIt = true; break; }
             }
+        } elseif ($kind === 'price_gap' && strpos($subject, 'gap:') === 0) {
+            // The gap engine keeps its own evidence rule (pricegap.php):
+            // an item closes when its field lands on the product
+            // record; the task closes when every field has. It writes
+            // the task itself, so $closeIt stays false here.
+            golpos_gap_reconcile_task($t);
         } elseif ($kind === 'manual') {
             // An owner-given task closes by its linked work event too:
             // "Report hal" when the close lands, "bill hal — <vendor>"
@@ -2809,6 +2819,11 @@ function golpos_tasks_sync(): array {
                 'reason' => "What's Out ma " . date('M j', $at) . ' dekhi khula chha, count aayeko chhaina',
                 'since' => (string)($w['at'] ?? '')]);
     }
+    // (4) Price gaps — products with no shelf price or no cost on
+    // record (price-gap engine, Oct 28; pricegap.php). One task per
+    // product, routed to the register-duty holder; the ask itself is
+    // delivered later, at a calm moment in her session.
+    golpos_gap_tasks_sync($spawn);
     return $created;
 }
 
