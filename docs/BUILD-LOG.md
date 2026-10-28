@@ -1637,7 +1637,7 @@ family, no deps, no chart library) and chatGraph() drops the white
 card into the conversation under the reply in sendChat. Any new icon
 would be inline SVG per the standing rule; this build adds none.
 
-Battery: 121 checks over real HTTP chat turns on two throwaways
+Battery: 116 checks over real HTTP chat turns on two throwaways
 (fixture week: $100 / $150.50 / $0 / $200.25 / $175 / $225.75 / $70
 after a $10 refund rung today): 86 payload asserts (each shape in EN
 and NP — payload present, series sum == payload total == text figure
@@ -1652,7 +1652,10 @@ please), plus live sim proofs: the graph's 7 bars equal an
 independent hand-sum of the sim journal day by day (Oct 22-28:
 $1,898.26 / $1,870.66 / $1,864.94 / $1,588.49 / $1,873.62 / $1,954.32 /
 $1,741.72; week $12,792.01) and its best-seller bars equal the
-journal's item aggregation.
+journal's item aggregation (10 live sim proofs; the week lane's own
+ask on sim is refused by the owner-only gate — sim's roster is
+virgin by design — while its 7 bars reach the sim journal through
+the day lane's graph, proven above).
 
 Two pre-existing catches named, NOT fixed here (routing/language
 layer, not the graph): NP "...bikri bhayo?" phrasings are captured
