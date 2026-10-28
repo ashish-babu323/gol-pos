@@ -1784,3 +1784,125 @@ still come from the register's own journal, like tasks; (iv) an
 unrated day inside an otherwise rated period stages nothing in v1 —
 the reply names the days; partial-send is a v2 decision for the
 owner.
+
+## Day 3 (cont.) — Price-Gap Engine (owner design, Oct 28 15:20 ET)
+
+"Try to get the price, cost price — the items that are empty. Make an
+engine that will slowly enter one or two prices of an item. Pranisha
+is just sitting in front of the POS, the Gol chat right in front of
+her, and it reminds her: let's enter the price of Coca-Cola, because
+it wasn't there and nobody was caring about it." Spec: "THE PRICE-GAP
+ENGINE" in register-employee-tasks-spec.md. Commits b105025 (feature)
++ a658a7b (stamps ?v=b105025). Coordination note: the lane was built
+alongside the Pay Ask build in the same tree; the api.php ?gap
+endpoint and the brain gate-list / card-summary / executor hooks rode
+into the Pay Ask feature commit (fa8d795) as working-tree state, the
+rest landed in b105025 on top of a141541 — final tree verified whole.
+
+What landed:
+- server/pricegap.php — the engine. SENSE: golpos_gap_scan walks the
+  catalog (price gap = no real shelf price: unset/<=0 standalone,
+  price_source sim-demo in link mode; cost gap = no numeric cost) and
+  keeps data/price_gaps.json reconciled with the records (fills
+  stamped when a scan sees the value land; a lost value reopens as a
+  fresh instance; a deleted product closes 'gone', never a fill).
+  Generator kind price_gap (subject gap:<sku>, one task per product,
+  one item per missing field, reason stated) spawned from
+  golpos_tasks_sync section (4), routed to the register-duty holder
+  (golpos_roster_with_duty 'register kholne/banda garne'), unheld ->
+  owner inbox with the honest suffix, owner-yield + dedupe + done-
+  guard inherited from the shared $spawn closure. Closure by evidence:
+  golpos_gap_reconcile_task in the reconcile chain closes an item when
+  its field is on the record, the task when all are.
+- GIVE: api.php ?gap&session&cart&idle — her identity from the
+  session (the ?mytasks resolution; locked/admin -> silence). Server
+  enforces the calm: cart must be empty, idle >= 60s, <= 2 prompts
+  per person per day, >= 20 min apart, never over a pending card,
+  never re-arming an unanswered wait, never an item under a 7-day
+  don't-know backoff, never an item she snoozed this shift (a snooze
+  dies at her next unlock). Arming session gap_await and logging the
+  prompt are one act. app.js polls every 15s (lastBusyAt stamped in
+  renderCart) and renders the one bubble; her unlock brief carries
+  the one-line promise (golpos_gap_brief_line) and her task ordering
+  ranks price_gap last.
+- STAGE+CONFIRM: the brain's gap-wait handler (beside bill/price
+  waits, before the gate) — a number stages price_fill / cost_fill;
+  an ambiguous number re-asks with its candidates; "thaha chhaina"
+  records the 7-day backoff and answers kindly per field; a dismiss
+  snoozes; cancel snoozes; anything else drops the wait untouched.
+  Both card types are in golpos_needs_admin's confirm list, so
+  execution demands the admin PIN exactly as a price change does
+  (Beat-3 choreography). price_fill executes through the price lane's
+  write (edit + golpos_save_catalog; the link sync carries it to
+  MR.STORE). cost_fill executes through golpos_gap_write_cost:
+  standalone sets the local catalog's cost key (added when absent);
+  link mode calls the new mrstore_set_product_cost (load -> edit ->
+  save on the MR.STORE record, QA fence, link-logged) and a refusal
+  is reported as a refusal with the gap left open. Card summaries and
+  app.js renderers exist for both types. NOTHING invents a figure:
+  scan, prompt, cards and the owner line read records only.
+- Bills stay the cost truth: golpos_execute_bill's matched-line
+  refresh now also FILLS an absent cost (standalone; the link-mode
+  comment stands). The link projection (mrstore_catalog_with_stock)
+  now carries MR.STORE's cost when the record has one.
+- Owner visibility: golpos_team_line gains "Price gaps: N filled
+  today · M waiting (price/cost record missing)." from the state
+  file; silent when there is nothing to report.
+
+Battery (fresh-seeded throwaways gol-pos-gap + gol-pos-gap2, real
+HTTP, deleted after): 35/35 — generator creates tasks for the
+price-gap and cost-gap items only, once each across two unlocks,
+complete item silent, both-fields product = one task with two items;
+idle gates (cart=2 blocks, idle=10 blocks, idle=120 prompts price
+first); her "2.19" stages price_fill; her "gol" stops at the PIN
+gate with the card still pending; the owner PIN executes it; catalog
+reads $2.19; the task closes by evidence with no regeneration; the
+bill probe fills Geek Bar's absent cost ($7.25) and refreshes
+Complete Chips ($0.80 -> $0.90) through golpos_execute_bill with no
+ask, and its task closes by evidence at the next sync; the owner
+greeting line reads "2 filled today · 2 waiting"; smoke — a cash
+sale rings, the owner's price_change lane stages + executes
+untouched, her price ask answers the new $1.75. Second instance:
+price-before-cost ordering, the 20-minute spacing blocks an immediate
+second prompt, "pachi" snoozes (recorded; the next prompt skips to
+the cost item), "thaha chhaina" records dontknow_until +7d with the
+gap still open, and with both items parked the poll returns nothing.
+Regression smoke on the same instance: 8/8 — employee unlock +
+my-tasks, team_note stage/confirm/landed on the Team read, What's
+Out stage/confirm/on the board, refund ask stages the card and the
+elevated confirm executes it. (Two script-side lessons, not code:
+"Complete Chips out" trips the done-mark matcher on the word
+"complete" — a pre-existing quirk of that seeded name; a bare
+"refund" with exactly one refundable sale stages the card directly,
+no pick step.)
+
+Live proofs: served app.js on dev + sim carries fetchGap + the fill
+renderers and passes node --check; stamps serve ?v=b105025.
+DEV (standalone, CLI probe): link off; the Sunrise catalog carries
+no cost anywhere, so the scan finds 62 cost gaps and one sync spawns
+62 gap tasks; owner line renders "0 filled today · 62 waiting";
+sales untouched. SIM (link, CLI probe): link on, 28 products;
+Coca-Cola 12pk projects price $8.99 with price_source sim-demo (the
+QA record genuinely carries no retail — the register's shelf price
+IS the fallback) and cost $1.875 (bill-learned, now projected); scan
+finds 47 gap fields across the 28 products and one sync spawns 28
+tasks; golpos_gap_write_cost on 'Dutch A' (cost NULL) writes $6.66
+through the bridge, the projection reads it back, and the probe
+restores the record to exactly NULL (key + updatedAt restored).
+Restorations: both stages' data/ directories were snapshotted before
+the proofs and restored wholesale after — dev verified 887 sales /
+$9,178.79 / today 0, owner's admin PIN record present, price_gaps.json
+absent again on both stages (its pre-proof state); sim data file set
+back to the pre-proof inventory, people.json still absent (virgin
+roster). (The md5 diff itself could not run — the remote shell lacks
+process substitution; verification stands on the wholesale restore +
+the state reads above.)
+
+Follow-ups (named): (i) gap volume follows catalog truth — the QA
+store's bill-learned catalog is mostly unpriced in MR.STORE, so sim
+shows many price gaps, and the Sunrise demo catalog carries no costs
+at all (62 waiting on dev): seeding plausible costs into the demo
+catalog is an owner decision, not an engine gap; (ii) prompts are
+v1-capped at 2/day — the cap lives in golpos_gap_prompt_for if the
+owner wants a different patience; (iii) the mid-shift surface is the
+15s poll — no push channel exists at the till, by design.
