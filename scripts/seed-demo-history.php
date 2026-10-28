@@ -22,7 +22,10 @@
 
 declare(strict_types=1);
 
-if (PHP_SAPI !== 'cli') { fwrite(STDERR, "CLI only\n"); exit(2); }
+// Shell-only: a real web request always carries REQUEST_METHOD and is
+// refused. (The host's shell php is php-cgi — SAPI cgi-fcgi with no
+// request — so a SAPI test cannot tell the two apart; this one can.)
+if (isset($_SERVER['REQUEST_METHOD'])) { fwrite(STDERR, "Shell only\n"); exit(2); }
 require __DIR__ . '/../server/store.php';
 
 if (golpos_link_on()) { fwrite(STDERR, "link mode is ON — refusing to seed a linked stage\n"); exit(2); }
