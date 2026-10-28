@@ -1243,3 +1243,22 @@ One entry per day; the git history carries the same dates.
   manual-seals-nothing / auto-seals-once; Nepali gate 4/4; api money
   seams (Beat-1 7.20/2.80, 3% card surcharge 7.42). php -l (all server
   files) and node --check clean.
+
+## Day 3 (Oct 28) — Icon pass: live SVG icons, no emoji glyphs on controls
+- Owner order (11:03 ET): "gol ko sabai icons camera, mic haru send
+  button haru malai image haina icon nai deu — live icons." Every emoji
+  that served as a button/control glyph in web/ is now a real inline
+  SVG (24px viewBox, stroke=currentColor so the three themes dress
+  them, em-sized to the glyph scale each button had; no icon fonts or
+  external files — offline at the till): header camera + mic
+  (aria-labels added), Settings gear, all nine quick-ask chips, chat
+  photo label + mic + paper-plane Send, voice pill and camera-on pills,
+  Capture, scan-modal Copy/Send, and the app.js-built staged-card
+  Confirm check and counter-frame controls. Ids, handlers and label
+  text unchanged; listening/camera animations sit on the containers and
+  still apply.
+- Proof: emoji scan — web/index.html 0 lines; web/app.js keeps emoji
+  only in chat message text, toasts, a status line, a content feed line
+  and the receipt cut-line (never a button). node --check clean;
+  throwaway HTTP smoke: index 200 with 21 inline SVGs, served app.js
+  node-checks.
