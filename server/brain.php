@@ -681,7 +681,7 @@ if (golpos_link_on() && preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khata
 // assembles the week's facts; Wonder composes the judgment; Spark composes
 // if Wonder is unreachable; the template speaks if neither answers. Same
 // grounding law: a reply is accepted only if it carries a real figure.
-if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|kasto|kina|hapta|हप्ता|week|month|suggest|advice|sujhab|sujhav|sallah|slow|trend|improv)/iu', $msg)) {
+if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|kasto|kina|hapta|हप्ता|week|month|mahina|महिना|suggest|advice|sujhab|sujhav|sallah|slow|trend|improv)/iu', $msg)) {
     [$facts, $figures, $weekTx, $weekGross, $todaySum, $monthGross, $monthTx, $monthCash, $monthCard] = golpos_week_facts($shop, $products);
     if ($weekTx === 0 && $monthTx === 0) { out(['reply' => t('week_none')]); }
     $grounded = function (?string $reply) use ($figures): bool {
