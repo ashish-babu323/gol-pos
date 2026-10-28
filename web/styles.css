@@ -199,6 +199,43 @@ button { font: inherit; cursor: pointer; }
 .stock-pin-note { font-size: 15px; line-height: 1.5; margin-bottom: 4px; }
 .stock-card .cash-label input { font-size: 22px; letter-spacing: 3px; }
 
+/* ---------- transaction history sheet (the Settings menu's door) ---------- */
+/* The till's sales log in the sheets' dress: a day-grouped list, each
+   row the sale at a glance, opening inline to its named line items
+   with a Reprint that renders through the one receipt view. */
+.txn { position: fixed; inset: 0; background: rgba(6,12,26,.62); display: flex; align-items: center; justify-content: center; z-index: 48; padding: 18px; }
+.txn-card { background: var(--surface); color: var(--ink); border-radius: var(--panel-radius); padding: 22px;
+  width: min(560px, 94vw); max-height: 88vh; display: flex; flex-direction: column; box-shadow: var(--cart-shadow); }
+.txn-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.txn-head h3 { font-size: 20px; }
+.txn-head button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--line);
+  border-radius: 10px; padding: 8px 14px; font-weight: 700; cursor: pointer; font: inherit; font-size: 13.5px; }
+.txn-body { overflow-y: auto; min-height: 0; }
+.txn-empty { color: var(--dim); font-size: 14.5px; line-height: 1.5; padding: 14px 2px; }
+.txn-day { display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 14px 2px 7px; border-bottom: 1px solid var(--line); }
+.txn-day b { font-size: 15px; }
+.txn-day span { font-size: 12.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.txn-item { border-bottom: 1px dashed var(--line); }
+.txn-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer;
+  background: none; border: none; color: var(--ink); font: inherit; padding: 11px 2px; }
+.txn-when { min-width: 0; flex: 1; }
+.txn-when b { display: block; font-size: 15px; }
+.txn-when small { display: block; font-size: 12px; color: var(--dim); margin-top: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.txn-total { font-family: var(--num); font-variant-numeric: tabular-nums; font-weight: 800; font-size: 16.5px; color: var(--price); }
+.txn-caret { color: var(--dim); font-size: 12px; transition: transform .15s ease; }
+.txn-item.open .txn-caret { transform: rotate(180deg); }
+.txn-detail { padding: 2px 2px 14px; }
+.txn-line { display: flex; justify-content: space-between; gap: 14px; font-size: 14px; padding: 3.5px 0; }
+.txn-line b { font-family: var(--num); font-variant-numeric: tabular-nums; font-weight: 700; }
+.txn-totals { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.txn-trow { display: flex; justify-content: space-between; gap: 14px; font-size: 13.5px; color: var(--dim); padding: 2px 0; }
+.txn-trow b { font-family: var(--num); font-variant-numeric: tabular-nums; color: var(--ink); }
+.txn-meta { font-size: 12px; color: var(--dim); margin-top: 9px; }
+.txn-reprint { margin-top: 11px; border: none; border-radius: 10px; padding: 10px 15px; font-weight: 700; cursor: pointer;
+  background: linear-gradient(135deg, #5b93ff, #2563eb); color: #fff; font: inherit; font-size: 13.5px; }
+
 /* ---------- manual amount entry: the Keypad tab ---------- */
 /* The left panel flips between the product grid and a full register
    keypad (owner directive, Oct 28: "keypad jasto cool"). The keypad

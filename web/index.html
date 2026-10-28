@@ -38,6 +38,10 @@
           <button type="button" class="sm-act" id="smReprintBtn">Reprint last</button>
         </div>
         <div class="sm-row">
+          <div class="sm-main"><span class="sm-label">Transactions</span><span class="sm-sub">Sales history with items — reprint any sale</span></div>
+          <button type="button" class="sm-act" id="smHistoryBtn">History</button>
+        </div>
+        <div class="sm-row">
           <div class="sm-main"><span class="sm-label">Printer</span><span class="sm-sub">Receipt prints after each sale</span></div>
           <button type="button" class="sm-toggle" id="smPrinterBtn" aria-pressed="true">On</button>
         </div>
@@ -255,6 +259,14 @@
       <button type="button" id="stockPinBtn">Unlock &amp; add</button>
     </div>
   </div>
+</div></div>
+
+<div class="txn hidden" id="txnModal"><div class="txn-card">
+  <div class="txn-head">
+    <h3>Transactions</h3>
+    <button type="button" id="txnClose" class="ghost">Close</button>
+  </div>
+  <div class="txn-body" id="txnBody"><p class="txn-empty">Loading…</p></div>
 </div></div>
 
 <div id="toast" class="toast hidden" role="status"></div>

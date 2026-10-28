@@ -1029,6 +1029,136 @@ async function smReprintAction() {
   await loadSettings();
   showReceipt(sale);
 }
+// --- transaction history: every recorded sale, items named -------------------
+// The Settings menu's Transactions door: the till's own sales log
+// (api.php ?history), newest first, grouped by day. A row is the sale
+// at a glance — time, receipt no., tender, item count, total; tapping
+// it opens the sale's line items with their names, and the Reprint
+// button there renders THAT sale through the same showReceipt() the
+// tender path and Reprint Last use — no second receipt renderer, and
+// reprinting writes nothing back to the log. Reading money records
+// carries no new gate: the panel sits behind the same Settings
+// dropdown as Reprint Last, which is ungated (cashier-visible
+// receipts are counter-normal).
+let txnSales = new Map(); // sale id -> the recorded sale (the reprint source)
+function txnYmd(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+    + '-' + String(d.getDate()).padStart(2, '0');
+}
+function txnDayLabel(dateStr) {
+  const now = new Date();
+  if (dateStr === txnYmd(now)) { return 'Today'; }
+  const y = new Date(now); y.setDate(y.getDate() - 1);
+  if (dateStr === txnYmd(y)) { return 'Yesterday'; }
+  const d = new Date(dateStr + 'T12:00:00');
+  return isNaN(d) ? dateStr : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+function txnItemCount(sale) {
+  return (sale.lines || []).reduce((n, l) => n + (Number(l.qty) || 0), 0);
+}
+function txnRowEl(sale) {
+  const wrap = document.createElement('div');
+  wrap.className = 'txn-item';
+  const row = document.createElement('button');
+  row.type = 'button'; row.className = 'txn-row'; row.setAttribute('aria-expanded', 'false');
+  const left = document.createElement('span'); left.className = 'txn-when';
+  const time = document.createElement('b');
+  time.textContent = new Date(sale.at || Date.now())
+    .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const sub = document.createElement('small');
+  const n = txnItemCount(sale);
+  sub.textContent = '#' + (sale.id || '') + ' · ' + (sale.tender === 'card' ? 'Card' : 'Cash')
+    + ' · ' + n + (n === 1 ? ' item' : ' items') + (sale.tax_exempt ? ' · EXEMPT' : '');
+  left.appendChild(time); left.appendChild(sub);
+  const total = document.createElement('span'); total.className = 'txn-total';
+  total.textContent = money(sale.total);
+  const caret = document.createElement('span'); caret.className = 'txn-caret'; caret.textContent = '▾';
+  row.appendChild(left); row.appendChild(total); row.appendChild(caret);
+
+  const detail = document.createElement('div');
+  detail.className = 'txn-detail hidden';
+  (sale.lines || []).forEach(l => {
+    const li = document.createElement('div'); li.className = 'txn-line';
+    const nm = document.createElement('span');
+    nm.textContent = (l.name || '') + ' ×' + (l.qty ?? 1)
+      + (l.manual ? (l.taxable ? ' (TAX)' : ' (NO-TAX)') : '');
+    const lt = document.createElement('b'); lt.textContent = money(l.line_total);
+    li.appendChild(nm); li.appendChild(lt); detail.appendChild(li);
+  });
+  const tots = document.createElement('div'); tots.className = 'txn-totals';
+  const trow = (label, val) => {
+    const r = document.createElement('div'); r.className = 'txn-trow';
+    const a = document.createElement('span'); a.textContent = label;
+    const b = document.createElement('b'); b.textContent = val;
+    r.appendChild(a); r.appendChild(b); return r;
+  };
+  tots.appendChild(trow('Subtotal', money(sale.subtotal)));
+  tots.appendChild(trow('Tax' + (sale.tax_exempt ? ' — EXEMPT' : ''), money(sale.tax)));
+  tots.appendChild(trow('Total', money(sale.total)));
+  tots.appendChild(trow('Paid by', sale.tender === 'card' ? 'Card' : 'Cash'));
+  if (sale.tender === 'cash' && sale.tendered !== undefined && sale.tendered !== null) {
+    tots.appendChild(trow('Cash given', money(sale.tendered)));
+    tots.appendChild(trow('Change', money(sale.change_due || 0)));
+  }
+  detail.appendChild(tots);
+  const meta = document.createElement('p'); meta.className = 'txn-meta';
+  meta.textContent = 'Receipt ' + (sale.id || '') + ' · '
+    + new Date(sale.at || Date.now()).toLocaleString('en-US');
+  detail.appendChild(meta);
+  const rp = document.createElement('button');
+  rp.type = 'button'; rp.className = 'txn-reprint'; rp.textContent = 'Reprint this receipt';
+  rp.addEventListener('click', async () => {
+    closeTxnHistory();
+    await loadSettings();
+    showReceipt(sale);
+  });
+  detail.appendChild(rp);
+
+  row.addEventListener('click', () => {
+    const open = detail.classList.toggle('hidden') === false;
+    row.setAttribute('aria-expanded', open ? 'true' : 'false');
+    wrap.classList.toggle('open', open);
+  });
+  wrap.appendChild(row); wrap.appendChild(detail);
+  return wrap;
+}
+function renderTxnHistory(days) {
+  txnSales = new Map();
+  const body = $('txnBody');
+  body.innerHTML = '';
+  if (!days.length) {
+    body.innerHTML = '<p class="txn-empty">No sales recorded yet — the first sale rung will appear here.</p>';
+    return;
+  }
+  days.forEach(day => {
+    (day.sales || []).forEach(s => { if (s && s.id) { txnSales.set(s.id, s); } });
+    const head = document.createElement('div');
+    head.className = 'txn-day';
+    const lbl = document.createElement('b'); lbl.textContent = txnDayLabel(day.date);
+    const sum = (day.sales || []).reduce((t, s) => t + (Number(s.total) || 0), 0);
+    const info = document.createElement('span');
+    info.textContent = (day.count ?? (day.sales || []).length) + ' sales · ' + money(sum)
+      + (day.truncated ? ' · latest 100 shown' : '');
+    head.appendChild(lbl); head.appendChild(info);
+    body.appendChild(head);
+    (day.sales || []).forEach(s => body.appendChild(txnRowEl(s)));
+  });
+}
+async function smHistoryAction() {
+  closeSettingsMenu();
+  $('txnModal').classList.remove('hidden');
+  const body = $('txnBody');
+  body.innerHTML = '<p class="txn-empty">Loading…</p>';
+  let data = null;
+  try { data = await (await fetch(API + '?history')).json(); } catch (e) { /* handled below */ }
+  if (!data || !Array.isArray(data.days)) {
+    body.innerHTML = '<p class="txn-empty">History is unavailable right now.</p>';
+    return;
+  }
+  renderTxnHistory(data.days);
+}
+function closeTxnHistory() { $('txnModal').classList.add('hidden'); }
+
 // --- toggles ------------------------------------------------------------------
 async function saveSetting(key, value) {
   const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1072,6 +1202,11 @@ $('smBatchPin').addEventListener('click', () => {
 });
 $('smDayCloseBtn').addEventListener('click', smDayCloseAction);
 $('smReprintBtn').addEventListener('click', smReprintAction);
+$('smHistoryBtn').addEventListener('click', smHistoryAction);
+$('txnClose').addEventListener('click', closeTxnHistory);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('txnModal').classList.contains('hidden')) { closeTxnHistory(); }
+});
 $('smPrinterBtn').addEventListener('click', smPrinterAction);
 $('smStoreBtn').addEventListener('click', smStoreAction);
 $('smTaxBtn').addEventListener('click', smTaxAction);

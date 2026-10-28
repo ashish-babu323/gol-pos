@@ -12,6 +12,8 @@
 // GET  ?summary             -> today's summary
 // GET  ?batch               -> unbatched card segment + today's batches
 // GET  ?last_sale           -> today's most recent sale (reprint), or null
+// GET  ?history             -> the sales log grouped by day (newest first,
+//                              capped per day) for the Transactions panel
 // GET  ?pending             -> the staged card, if any
 // GET  ?settings            -> receipt print settings (one store, two doors)
 // POST {settings:{...}}     -> owner panel form save, same store
@@ -82,6 +84,35 @@ if ($method === 'GET' && isset($_GET['last_sale'])) {
         if (substr((string)($s['at'] ?? ''), 0, 10) === $today) { $last = $s; }
     }
     echo json_encode($last, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($method === 'GET' && isset($_GET['history'])) {
+    // Transaction history — the register's OWN sales log, read-only.
+    // Days newest first, sales newest first inside each day, each day
+    // capped at the latest 100 so a month of log stays fast (a capped
+    // day says so, with its true count). Records ride back exactly as
+    // recorded — lines with names, manual flags, tax_exempt, tendered
+    // and change — because the panel renders and reprints from this
+    // one read; there is no second copy of a sale. Standalone and link
+    // mode read the same till log (MR.STORE's journal is the platform
+    // mirror of a link sale, not this panel's source).
+    $cap = 100;
+    $byDay = [];
+    foreach (golpos_sales() as $s) {
+        $d = substr((string)($s['at'] ?? ''), 0, 10);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) { continue; }
+        $byDay[$d][] = $s;
+    }
+    krsort($byDay);
+    $days = [];
+    foreach ($byDay as $d => $list) {
+        $list = array_reverse($list); // the log appends oldest-first
+        $day = ['date' => $d, 'count' => count($list),
+                'sales' => array_slice($list, 0, $cap)];
+        if (count($list) > $cap) { $day['truncated'] = true; }
+        $days[] = $day;
+    }
+    echo json_encode(['days' => $days], JSON_UNESCAPED_UNICODE);
     exit;
 }
 if ($method === 'GET' && isset($_GET['settings'])) {
