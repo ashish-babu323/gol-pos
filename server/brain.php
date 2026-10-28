@@ -94,6 +94,11 @@ $S = [
     'np' => 'Naya saman thapiyo: %s — %s.',
     'hi' => 'Naya saaman joda gaya: %s — %s.',
     'dev' => 'नयाँ सामान थपियो: %s — %s।'],
+  'barcode_taken' => [
+    'en' => 'That barcode is already on %s.',
+    'np' => 'Tyo barcode pahile nai %s ma chha.',
+    'hi' => 'Woh barcode pehle se hi %s par hai.',
+    'dev' => 'त्यो बारकोड पहिल्यै %s मा छ।'],
   'card_fail' => [
     'en' => 'That card could not be executed.',
     'np' => 'Yo card execute garna milena.',
@@ -888,6 +893,46 @@ function golpos_extract_count(string $msg, ?array $product): ?float {
     }
     return null;
 }
+// The barcode the owner said, if any — read FIRST, before price, count or
+// name extraction, and masked out of the working string those readers see,
+// so a barcode can never be mistaken for money or a quantity (the run
+// "012345678905" once priced an item at $12,345,678,905.00). Two shapes
+// count: a labeled run ("barcode 012345678905", "barcode: 0123...") or a
+// bare run of 8-14 digits standing in the sentence. A run under 8 digits
+// is not a barcode; a run glued to a size unit is a name's size. The
+// holder is the product already carrying that code (as a barcode OR a
+// sku — the same test golpos_create_product dedupes with): a new item
+// may not take it over. Returns ['barcode' => ?string, 'work' => the
+// message with the barcode (and its label) blanked, 'holder' => ?array];
+// with no barcode the message comes back untouched.
+function golpos_extract_barcode(string $msg, array $products): array {
+    $none = ['barcode' => null, 'work' => $msg, 'holder' => null];
+    $work = golpos_norm_digits($msg);
+    $found = null; $spans = [];
+    if (preg_match('/\bbar\s*code\s*[:#]?\s*(\d{8,14})(?!\d)/iu', $work, $m, PREG_OFFSET_CAPTURE)) {
+        $found = $m[1][0];
+        $spans[] = ['start' => $m[0][1], 'len' => strlen($m[0][0])];
+    } elseif (preg_match_all('/(?<![\d.])(\d{8,14})(?![\d.])/u', $work, $mm, PREG_OFFSET_CAPTURE)) {
+        $units = ['oz', 'fl', 'ml', 'l', 'ltr', 'litre', 'litres', 'liter', 'liters',
+                  'gm', 'g', 'kg', 'lb', 'pk', 'pack', 'packs', 'count', 'ct'];
+        foreach ($mm[1] as $run) {
+            if (in_array(golpos_word_after($work, $run[1] + strlen($run[0])), $units, true)) {
+                continue; // glued to a size unit — part of a name, not a code
+            }
+            $found = $run[0];
+            $spans[] = ['start' => $run[1], 'len' => strlen($run[0])];
+            break;
+        }
+    }
+    if ($found === null) { return $none; }
+    $holder = null;
+    foreach ($products as $p) {
+        if ((string)($p['barcode'] ?? '') === $found || (string)($p['sku'] ?? '') === $found) {
+            $holder = $p; break;
+        }
+    }
+    return ['barcode' => $found, 'work' => golpos_blank($work, $spans), 'holder' => $holder];
+}
 // A new item's name from the owner's words: command/price words and the one
 // price token come out; the item's own sizes (12oz, 4pk) stay — they are
 // part of its name.
@@ -900,8 +945,14 @@ function golpos_item_name_from(string $msg, ?float $price): string {
     foreach (preg_split('/\s+/u', trim(golpos_norm_digits($msg))) as $tok) {
         $clean = trim((string)preg_replace('/[\p{P}\p{S}]+/u', '', (string)$tok));
         if ($clean === '') { continue; }
-        if ($price !== null && !$dropped && is_numeric($clean)
-            && abs((float)$clean - $price) < 0.005) {
+        // The price token itself: read the RAW token as a pure number
+        // ("$3.99", "3.25") — the cleaned token has its punctuation
+        // stripped ("399", "325") and never equals the price, so a
+        // punctuated price used to survive into the item's name. A token
+        // with letters ("12oz", "4pk") is a size, never the price.
+        if ($price !== null && !$dropped
+            && preg_match('/^\$?\d+(?:\.\d+)?$/', (string)$tok)
+            && abs((float)str_replace('$', '', (string)$tok) - $price) < 0.005) {
             $dropped = true; continue; // the price token itself
         }
         if (in_array(mb_strtolower($clean), $drop, true)) { continue; }
@@ -925,9 +976,9 @@ function golpos_names_equal(string $a, string $b): bool {
     return str_replace(' ', '', $ka) === str_replace(' ', '', $kb);
 }
 // Stage the one new-item card shape every lane uses.
-function golpos_stage_new_item(string $name, float $price): void {
+function golpos_stage_new_item(string $name, float $price, string $barcode = ''): void {
     $card = golpos_stage(['type' => 'new_item', 'name' => $name, 'price' => $price,
-                          'category' => 'Counter', 'barcode' => '']);
+                          'category' => 'Counter', 'barcode' => $barcode]);
     out(['reply' => t('card_staged'), 'card' => $card]);
 }
 
@@ -958,6 +1009,18 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
         out(['reply' => t('price_done', $card['name'], money((float)$card['old_price']), money((float)$card['new_price'])), 'done' => $card]);
     }
     if ($card['type'] === 'new_item') {
+        // A card carrying a barcode executes only if the code is still
+        // free — the same refusal the Add Product form gives, naming the
+        // product that holds it, in case the code was taken after staging.
+        if (!empty($card['barcode'])) {
+            foreach ($products as $p) {
+                if ((string)($p['barcode'] ?? '') === (string)$card['barcode']
+                    || (string)($p['sku'] ?? '') === (string)$card['barcode']) {
+                    golpos_clear_pending();
+                    out(['reply' => t('barcode_taken', (string)($p['name'] ?? 'another product'))]);
+                }
+            }
+        }
         $sku = (string)(1000 + count($products) + 1);
         $products[] = ['sku' => $sku, 'barcode' => $card['barcode'] ?? '', 'name' => $card['name'],
                        'category' => $card['category'] ?? 'Counter', 'price' => $card['price']];
@@ -1333,16 +1396,24 @@ if (preg_match('/(kati bikri|kitni bikri|aaja ko|aaj ka|aaja kati|becheu|आज|
 // executes only on "gol". With no price in the message Gol asks for it —
 // a price is never invented.
 if (preg_match('/(new\s+(item|product)|naya\s+(saman|item)|नयाँ|नया\s+सामान)/iu', $msg)) {
-    $ex = golpos_extract_price($msg, null);
+    // The barcode is read FIRST and masked out of the working string, so
+    // price and name extraction never see it; a code another product
+    // already carries refuses the add outright, naming that product.
+    $bcx = golpos_extract_barcode($msg, $products);
+    if ($bcx['holder'] !== null) {
+        out(['reply' => t('barcode_taken', (string)$bcx['holder']['name'])]);
+    }
+    $wmsg = $bcx['work'];
+    $ex = golpos_extract_price($wmsg, null);
     if ($ex['status'] === 'ambiguous') {
         out(['reply' => t('price_ask_which_plain', money($ex['candidates'][0]), money($ex['candidates'][1]))]);
     }
     $price = $ex['status'] === 'ok' ? $ex['value'] : null;
-    $name = golpos_item_name_from($msg, $price);
+    $name = golpos_item_name_from($wmsg, $price);
     if ($name !== '') {
         if ($price === null) { out(['reply' => t('new_ask_price', $name)]); }
         $card = golpos_stage(['type' => 'new_item', 'name' => $name, 'price' => $price,
-                              'category' => 'Counter', 'barcode' => '']);
+                              'category' => 'Counter', 'barcode' => $bcx['barcode'] ?? '']);
         out(['reply' => t('card_staged'), 'card' => $card]);
     }
 }
@@ -1401,8 +1472,14 @@ if (preg_match('/(kati|kitna|kitne|price|mulya|dam|daam|how much|मूल्य
 // --- add to cart ---------------------------------------------------------------
 if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप|चाहियो)/iu', $msg) ||
     preg_match('/\d+(?:\.\d+)?\s*(ota|vata|वटा)\b/iu', golpos_norm_digits($msg))) {
-    $r = resolve_item($products, $msg);
-    $ex = golpos_extract_price($msg, null);
+    // The barcode is read FIRST and masked out of the working string:
+    // resolution, price, count and name all run on what remains, so the
+    // code is never money, never a quantity, never part of a name. It is
+    // spent only if this sentence turns out to CREATE an item (below).
+    $bcx = golpos_extract_barcode($msg, $products);
+    $wmsg = $bcx['work'];
+    $r = resolve_item($products, $wmsg);
+    $ex = golpos_extract_price($wmsg, null);
     // A price in the sentence makes it a CATALOGING sentence. Ringing never
     // needs a price — the register knows it — so when the name the owner
     // said is not exactly a known item's own name or alias, the item is
@@ -1410,20 +1487,27 @@ if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप|चा�
     // drink 12oz at $3.49" is not a confused Red Bull, and "AAA batteries"
     // is not the AA pack.
     if ($ex['status'] === 'ok' && (!empty($r['one']) || !empty($r['many']))) {
-        $candName = golpos_item_name_from($msg, $ex['value']);
+        $candName = golpos_item_name_from($wmsg, $ex['value']);
         $exact = false;
         foreach ((!empty($r['one']) ? [$r['one']] : $r['many']) as $cp) {
             foreach (array_merge([$cp['name']], $cp['aliases'] ?? []) as $nm) {
                 if (golpos_names_equal((string)$nm, $candName)) { $exact = true; break 2; }
             }
         }
-        if (!$exact && $candName !== '') { golpos_stage_new_item($candName, $ex['value']); }
+        if (!$exact && $candName !== '') {
+            // Creating with a code another product already carries is
+            // refused, naming that product — never staged as a duplicate.
+            if ($bcx['holder'] !== null) {
+                out(['reply' => t('barcode_taken', (string)$bcx['holder']['name'])]);
+            }
+            golpos_stage_new_item($candName, $ex['value'], $bcx['barcode'] ?? '');
+        }
     }
     if (!empty($r['one'])) {
         // A count rides along only when the owner bound one ("2 ota coke"
         // -> 2). The product's SIZE is never a quantity: "coke 20oz thap"
         // adds one 20oz Coke.
-        $qty = golpos_extract_count($msg, $r['one']);
+        $qty = golpos_extract_count($wmsg, $r['one']);
         $n = $qty !== null && $qty > 0 ? (int)floor($qty) : 1;
         out(['reply' => ($n > 1 ? $n . ' × ' : '') . t('added_cart', $r['one']['name'], money((float)$r['one']['price'])),
              'action' => ['type' => 'add', 'sku' => $r['one']['sku'], 'qty' => $n]]);
@@ -1439,8 +1523,13 @@ if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप|चा�
         out(['reply' => t('price_ask_which_plain', money($ex['candidates'][0]), money($ex['candidates'][1]))]);
     }
     if ($ex['status'] === 'ok') {
-        $name = golpos_item_name_from($msg, $ex['value']);
-        if ($name !== '') { golpos_stage_new_item($name, $ex['value']); }
+        $name = golpos_item_name_from($wmsg, $ex['value']);
+        if ($name !== '') {
+            if ($bcx['holder'] !== null) {
+                out(['reply' => t('barcode_taken', (string)$bcx['holder']['name'])]);
+            }
+            golpos_stage_new_item($name, $ex['value'], $bcx['barcode'] ?? '');
+        }
         out(['reply' => t('new_card_offer', money($ex['value']))]);
     }
     out(['reply' => t('not_found_add')]);

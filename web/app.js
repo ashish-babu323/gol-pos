@@ -58,6 +58,28 @@ function showToast(text) {
   el.textContent = text; el.classList.remove('hidden');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.add('hidden'), 4600);
 }
+// A scanned barcode the catalog doesn't know gets a door, not a dead
+// end: one tap opens the Add Product sheet with the code already in its
+// barcode field (creation still PIN-gates inside the sheet, exactly as
+// the Add Product button's path does). A later plain toast replaces the
+// offer wholesale — showToast's textContent assignment clears the button.
+function scanUnknownOffer(code) {
+  const el = $('toast'); if (!el) { return; }
+  el.innerHTML = '';
+  const label = document.createElement('span');
+  label.textContent = 'Not in the catalog — ' + code + ' ';
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.textContent = 'Add it?';
+  btn.addEventListener('click', () => {
+    el.classList.add('hidden'); el.innerHTML = '';
+    $('scanInput').value = '';
+    openProductSheet(code);
+  });
+  el.appendChild(label); el.appendChild(btn);
+  el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), 9000);
+}
 
 // --- themes (presentation only — Midnight default, owner picks on device) -----
 const THEMES = ['midnight', 'clean', 'bold'];
@@ -623,6 +645,9 @@ function chatCard(card) {
       `<div class="sc-prices"><span class="sc-new">${money(card.total)}</span></div>`;
   } else if (card.type === 'employee_remove') {
     body = `<div class="sc-what">Remove employee — ${esc(card.name ? card.name + ' · ' : '')}${esc(card.email)}</div>`;
+  } else if (card.type === 'new_item') {
+    body = `<div class="sc-what">New item — ${esc(card.name)} · ${money(card.price)}</div>` +
+      (card.barcode ? `<div class="sc-line">Barcode ${esc(card.barcode)}</div>` : '');
   } else if (card.type === 'stock_receive') {
     body = `<div class="sc-what">Stock received — ${esc(card.name)} · ${card.qty}</div>` +
       `<div class="sc-line">MR.STORE stock goes up when you confirm</div>`;
@@ -679,6 +704,9 @@ $('scanInput').addEventListener('keydown', (e) => {
   const code = $('scanInput').value.trim();
   const p = catalog.products.find(x => x.barcode === code || x.sku === code);
   if (p) { addToCart(p.sku); $('scanInput').value = ''; }
+  // A genuine barcode shape (8-14 digits) with no match earns the Add
+  // door; anything else keeps the plain not-found word in chat.
+  else if (/^\d{8,14}$/.test(code)) { scanUnknownOffer(code); }
   else { chatMsg('Barcode ' + code + ' not found — tell Gol the name and I\'ll add it.', 'gol'); $('chatDrawer').classList.remove('hidden'); }
 });
 $('cashBtn').addEventListener('click', openCashPanel);
@@ -1169,13 +1197,16 @@ function npErrorShow(t) {
 function npPinErrorShow(t) {
   const el = $('npPinError'); el.textContent = t || ''; el.classList.toggle('hidden', !t);
 }
-function openProductSheet() {
+function openProductSheet(prefillBarcode) {
   const cats = npCats();
   $('npCategory').innerHTML = cats.map(c =>
     `<option value="${esc(c)}">${esc(c)}</option>`).join('')
     + '<option value="__new__">＋ New category…</option>';
   $('npName').value = ''; $('npPrice').value = ''; $('npCost').value = ''; $('npMargin').value = '';
-  $('npBarcode').value = ''; $('npImg').value = ''; $('npCategoryNew').value = '';
+  // The Add Product button wires this function as its click handler, so
+  // the argument is an event there — only a real string pre-fills.
+  $('npBarcode').value = typeof prefillBarcode === 'string' ? prefillBarcode : '';
+  $('npImg').value = ''; $('npCategoryNew').value = '';
   $('npStock').value = 0; $('npTaxable').checked = true; $('npPin').value = '';
   npParDirty = false;
   $('npPar').value = PAR_BY_CAT[$('npCategory').value] || 24;
@@ -1263,6 +1294,13 @@ $('npPar').addEventListener('input', () => { npParDirty = true; });
 $('npPrice').addEventListener('input', () => npSyncMargin('price'));
 $('npCost').addEventListener('input', () => npSyncMargin('cost'));
 $('npMargin').addEventListener('input', () => npSyncMargin('margin'));
+// The barcode field is scanner-ready: a hardware scanner is a keyboard
+// wedge — it types the code fast and ends with Enter. That Enter is
+// swallowed here (never a submit, never a create) and focus moves on to
+// the stock field, the next thing a received product needs.
+$('npBarcode').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); $('npStock').focus(); }
+});
 
 // --- launch binding: MR.STORE's settings link opens this register with
 // ?store=<id>&name=<name>&unlock=1 — the same contract MR.STORE's own
