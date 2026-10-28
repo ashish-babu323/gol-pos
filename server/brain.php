@@ -432,6 +432,16 @@ $S = [
     'np' => 'Radda bhayo — kehi dekhaiena, kehi badliena.',
     'hi' => 'Radd ho gaya — kuchh dikhaya ya badla nahi gaya.',
     'dev' => 'रद्द भयो — केही देखाइएन, केही बदलिएन।'],
+  'pin_not_set' => [
+    'en' => 'That\'s owner-only, and no admin PIN is set on this register yet — say "admin" when you want to create one, and I\'ll ask for it then. Nothing was shown.',
+    'np' => 'Yo owner-only ho, ra yo register ma admin PIN set bhakai chhaina — banauna man lage "admin" bhannus, tyahi bela sodchhu. Kei dekhaiena.',
+    'hi' => 'Yeh sirf owner ke liye hai, aur is register par abhi admin PIN set nahi hai — banana ho to "admin" kahen, tabhi poochhunga. Kuchh nahi dikhaya gaya.',
+    'dev' => 'यो owner-only हो, र यो register मा admin PIN set भएकै छैन — बनाउन मन लागे "admin" भन्नुस्, त्यही बेला सोध्छु। केही देखाइएन।'],
+  'card_cancelled' => [
+    'en' => 'Cancelled — the staged card is cleared; nothing was changed.',
+    'np' => 'Radda bhayo — stage bhayeko card clear bhayo; kei change bhayena.',
+    'hi' => 'Cancel ho gaya — staged card clear hai; kuchh change nahi hua.',
+    'dev' => 'रद्द भयो — stage भएको card clear भयो; केही change भएन।'],
   'hours_line' => [
     'en' => 'Store hours: opens %s, closes %s. Batch close mode: %s.',
     'np' => 'Pasal ko samaya: %s khulchha, %s banda hunchha. Batch close mode: %s.',
@@ -650,7 +660,7 @@ function golpos_is_lock_intent(string $msg): bool {
         || preg_match('/(admin bata bahira|lock gara|लक गर)/iu', $msg) === 1;
 }
 function golpos_is_cancel_intent(string $msg): bool {
-    return preg_match('/^\s*(cancel|chhod|chhoda|रद्द|छोड)\s*[.!]?\s*$/iu', $msg) === 1;
+    return preg_match('/^\s*(cancel|radda|chhod|chhoda|nahune|hudaina|nakara|रद्द|छोड|नगर|नहुने)\s*[.!]?\s*$/iu', $msg) === 1;
 }
 function golpos_is_batch_close_intent(string $msg): bool {
     return preg_match('/(batch\s*(close|banda|seal)|ब्याच)/iu', $msg) === 1;
@@ -1274,6 +1284,16 @@ function golpos_stage_new_item(string $name, float $price, string $barcode = '')
 function golpos_dispatch(string $msg, array $in, array $catalog, array $products, string $shop): void {
     global $L;
     $L = golpos_lang($msg);
+
+// --- a staged card + a cancel word: cleared here, deterministically --------
+// The word alone, with a card waiting, is the whole instruction — it must
+// never fall through to the composer (hisab test R08b: "cancel" after a
+// staged price card got "I can't cancel that here" and the card stayed
+// armed). One truth, one line, before every lane.
+if (golpos_is_cancel_intent($msg) && golpos_pending() !== null) {
+    golpos_clear_pending();
+    out(['reply' => t('card_cancelled'), 'cancelled' => true]);
+}
 
 // --- the confirm word --------------------------------------------------------
 if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['confirm'])) {
@@ -1990,8 +2010,19 @@ if (!empty($session['pin_stage'])) {
             $session['pin_stage'] = null;
             $session['pending'] = null;
             golpos_save_session($sessionId, $session);
-        } else {
+        } elseif (preg_match('/^\d+$/', golpos_norm_digits(trim($msg)))) {
+            // Pure digits in the wrong shape: a genuine PIN attempt with a
+            // typo — keep the wait and say the format line.
             out(['reply' => t('pin_bad_format'), 'pin_mask' => true]);
+        } else {
+            // Create stages: a message carrying words is not a PIN attempt
+            // at all — it is a new message that arrived while the setup
+            // wait was armed. Disarm and let it run fresh (hisab test
+            // D-11: five unrelated asks were eaten as PIN tries).
+            $session['pin_stage'] = null;
+            $session['pin_tmp'] = null;
+            $session['pending'] = null;
+            golpos_save_session($sessionId, $session);
         }
     } elseif ($stage === 'create1') {
         $session['pin_tmp'] = password_hash($pin, PASSWORD_DEFAULT);
@@ -2159,12 +2190,28 @@ if (!empty($session['price_await']) && golpos_pending() === null) {
 // The gate itself: an admin-domain message from an unelevated session gets
 // the PIN demand and NOTHING else — no figures, no hints, no partial answer.
 if (empty($session['admin']) && golpos_needs_admin($msg, $in)) {
-    $session['pending'] = ['message' => $msg, 'confirm' => !empty($in['confirm'])];
     if (golpos_admin_pin_hash() === null) {
+        // No PIN exists on this register yet. The create-PIN wait arms
+        // ONLY behind a genuinely pending gated action — executing a
+        // staged card on the confirm word (the Beat-3 choreography) — or
+        // when the owner explicitly asks for the admin/PIN setup. A plain
+        // gated READ (a month total, a close, the board) must never arm
+        // the PIN stage machine (hisab test R03/D-11: a month-total
+        // question opened PIN-create and the armed wait then ate the
+        // next five messages). The read gets the truthful gate line and
+        // the chat stays free.
+        $execute = !empty($in['confirm'])
+            || in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true);
+        $setupAsk = preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', $msg) === 1;
+        if (!$execute && !$setupAsk) {
+            out(['reply' => t('pin_not_set')]);
+        }
+        $session['pending'] = ['message' => $msg, 'confirm' => !empty($in['confirm'])];
         $session['pin_stage'] = 'create1';
         golpos_save_session($sessionId, $session);
         out(['reply' => t('pin_create_ask')]);
     }
+    $session['pending'] = ['message' => $msg, 'confirm' => !empty($in['confirm'])];
     if ((int)($session['locked_until'] ?? 0) > time()) {
         golpos_save_session($sessionId, $session);
         out(['reply' => t('pin_locked', (int)ceil(((int)$session['locked_until'] - time()) / 60))]);
