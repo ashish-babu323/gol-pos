@@ -1064,3 +1064,134 @@ One entry per day; the git history carries the same dates.
   bounded chain, the scrollbar dress, no fixed pixel heights on
   the list column outside the breakpoint rule, keys unshrunk.
   php -l / node --check clean. Nothing deployed.
+
+## Day 3 (Oct 28) — Voice + camera: Gol's ears and eyes on the register (070de6c)
+
+- Owner directives Oct 28 09:51–09:54 (spec:
+  ~/workspace/hackathon-meta-2026/register-watch-spec.md): mic =
+  Gol's ears, chat = Gol's hands, camera = Gol's eyes — and the
+  monitoring is OPEN, never covert. Five pieces, one pass; the
+  continuous Register Watch itself (auto-flags for exchanges with
+  no matching ring-up) stays its own later build — this pass
+  ships the senses and the on-demand lanes it will feed.
+- VOICE (press-to-talk only, never always-on): a 🎤 in the
+  register header and a 🎤 in the chat form, both driving the
+  browser's SpeechRecognition (webkit prefix handled). The header
+  mic OPENS the drawer and starts listening; interim results fill
+  the chat input live; the final transcript goes through
+  voiceFinal() → sendChat() — the EXACT typed path, same session,
+  same brain, so a spoken "gol add 3 dollars in coke" stages the
+  same card a typed sentence stages. Listening dress: a pulsing
+  mic + a "🎙 Listening… speak now" pill. Language follows the
+  conversation — an honest client heuristic, documented here
+  because the brain returns no language field: every sent chat
+  (typed or spoken) re-teaches a per-device stored preference
+  (Devanagari or the brain's own Romanized-Nepali stems → ne-NP,
+  Hindi stems → hi-IN, else en-US; default en-US) and the
+  recognizer opens in that language. Errors degrade to plain
+  toasts (mic blocked / didn't catch that / voice not available
+  in this browser) — the register never breaks because voice is
+  unavailable.
+- CAMERA BUTTON: a 📷 in the header, one tap from the register
+  face. With getUserMedia it opens an in-app capture view (live
+  video, Capture → preview → "Use as photo" / "Use as bill",
+  through the existing sendPhoto() → photo.php lanes, bill vs
+  receipt exactly as the existing modes decide); without it, the
+  tap falls back to the drawer's native capture input — the same
+  photo.php lane either way.
+- SCAN-BY-PHONE: Settings → "Scan with phone" mints a pairing
+  (new server/pair.php): a random 24-hex token bound to ONE
+  register session, ~10-minute life, stored server-side
+  (data/pair_tokens.json, pruned on read), shown as a big 6-char
+  code + the full URL. The phone opens web/scan.html (typed code
+  or the ?t= link), picks Bill or Photo, and uploads to the SAME
+  photo.php with the token; photo.php resolves the token to the
+  register's session (the register's session OWNS the flow — a
+  session the phone claims is ignored) and pushes the lane's
+  {reply, card} into that session's inbox (data/inbox.json, cap
+  20). The register polls ?inbox every 4s (read-and-clear) and
+  renders arrivals into its own chat with the drawer opened — a
+  scanned bill's bill_await / staged card therefore complete in
+  the register's chat session. Expired/unknown tokens refuse
+  plainly and process nothing. No QR is rendered (no QR library
+  in the repo; code + URL are what's shown).
+- CASH-TENDER FRAME PAIRING: new setting `watch_frame` (the ONE
+  settings store, default OFF; Owner-panel toggle "Camera frame
+  on cash sales"). When it is on, the register keeps a hidden
+  watch stream alive and, AFTER a cash tender completes and the
+  receipt shows, grabs one frame and posts it to new
+  server/frame.php, which saves data/frames/<txn>.jpg and flags
+  the sale `frame: true`. The frame is a passenger, never a
+  gate: it is grabbed only from an already-live stream (the
+  camera is never started at tender time), every failure is
+  swallowed, and card sales never capture. Transactions history
+  marks framed sales ("· 📷 frame") and the detail's "📷 View
+  counter frame" button opens the photo (frame.php?txn= serves
+  the bytes; data/ stays outside the web root). frame.php
+  refuses non-cash sales (422), unknown txns (404) and non-image
+  uploads (422).
+- CUSTOMER SENSING ON DEMAND: a counter word + a customer word
+  in one chat ask ("is there a customer at the counter?" /
+  "counter ma customer chha?") is answered by the client, never
+  the brain: with a live watch stream it grabs a frame at once;
+  with a camera but no stream it opens the capture view in sense
+  mode; with no camera it replies plainly "No camera on this
+  register — …". The frame goes to photo.php with mode=sense —
+  one new vision call (golpos_meta_sense_counter: how many
+  people face the counter?) and one composed reply; the lane
+  stages nothing and never touches the catalog/purchase lanes,
+  and a paired phone photo can answer the same ask through the
+  inbox.
+- VISIBLE INDICATOR: a "● Camera on" pill in the header shows
+  whenever ANY stream is live (watch stream or capture view),
+  and the capture view carries the same pill. A denied camera is
+  remembered per page so the till never nags; an explicit camera
+  tap or a settings save resets the memory.
+- Verified on throwaway copies only (nothing deployed): PHP
+  battery over real HTTP, 40/40 — watch_frame default/save/
+  read-back; the frame lifecycle (cash Beat-1 6.67/0.53/7.20 →
+  frame saves byte-identical against the txn, serves back
+  byte-identical, ?history carries frame: true; an unframed cash
+  sale has no flag; a card sale's frame POST is 422 and its GET
+  404; unknown txn and non-photo refused); the pairing lifecycle
+  (mint → code resolves → a paired bill upload lands its result
+  in the REGISTER's inbox and not the phone-claimed session,
+  read-and-clear; token REUSE inside the window stages the SAM
+  lane's card into the same inbox; bogus and expired tokens
+  refuse plainly, push nothing, and the expired one is pruned);
+  sensing (the honest eyes-didn't-answer reply locally, no card,
+  nothing staged, paired sense lands in the inbox); and the bill
+  flow completing under the register's session — the post-vision
+  seam (golpos_bill_process driven directly, the bill battery's
+  method, since no Meta key exists on this box): bill_await in
+  the register session → "sabai ma 40% margin" stages the full
+  card with the new line at $3.36 → PIN create at "gol" → the
+  product is created with its barcode, matched stock receives
+  +24, the purchase records once. Regressions in the same run:
+  card Beat-1 at 3% surcharges to 7.42, the price trap still
+  stages $3.00, the day total answers. JS battery — the real
+  app.js under a stub DOM against the real server, 27/27 — boot,
+  Beat-1 cart totals and the cents-shift keypad unregressed; the
+  voice seam with a fake SpeechRecognition on the vm context
+  (register mic opens the drawer and starts an en-US recognizer,
+  interim text fills the input, the final "add 3 dollars in
+  coke" travels VERBATIM through sendChat on the register's own
+  session and its brain response equals a direct typed POST of
+  the same words, card id/stage time aside; after a Nepali send
+  the next recognizer opens ne-NP; second press stops; no
+  recognizer → plain toast; no-speech error → plain toast); the
+  sensing interception (English + Nepali asks earn the
+  no-camera reply with NO brain call; an ordinary ask still
+  reaches the brain); the tender passenger (cash Beat-1 records
+  through tender(); watch ON with no camera — the sale still
+  completes and no frame is fabricated); the history frame
+  marker + viewer wired to frame.php; a paired sense result
+  rendering into the register chat with the drawer opened.
+  php -l / node --check clean.
+- Device-only proofs, flagged plainly for the owner's Oct 30
+  device pass (they CANNOT run under the stub DOM or the local
+  server): real SpeechRecognition accuracy and mic permission on
+  the filming device, getUserMedia on the register + phone
+  browsers, the watch-stream frame actually attaching at a live
+  cash tender, and the phone page end-to-end on a real phone.
+  Nothing deployed.
