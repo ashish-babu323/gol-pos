@@ -340,3 +340,58 @@ One entry per day; the git history carries the same dates.
   fresh session's "yo mahina kati bikri bho?" demanded the PIN, then
   answered $14.44 (the two test sales) after create-PIN elevation.
   The throwaway server dir was deleted completely afterward.
+
+## Day 3 (Oct 28) — Settings dropdown + Close-the-day to the top of the Owner panel (36f30c5)
+
+- Owner decisions: the counter operations go behind ONE Settings
+  dropdown in the register header (by Owner / Talk to Gol) — "baki
+  button chat ma haina, dropdown bata setting ma laga" — and the
+  register UI stays English ("language chai English nai"); chat
+  language mirroring untouched. Separately, "tala kina": the Owner
+  panel's Close the day was buried under the feed/loyalty/settings/
+  Reports sections — it now sits in its own block directly under the
+  "Owner — today" summary. Daily actions on top, settings below.
+- The dropdown's six items all ride existing paths. Batch close shows
+  the live unbatched card segment (new read endpoint GET ?batch — the
+  segment exactly as the chat stages it) and seals through the Gol
+  brain itself ({message:'Batch close'} then {confirm:true} with the
+  device session), so the admin-PIN gate applies unchanged: an
+  unelevated tap gets the server's PIN demand rendered in the menu
+  plus a door into the chat; a card staged in chat shows in the menu
+  as "Staged — Confirm seal" (same ?pending store). Day close runs
+  api.php close_day behind the arm-then-run tap-confirm; the toast
+  carries the batches + unbatched remainder from the close record.
+  Reprint renders today's most recent sale (new GET ?last_sale)
+  through the same showReceipt() the tender path uses. Printer is the
+  settings store's auto_open via the panel's own POST {settings}.
+  Tax exempt is per-sale only: cart tax $0.00 behind an EXEMPT badge,
+  sale POST carries tax_exempt and the server records tax 0 (record
+  flagged), flag resets on completion or Clear, never persisted.
+  Store open/closed is a new register_open setting: closed flips the
+  header pill (red dot, "Register closed") and blocks new sales at the
+  tap and at the sale endpoint — 422 "Store is closed — open it from
+  Settings" — while chat, browsing and the panel keep working.
+- Owner panel relocation: #ownerCloseDay (button + result line) sits
+  between #ownerBody and #ownerLoyalty; renderDayClose() reads the
+  ?report close record so the button reads "Re-close today" with the
+  frozen summary beside it once the day is closed. Reports no longer
+  renders the button (repClose/manualClose removed); the close path
+  itself (golpos_close_day via POST {close_day:true}) is unchanged.
+- Verified on a throwaway copy (php -S + python battery, 46/46): fresh
+  ?last_sale null; printer toggle persists in settings.json across
+  fresh reads; sale math exact (card 2×Coke $4.38 + $0.35 = $4.73;
+  tax-exempt cash total == subtotal $3.49, flag on the record); batch
+  segment 2 card sales / $7.10 with the cash sale excluded; the
+  dropdown's brain calls demand the PIN with zero figures, stage the
+  card after PIN creation (2 / $7.10) and seal Batch #1 with exactly
+  the staged sale ids; a fresh unelevated session stays gated; day
+  close record gross $10.59 across 3 sales composing Batch #1 with
+  unbatched 0, read back through ?report; closed store refuses the
+  sale POST (422 + the plain note) and re-opening restores it ($2.37);
+  ?last_sale returns the newest sale with its lines; static checks
+  pin the panel order (summary < close block < loyalty < settings <
+  reports), exactly one dayCloseBtn, header order Settings < Owner <
+  Talk to Gol, and repClose fully gone. A follow-up pass staged a
+  second segment (2 / $4.74) and sealed Batch #2 from the menu's
+  ?pending state. node --check and php -l clean. Asset stamps bumped
+  to 36f30c5.
