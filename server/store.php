@@ -119,9 +119,18 @@ function resolve_item(array $products, string $text): array {
 
 // The day-close record: closing the day freezes the summary into ONE saved
 // record per date (a re-close refreshes it) that the owner view reads back.
+// The record composes WITH batch state: the batches sealed that day and any
+// card sales still unbatched, so a close can never silently skip a batch.
 function golpos_close_day(string $ymd): array {
     $rec = golpos_day_summary($ymd);
     $rec['closed_at'] = date('c');
+    $rec['batches'] = array_map(static fn($b) => [
+        'n' => $b['n'], 'count' => $b['count'], 'total' => $b['total'],
+        'closed_by' => $b['closed_by'], 'close_time' => $b['close_time'] ?? null,
+    ], golpos_batches_on($ymd));
+    $unb = golpos_unbatched_card_sales($ymd);
+    $ut = 0.0; foreach ($unb as $s) { $ut += (float)($s['total'] ?? 0); }
+    $rec['unbatched_card'] = ['count' => count($unb), 'total' => round($ut, 2)];
     $closes = golpos_read('closes.json', []);
     $out = [];
     foreach ($closes as $c) { if (($c['date'] ?? '') !== $ymd) { $out[] = $c; } }
@@ -168,6 +177,12 @@ function golpos_settings_defaults(): array {
         'paper_width'  => '80mm',
         'show_tax'     => true,
         'auto_open'    => true,
+        // Store hours + card-batch mode (owner directive, Oct 28): the batch
+        // close is manual by default; in auto mode the day's card batch seals
+        // itself at the store's closing time (see golpos_batch_auto_sweep).
+        'store_open'   => '08:00',
+        'store_close'  => '21:00',
+        'batch_mode'   => 'manual',
     ];
 }
 
@@ -192,6 +207,15 @@ function golpos_save_settings(array $in): array {
     }
     if (isset($in['paper_width']) && in_array($in['paper_width'], ['58mm', '80mm'], true)) {
         $cur['paper_width'] = $in['paper_width'];
+    }
+    if (isset($in['batch_mode']) && in_array($in['batch_mode'], ['manual', 'auto'], true)) {
+        $cur['batch_mode'] = $in['batch_mode'];
+    }
+    foreach (['store_open', 'store_close'] as $k) {
+        if (isset($in[$k]) && is_string($in[$k])
+            && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', trim($in[$k]))) {
+            $cur[$k] = trim($in[$k]);
+        }
     }
     golpos_write('settings.json', $cur);
     return $cur;
@@ -307,4 +331,197 @@ function golpos_loyalty_standing(string $phone): ?array {
         if ($row['phone'] === $key) { $row['of'] = count($board); return $row; }
     }
     return null;
+}
+
+// --- People & access (owner directive, Oct 28) -------------------------------
+// Two roles live in data/people.json: the ADMIN (one PIN hash — the PIN is
+// the key to every admin-domain answer in the Gol chat) and EMPLOYEES, who
+// are invited by email, set their own PIN from a one-time link, and hold the
+// cashier domain only. PINs are never stored in plain text and never leave
+// the server: password_hash / password_verify throughout.
+function golpos_people(): array {
+    $d = golpos_read('people.json', null);
+    if (!is_array($d)) { return ['admin' => null, 'employees' => []]; }
+    if (!array_key_exists('admin', $d)) { $d['admin'] = null; }
+    if (!isset($d['employees']) || !is_array($d['employees'])) { $d['employees'] = []; }
+    return $d;
+}
+
+function golpos_save_people(array $d): void {
+    golpos_write('people.json', $d);
+}
+
+function golpos_admin_pin_hash(): ?string {
+    $h = golpos_people()['admin']['pin_hash'] ?? null;
+    return is_string($h) && $h !== '' ? $h : null;
+}
+
+function golpos_set_admin_pin(string $pinHash): void {
+    $d = golpos_people();
+    $d['admin'] = ['pin_hash' => $pinHash, 'set_at' => date('c')];
+    golpos_save_people($d);
+}
+
+function golpos_norm_email(string $email): string {
+    return mb_strtolower(trim($email));
+}
+
+// A PIN as typed at a prompt: Devanagari digits normalized, and valid only
+// as exactly 4–6 digits. Returns the normalized digits or null.
+function golpos_norm_pin(string $pin): ?string {
+    $d = strtr(trim($pin), ['०' => '0', '१' => '1', '२' => '2', '३' => '3', '४' => '4',
+                            '५' => '5', '६' => '6', '७' => '7', '८' => '8', '९' => '9']);
+    return preg_match('/^\d{4,6}$/', $d) ? $d : null;
+}
+
+function golpos_employee(string $email): ?array {
+    $key = golpos_norm_email($email);
+    foreach (golpos_people()['employees'] as $e) {
+        if (($e['email'] ?? '') === $key) { return $e; }
+    }
+    return null;
+}
+
+// The one-time invite link carries the raw token; the store keeps only its
+// SHA-256, so a leaked data file never hands out a working invite.
+function golpos_employee_by_invite_token(string $token): ?array {
+    if ($token === '') { return null; }
+    $hash = hash('sha256', $token);
+    foreach (golpos_people()['employees'] as $e) {
+        $h = (string)($e['invite_token_hash'] ?? '');
+        if ($h !== '' && hash_equals($h, $hash)) { return $e; }
+    }
+    return null;
+}
+
+// After the invite, the employee's device holds a device token (again only
+// its SHA-256 is stored). Presenting it with chat calls identifies the
+// session as that employee — cashier domain; it never elevates to admin.
+function golpos_employee_by_device(string $email, string $token): ?array {
+    if ($token === '') { return null; }
+    $e = golpos_employee($email);
+    if ($e === null || ($e['status'] ?? '') !== 'active') { return null; }
+    $h = (string)($e['device_token_hash'] ?? '');
+    return ($h !== '' && hash_equals($h, hash('sha256', $token))) ? $e : null;
+}
+
+function golpos_save_employee(array $emp): void {
+    $d = golpos_people();
+    foreach ($d['employees'] as $i => $e) {
+        if (($e['email'] ?? '') === ($emp['email'] ?? '')) {
+            $d['employees'][$i] = $emp;
+            golpos_save_people($d);
+            return;
+        }
+    }
+    $d['employees'][] = $emp;
+    golpos_save_people($d);
+}
+
+function golpos_remove_employee(string $email): bool {
+    $key = golpos_norm_email($email);
+    $d = golpos_people();
+    $before = count($d['employees']);
+    $d['employees'] = array_values(array_filter(
+        $d['employees'], static fn($e) => ($e['email'] ?? '') !== $key));
+    if (count($d['employees']) === $before) { return false; }
+    golpos_save_people($d);
+    return true;
+}
+
+// --- Chat sessions -----------------------------------------------------------
+// The register client holds a session id (localStorage) and sends it with
+// every chat call. Elevation, the PIN-flow stage, failed attempts and the
+// intent waiting behind a PIN demand all live here, server-side, per
+// session — the browser never decides who is admin.
+function golpos_session(string $id): array {
+    $all = golpos_read('sessions.json', []);
+    $s = (is_array($all) && isset($all[$id]) && is_array($all[$id])) ? $all[$id] : [];
+    return array_merge([
+        'admin' => false, 'pin_stage' => null, 'pin_tmp' => null,
+        'attempts' => 0, 'locked_until' => 0, 'pending' => null, 'employee' => null,
+    ], $s);
+}
+
+function golpos_save_session(string $id, array $s): void {
+    $all = golpos_read('sessions.json', []);
+    if (!is_array($all)) { $all = []; }
+    $all[$id] = $s;
+    golpos_write('sessions.json', $all);
+}
+
+// --- Card batches (owner directive, Oct 28) ----------------------------------
+// A batch close seals the card sales rung since the last batch into ONE
+// numbered record (data/batches.json) — the POS twin of the card terminal's
+// batch-out. Cash never batches. A sale belongs to a batch when its id is in
+// the batch's sale_ids, so "unbatched" is always computed, never flagged by
+// hand, and a segment can never be sealed twice.
+function golpos_batches(): array {
+    $b = golpos_read('batches.json', []);
+    return is_array($b) ? $b : [];
+}
+
+function golpos_unbatched_card_sales(?string $ymd = null): array {
+    $sealed = [];
+    foreach (golpos_batches() as $b) {
+        foreach (($b['sale_ids'] ?? []) as $id) { $sealed[(string)$id] = true; }
+    }
+    $out = [];
+    foreach (golpos_sales() as $s) {
+        if (($s['tender'] ?? '') !== 'card') { continue; }
+        if (isset($sealed[(string)($s['id'] ?? '')])) { continue; }
+        if ($ymd !== null && substr((string)($s['at'] ?? ''), 0, 10) !== $ymd) { continue; }
+        $out[] = $s;
+    }
+    return $out;
+}
+
+function golpos_seal_batch(array $sales, string $closedBy, ?string $closeTime = null): array {
+    $batches = golpos_batches();
+    $total = 0.0;
+    foreach ($sales as $s) { $total += (float)($s['total'] ?? 0); }
+    $rec = [
+        'n' => count($batches) + 1,
+        'date' => date('Y-m-d'),
+        'sealed_at' => date('c'),
+        'closed_by' => $closedBy,
+        'close_time' => $closeTime,
+        'count' => count($sales),
+        'total' => round($total, 2),
+        'from' => $sales ? (string)($sales[0]['at'] ?? '') : '',
+        'to' => $sales ? (string)($sales[count($sales) - 1]['at'] ?? '') : '',
+        'sale_ids' => array_map(static fn($s) => (string)($s['id'] ?? ''), $sales),
+    ];
+    $batches[] = $rec;
+    golpos_write('batches.json', $batches);
+    return $rec;
+}
+
+function golpos_batches_on(string $ymd): array {
+    return array_values(array_filter(
+        golpos_batches(), static fn($b) => ($b['date'] ?? '') === $ymd));
+}
+
+// AUTO batch mode, evaluated lazily: the POS is request-driven PHP with no
+// daemon, so every API/chat call first asks this — if the store is in auto
+// mode, today's close time has passed, and an unsealed card segment exists
+// for today, the segment seals itself as the next batch (closed_by "auto",
+// the close time recorded). At most ONE auto batch per day; a manual close
+// earlier that day leaves nothing for the pass; cash sales never batch.
+function golpos_batch_auto_sweep(): ?array {
+    $st = golpos_settings();
+    if (($st['batch_mode'] ?? 'manual') !== 'auto') { return null; }
+    $today = date('Y-m-d');
+    foreach (golpos_batches() as $b) {
+        if (($b['date'] ?? '') === $today && ($b['closed_by'] ?? '') === 'auto') { return null; }
+    }
+    $close = (string)($st['store_close'] ?? '21:00');
+    // Past means past: compare against today's close as a full timestamp,
+    // so 9:00:30 PM is already past a 9:00 PM close (a minute-granularity
+    // string compare would hold the seal until 9:01).
+    $closeTs = strtotime($today . ' ' . $close);
+    if ($closeTs === false || time() <= $closeTs) { return null; }
+    $seg = golpos_unbatched_card_sales($today);
+    if (!$seg) { return null; }
+    return golpos_seal_batch($seg, 'auto', $close);
 }

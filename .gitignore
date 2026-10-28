@@ -9,5 +9,10 @@ web/uploads/photos/*
 data/feed.json
 data/photos.json
 data/loyalty.json
+data/settings.json
+data/closes.json
+data/people.json
+data/sessions.json
+data/batches.json
 web/uploads/receipts/*
 !web/uploads/receipts/.gitkeep
