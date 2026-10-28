@@ -326,6 +326,7 @@ button { font: inherit; cursor: pointer; }
 .msg.card .sc-arrow { color: var(--staged-arrow); font-weight: 800; }
 .msg.card .sc-new { color: var(--staged-new); font-size: 27px; font-weight: 800; }
 .msg.card .sc-line { margin-top: 6px; font-size: 13.5px; }
+.msg.card .sc-newtag { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 1.1px; color: #fff; background: #2e9e5b; padding: 2px 7px; border-radius: 999px; margin-right: 6px; vertical-align: 1px; }
 .msg.card img { max-width: 100%; border-radius: 10px; display: block; margin: 8px 0; }
 .msg.card button { margin-top: 10px; width: 100%; min-height: 52px; border: none; color: #fff; font-weight: 800; padding: 14px 12px; border-radius: 12px; font-size: 15.5px; background: linear-gradient(135deg, #5b93ff, #2563eb); box-shadow: 0 8px 18px rgba(37,99,235,.4); }
 .chat-chips { display: flex; gap: 8px; padding: 10px 12px; overflow-x: auto; flex: none; background: var(--form-bg); border-top: 1px solid var(--form-line); scrollbar-width: none; -webkit-overflow-scrolling: touch; }

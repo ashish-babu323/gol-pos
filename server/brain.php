@@ -299,6 +299,37 @@ $S = [
     'np' => '(Source: POS till — stock MR.STORE ma chha.)',
     'hi' => '(Source: POS till — stock MR.STORE mein hai.)',
     'dev' => '(स्रोत: POS टिल — स्टक MR.STORE मा छ।)'],
+  // --- vendor bills: scan -> catalog (owner directive, Oct 28) -------------
+  'bill_reask' => [
+    'en' => 'Still need a shelf price for: %s. A price is never guessed — reply with the prices, or one margin for all ("40% margin on all"). Say "cancel" to drop the bill.',
+    'np' => 'Ajhai shelf mulya chahinchha: %s. Mulya kahile anuman garidaina — mulya haru bhannus, wa sabai ko lagi euta margin ("40% margin on all"). Bill chhodna "cancel" bhannus.',
+    'hi' => 'Abhi bhi shelf daam chahiye: %s. Daam kabhi andaza nahi lagta — daam bataiye, ya sab ke liye ek margin ("40% margin on all"). Bill chhodna hai to "cancel" kahiye.',
+    'dev' => 'अझै सेल्फ मूल्य चाहिन्छ: %s। मूल्य कहिल्यै अनुमान गरिँदैन — मूल्यहरू भन्नुस्, वा सबैका लागि एउटा मार्जिन ("40% margin on all")। बिल छोड्न "cancel" भन्नुस्।'],
+  'bill_cancelled' => [
+    'en' => 'Bill dropped — nothing was entered, added or received.',
+    'np' => 'Bill chhodiyo — kehi entry bhayena, kehi thapiyena, kehi receive bhayena.',
+    'hi' => 'Bill chhod diya — kuchh enter nahi hua, kuchh joda ya receive nahi hua.',
+    'dev' => 'बिल छोडियो — केही प्रविष्टि भएन, केही थपिएन, केही प्राप्त भएन।'],
+  'bill_done_head' => [
+    'en' => 'Bill entered — purchase of %s recorded (%d lines).',
+    'np' => 'Bill entry bhayo — %s ko kinmel record bhayo (%d line).',
+    'hi' => 'Bill enter ho gaya — %s ki kharid record ho gayi (%d line).',
+    'dev' => 'बिल प्रविष्टि भयो — %s को किनमेल रेकर्ड भयो (%d लाइन)।'],
+  'bill_new_line' => [
+    'en' => '• NEW %s — shelf price %s, cost %s, %d in (stock now %s).',
+    'np' => '• NAYA %s — shelf mulya %s, cost %s, %d bhitra (stock aba %s).',
+    'hi' => '• NAYA %s — shelf daam %s, cost %s, %d andar (stock ab %s).',
+    'dev' => '• नयाँ %s — सेल्फ मूल्य %s, लागत %s, %d भित्र (स्टक अब %s)।'],
+  'bill_recv_line' => [
+    'en' => '• %s — received %d (stock %s → %s).',
+    'np' => '• %s — %d receive bhayo (stock %s → %s).',
+    'hi' => '• %s — %d receive hua (stock %s → %s).',
+    'dev' => '• %s — %d प्राप्त भयो (स्टक %s → %s)।'],
+  'bill_fail_line' => [
+    'en' => '⚠️ %s did not land: %s',
+    'np' => '⚠️ %s pugena: %s',
+    'hi' => '⚠️ %s nahi ho paya: %s',
+    'dev' => '⚠️ %s पुगेन: %s'],
   'fallback' => [
     'en' => 'I can add items, quote or change prices (staged as a card), give today\'s total, and run the receipt print settings. Try: "print settings" or "How much is Coke?"',
     'np' => 'Ma saman thapna, mulya sodhna/badalna (card stage garera), din ko hisab dina, ra receipt print settings chalauna sakchhu. Prayas garnus: "print settings ke chha?"',
@@ -933,6 +964,101 @@ function golpos_extract_barcode(string $msg, array $products): array {
     }
     return ['barcode' => $found, 'work' => golpos_blank($work, $spans), 'holder' => $holder];
 }
+// --- the bill price wait: margins and per-item answers -----------------------
+// A read bill whose new lines lack shelf prices waits in the session
+// (bill_await); these readers price it from the owner's next words. The
+// margin the owner offered for every unpriced line ("sabai ma 40%
+// margin", "40% margin on all", "margin 40%"), or null when the message
+// offers none.
+function golpos_bill_margin_pct(string $msg): ?float {
+    if (!preg_match('/(margin|marjin|मार्जिन)/iu', $msg)) { return null; }
+    if (!preg_match('/(\d+(?:\.\d+)?)\s*(?:%|percent)/iu', golpos_norm_digits($msg), $m)) { return null; }
+    $p = (float)$m[1];
+    return ($p >= 0 && $p <= 1000) ? $p : null;
+}
+// The still-unpriced new lines of a waiting bill, named with their costs
+// for the re-ask. An empty string means the bill is fully priced.
+function golpos_bill_missing_list(array $await): string {
+    $out = [];
+    foreach (($await['lines'] ?? []) as $l) {
+        if (!empty($l['new']) && !isset($l['price'])) {
+            $out[] = $l['name'] . ' (cost $' . number_format((float)$l['unit_cost'], 2) . ')';
+        }
+    }
+    return implode(', ', $out);
+}
+// Merge one owner message into a waiting bill's prices. A margin prices
+// every unpriced new line from its bill cost, rounded to cents (a line
+// whose cost never read stays unpriced — a price is never invented from
+// nothing). Otherwise the message is read as per-item prices: segments
+// split on commas / "and" / "ani", each carrying one price (read by the
+// shared meaning rules) and the name it belongs to, matched against the
+// still-unpriced new lines and nobody else; a bare price with exactly
+// one line still waiting is that line's price. Returns the updated wait,
+// or null when the message priced nothing at all.
+function golpos_bill_apply_prices(array $await, string $msg): ?array {
+    $lines = $await['lines'] ?? [];
+    $unpriced = [];
+    foreach ($lines as $i => $l) {
+        if (!empty($l['new']) && !isset($l['price'])) { $unpriced[] = $i; }
+    }
+    if (!$unpriced) { return $await; }
+    $pct = golpos_bill_margin_pct($msg);
+    if ($pct !== null) {
+        $applied = 0;
+        foreach ($unpriced as $i) {
+            $cost = (float)($lines[$i]['unit_cost'] ?? 0);
+            if ($cost <= 0) { continue; }
+            $lines[$i]['price'] = round($cost * (1 + $pct / 100), 2);
+            $applied++;
+        }
+        if ($applied === 0) { return null; }
+        $await['lines'] = $lines;
+        return $await;
+    }
+    $applied = 0;
+    $segments = preg_split('/[,;\n]|\band\b|\bani\b/iu', $msg) ?: [];
+    foreach ($segments as $seg) {
+        $seg = trim((string)$seg);
+        if ($seg === '') { continue; }
+        $ex = golpos_extract_price($seg, null);
+        if ($ex['status'] !== 'ok' || $ex['value'] <= 0) { continue; }
+        $nameText = golpos_item_name_from($seg, $ex['value']);
+        $match = null;
+        if ($nameText !== '') {
+            $scored = [];
+            foreach ($unpriced as $i) {
+                if (isset($lines[$i]['price'])) { continue; }
+                if (golpos_names_equal((string)$lines[$i]['name'], $nameText)) {
+                    $scored[] = ['i' => $i, 's' => 99];
+                    continue;
+                }
+                $shared = 0;
+                $lk = golpos_name_key((string)$lines[$i]['name']);
+                foreach (preg_split('/[^a-z0-9]+/u', golpos_name_key($nameText)) ?: [] as $tok) {
+                    if (strlen((string)$tok) >= 3
+                        && preg_match('/\b' . preg_quote((string)$tok, '/') . '\b/u', $lk)) { $shared++; }
+                }
+                if ($shared > 0) { $scored[] = ['i' => $i, 's' => $shared]; }
+            }
+            if ($scored) {
+                usort($scored, static fn($a, $b) => $b['s'] <=> $a['s']);
+                $best = array_filter($scored, static fn($c) => $c['s'] === $scored[0]['s']);
+                if (count($best) === 1) { $match = $scored[0]['i']; }
+            }
+        }
+        if ($match === null && $nameText === '') {
+            $still = array_values(array_filter($unpriced,
+                static fn($i) => !isset($lines[$i]['price'])));
+            if (count($still) === 1) { $match = $still[0]; }
+        }
+        if ($match !== null) { $lines[$match]['price'] = round($ex['value'], 2); $applied++; }
+    }
+    if ($applied === 0) { return null; }
+    $await['lines'] = $lines;
+    return $await;
+}
+
 // A new item's name from the owner's words: command/price words and the one
 // price token come out; the item's own sizes (12oz, 4pk) stay — they are
 // part of its name.
@@ -1099,6 +1225,29 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
                          'before' => $res['before'], 'after' => $res['after'], 'via' => 'chat']);
         $fmt = static fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
         out(['reply' => t('stock_recv_done', $res['name'], $fmt($res['before']), $fmt($res['after'])), 'done' => $card]);
+    }
+    // A vendor bill card: the executor lands the creates first, records
+    // the purchase once, receives every line through the one receive
+    // path and refreshes matched costs — and this reply is composed from
+    // exactly what it reports landed, never from the card's hopes. A
+    // line that could not land is named with its reason.
+    if ($card['type'] === 'bill') {
+        $res = golpos_execute_bill($card);
+        golpos_clear_pending();
+        $fmt = static fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
+        $lines = [t('bill_done_head', money((float)$card['total']), count($card['lines'] ?? []))];
+        foreach ($res['created'] as $c) {
+            if (!$c['received']) { continue; } // its failure line below speaks for it
+            $lines[] = t('bill_new_line', $c['name'], money($c['price']), money($c['cost']),
+                         $c['qty'], $fmt($c['after']));
+        }
+        foreach ($res['received'] as $r) {
+            $lines[] = t('bill_recv_line', $r['name'], $r['qty'], $fmt($r['before']), $fmt($r['after']));
+        }
+        foreach ($res['failed'] as $f) {
+            $lines[] = t('bill_fail_line', $f['name'], $f['reason']);
+        }
+        out(['reply' => implode("\n", $lines), 'done' => $card]);
     }
     out(['reply' => t('card_fail')]);
 }
@@ -1608,6 +1757,7 @@ function golpos_needs_admin(string $msg, array $in): bool {
         $pend = golpos_pending();
         return $pend !== null && in_array($pend['type'] ?? '', [
             'price_change', 'new_item', 'setting_change', 'batch_close', 'employee_remove', 'stock_receive',
+            'bill',
         ], true);
     }
     if (preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', $msg)) { return true; }
@@ -1731,6 +1881,41 @@ if (!empty($session['pin_stage'])) {
         $left = 3 - (int)$session['attempts'];
         out(['reply' => t('pin_wrong', $left, $left === 1 ? 'try' : 'tries'), 'pin_mask' => true]);
     }
+}
+
+// A bill waiting on shelf prices owns the next answers: the read bill
+// rides the session (bill_await) until every new line is priced, the
+// owner cancels, or the completed bill stages as one card. Staging is a
+// cashier-domain act like any card's; the EXECUTION is gated at the
+// confirm word (the 'bill' card type in golpos_needs_admin). While a
+// card is staged — this bill's own, ready to execute — the gate and the
+// confirm flow own the conversation instead.
+if (!empty($session['bill_await']) && golpos_pending() === null) {
+    $await = $session['bill_await'];
+    if (golpos_is_cancel_intent($msg)) {
+        $session['bill_await'] = null;
+        golpos_save_session($sessionId, $session);
+        out(['reply' => t('bill_cancelled')]);
+    }
+    if (in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true) || !empty($in['confirm'])) {
+        out(['reply' => t('bill_reask', golpos_bill_missing_list($await))]);
+    }
+    $updated = golpos_bill_apply_prices($await, $msg);
+    if ($updated !== null) {
+        if (golpos_bill_missing_list($updated) === '') {
+            $card = golpos_stage(['type' => 'bill', 'vendor' => (string)($updated['vendor'] ?? ''),
+                                  'image' => (string)($updated['image'] ?? ''),
+                                  'lines' => $updated['lines'],
+                                  'total' => (float)($updated['total'] ?? 0)]);
+            $session['bill_await'] = null;
+            golpos_save_session($sessionId, $session);
+            out(['reply' => t('card_staged'), 'card' => $card]);
+        }
+        $session['bill_await'] = $updated;
+        golpos_save_session($sessionId, $session);
+        out(['reply' => t('bill_reask', golpos_bill_missing_list($updated))]);
+    }
+    out(['reply' => t('bill_reask', golpos_bill_missing_list($await))]);
 }
 
 // The gate itself: an admin-domain message from an unelevated session gets

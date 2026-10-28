@@ -211,6 +211,48 @@ function golpos_meta_vision_json(string $dataUrl, string $prompt, int $timeout =
     return is_array($out) ? $out : null;
 }
 
+// Vendor bill read for the bill lane: the supplier name and every printed
+// line — name, quantity, per-unit cost, and the item's barcode when the
+// bill prints one. The bill's numbers are COSTS, never shelf prices; a
+// line's shelf price is the owner's to give, downstream. Any value the
+// photo does not show comes back null and nothing is reconstructed here.
+function golpos_meta_read_bill(string $dataUrl): ?array {
+    $prompt = 'Read this vendor bill / supplier invoice photo. Reply with ONLY a JSON object and no other text: '
+        . '{"vendor": "<the supplier / vendor name exactly as printed>", '
+        . '"lines": [{"name": "<the product name exactly as printed on that line>", '
+        . '"qty": <the quantity delivered on that line as a plain number>, '
+        . '"unit_cost": <the price of ONE unit on that line as a plain number, no currency sign or commas>, '
+        . '"barcode": "<the item barcode digits printed for that line, or null>"}]}. '
+        . 'One entry per printed product line, in the order printed. unit_cost is per single unit: '
+        . 'if a line shows only an extended amount for several units, give the extended amount divided by the quantity. '
+        . 'Use null for any value you cannot read clearly.';
+    $r = golpos_meta_vision_json($dataUrl, $prompt);
+    if ($r === null || !isset($r['lines']) || !is_array($r['lines'])) { return null; }
+    $vendor = (isset($r['vendor']) && is_string($r['vendor']) && trim($r['vendor']) !== '')
+        ? trim($r['vendor']) : null;
+    $lines = [];
+    foreach ($r['lines'] as $l) {
+        if (!is_array($l)) { continue; }
+        $name = isset($l['name']) && is_string($l['name']) ? trim($l['name']) : '';
+        if ($name === '') { continue; }
+        $qty = $l['qty'] ?? null;
+        if (is_string($qty)) { $qty = preg_replace('/[^0-9.]/', '', $qty); }
+        $cost = $l['unit_cost'] ?? null;
+        if (is_string($cost)) { $cost = preg_replace('/[^0-9.]/', '', $cost); }
+        $bc = isset($l['barcode']) && is_string($l['barcode'])
+            ? (preg_replace('/\D+/', '', $l['barcode']) ?? '') : '';
+        $lines[] = [
+            'name' => $name,
+            'qty' => is_numeric($qty) && (float)$qty > 0 ? (float)$qty : 1.0,
+            'unit_cost' => is_numeric($cost) && (float)$cost >= 0 ? round((float)$cost, 2) : null,
+            // A code counts only at barcode length (the barcode doors'
+            // discipline: 8–14 digits); anything shorter is print noise.
+            'barcode' => ($bc !== '' && strlen($bc) >= 8 && strlen($bc) <= 14) ? $bc : null,
+        ];
+    }
+    return ['vendor' => $vendor, 'lines' => $lines];
+}
+
 // Receipt read for the loyalty lane: store name, date, grand total and the
 // receipt number, exactly as printed. Any field the photo does not show
 // comes back null — the loyalty endpoint decides what a partial read means,

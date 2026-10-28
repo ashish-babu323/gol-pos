@@ -221,6 +221,246 @@ function golpos_create_product(array $f): array {
     return ['product' => $rec];
 }
 
+// --- vendor bills: scan -> catalog ---------------------------------------------
+// A vendor bill photo is read by the vision lane (meta.php
+// golpos_meta_read_bill) into lines of name / qty / unit cost / barcode.
+// From there the flow is ONE path for every door:
+//   golpos_bill_process  — matches each line to the catalog. Matched lines
+//     are ready at once; UNMATCHED lines are new-product proposals and a
+//     bill NEVER stages half-ready: while any new line lacks a shelf price
+//     (a price is never invented — the bill prints costs, not prices), the
+//     whole read waits in the session (bill_await, the existing session
+//     store) and the owner is asked. With prices complete, everything
+//     stages as ONE 'bill' card.
+//   golpos_execute_bill  — on the confirm word: creates land first (via
+//     golpos_create_product, so receives can land), then the purchase is
+//     recorded (golpos_record_purchase) and every line's stock arrives via
+//     golpos_receive_stock — the one create and the one receive, no second
+//     writers. A matched line's unit cost refreshes the product's stored
+//     cost when the record carries one. A line that cannot land is
+//     reported by name — a partial bill is never reported as a full one.
+
+// The purchase record: one append per executed bill, lines marked with
+// what actually landed, so the store's bill history can never claim more
+// than the execution did. In link mode the same record rides the link log
+// beside the bridge's own movement entries.
+function golpos_record_purchase(array $rec): array {
+    $all = golpos_read('purchases.json', []);
+    $rec['id'] = 'bill_' . substr(sha1(uniqid('', true)), 0, 10);
+    $rec['at'] = date('c');
+    $all[] = $rec;
+    golpos_write('purchases.json', $all);
+    if (golpos_link_on()) {
+        golpos_link_log(['kind' => 'purchase', 'id' => $rec['id'],
+                         'vendor' => (string)($rec['vendor'] ?? ''),
+                         'total' => (float)($rec['total'] ?? 0),
+                         'lines' => count($rec['lines'] ?? [])]);
+    }
+    return $rec;
+}
+
+// A bill name's comparison key: case, punctuation and size-gluing folded,
+// so the bill's "COCA-COLA 20OZ" and the catalog's "Coca-Cola 20oz" are
+// the same product.
+function golpos_bill_name_key(string $s): string {
+    $s = mb_strtolower($s);
+    $s = preg_replace('/(\d)(oz|pk|ct|ml|kg|gm|lb)\b/u', '$1 $2', $s);
+    $s = preg_replace('/[\p{P}\p{S}]+/u', ' ', (string)$s);
+    return trim((string)preg_replace('/\s+/u', ' ', (string)$s));
+}
+
+// The catalog product a bill line names, or null when the line is a new
+// product: an exact name/alias key first, then the shared resolver's one
+// confident pick. A barcode never matches a line UP into the catalog — a
+// new line carrying a code another product already holds is created (and
+// refused, by name) by golpos_create_product's own dedupe at execution,
+// never silently merged into the holder.
+function golpos_bill_match(array $products, string $name): ?array {
+    $key = golpos_bill_name_key($name);
+    if ($key === '') { return null; }
+    foreach ($products as $p) {
+        if (golpos_bill_name_key((string)($p['name'] ?? '')) === $key) { return $p; }
+        foreach (($p['aliases'] ?? []) as $a) {
+            if (golpos_bill_name_key((string)$a) === $key) { return $p; }
+        }
+    }
+    $r = resolve_item($products, $name);
+    return !empty($r['one']) ? $r['one'] : null;
+}
+
+// The post-vision stage — the seam the bill battery drives directly with
+// a canned read. $read is golpos_meta_read_bill's shape. Returns
+// ['reply' => string] plus 'card' when the bill staged. When new products
+// wait on prices, the read rides the session as bill_await and the reply
+// asks — nothing is staged and nothing is written.
+function golpos_bill_process(array $read, string $imagePath, string $sessionId): array {
+    $money = static fn($v) => '$' . number_format((float)$v, 2);
+    $catalog = golpos_catalog();
+    $products = $catalog['products'] ?? [];
+    $lines = [];
+    $slot = []; // merge key -> index into $lines (a bill may print a line twice)
+    foreach (($read['lines'] ?? []) as $l) {
+        if (!is_array($l)) { continue; }
+        $name = trim((string)preg_replace('/\s+/u', ' ', (string)($l['name'] ?? '')));
+        $name = trim($name, " \t\"'");
+        if ($name === '') { continue; }
+        $qty = (isset($l['qty']) && is_numeric($l['qty']) && (float)$l['qty'] > 0)
+            ? max(1, (int)round((float)$l['qty'])) : 1;
+        $cost = (isset($l['unit_cost']) && is_numeric($l['unit_cost']) && (float)$l['unit_cost'] >= 0)
+            ? round((float)$l['unit_cost'], 2) : 0.0;
+        $bc = (isset($l['barcode']) && is_string($l['barcode'])
+               && preg_match('/^\d{8,14}$/', $l['barcode'])) ? $l['barcode'] : '';
+        $hit = golpos_bill_match($products, $name);
+        if ($hit !== null) {
+            $line = ['sku' => (string)$hit['sku'], 'name' => (string)$hit['name'],
+                     'qty' => $qty, 'unit_cost' => $cost,
+                     'line_total' => round($qty * $cost, 2), 'new' => false];
+            $k = 'sku:' . $line['sku'];
+        } else {
+            $line = ['name' => $name, 'qty' => $qty, 'unit_cost' => $cost,
+                     'line_total' => round($qty * $cost, 2),
+                     'barcode' => $bc, 'price' => null, 'new' => true];
+            $k = 'new:' . golpos_bill_name_key($name) . '|' . $bc;
+        }
+        if (isset($slot[$k])) {
+            $i = $slot[$k];
+            $lines[$i]['qty'] += $qty;
+            $lines[$i]['line_total'] = round($lines[$i]['qty'] * $lines[$i]['unit_cost'], 2);
+            continue;
+        }
+        $slot[$k] = count($lines);
+        $lines[] = $line;
+    }
+    if (!$lines) {
+        return ['reply' => 'I read the photo but found no bill lines on it — nothing was staged. '
+            . 'If it is a vendor bill, try a clearer photo.'];
+    }
+    $total = 0.0;
+    $newLines = [];
+    $matched = 0;
+    foreach ($lines as $l) {
+        $total += (float)$l['line_total'];
+        if (!empty($l['new'])) { $newLines[] = $l; } else { $matched++; }
+    }
+    $total = round($total, 2);
+    $vendor = trim((string)($read['vendor'] ?? ''));
+    $head = 'Bill read' . ($vendor !== '' ? ' — ' . $vendor : '') . ': '
+        . count($lines) . ' line' . (count($lines) === 1 ? '' : 's') . ', ' . $money($total) . '.';
+    if (!$newLines) {
+        $card = golpos_stage(['type' => 'bill', 'vendor' => $vendor, 'image' => $imagePath,
+                              'lines' => $lines, 'total' => $total]);
+        return ['reply' => $head . ' Every line matched your catalog — card ready, say "gol" to confirm.',
+                'card' => $card];
+    }
+    // New products wait on the owner's prices: the read rides the session,
+    // the brain collects the prices (or one margin) and stages the card.
+    $s = golpos_session($sessionId);
+    $s['bill_await'] = ['vendor' => $vendor, 'image' => $imagePath,
+                        'lines' => $lines, 'total' => $total, 'at' => date('c')];
+    golpos_save_session($sessionId, $s);
+    $ask = [$head];
+    if ($matched > 0) {
+        $ask[] = $matched . ' line' . ($matched === 1 ? '' : 's') . ' matched your catalog.';
+    }
+    $ask[] = 'New on this bill — I need a shelf price for each before the bill can stage (a price is never guessed from a cost):';
+    foreach ($newLines as $l) {
+        $ask[] = '• ' . $l['name'] . ' — ' . $l['qty'] . ' × cost ' . $money($l['unit_cost'])
+            . ($l['barcode'] !== '' ? ' · barcode ' . $l['barcode'] : '');
+    }
+    $ask[] = 'Reply with the prices (e.g. "' . $newLines[0]['name'] . ' '
+        . number_format((float)$newLines[0]['unit_cost'] * 1.5, 2) . '") or one margin for all '
+        . '("40% margin on all") — the whole bill then stages as one card. Say "cancel" to drop the bill.';
+    return ['reply' => implode("\n", $ask)];
+}
+
+// Execute a staged bill card: creates first (so receives can land), the
+// purchase record once, receives through the one receive path, matched
+// cost refresh. Returns what landed and what did not, by name — the
+// caller composes the report from exactly this.
+function golpos_execute_bill(array $card): array {
+    $created = []; $received = []; $failed = []; $landed = [];
+    $skuOf = []; // line index -> sku that receives its stock
+    foreach (($card['lines'] ?? []) as $i => $l) {
+        if (empty($l['new'])) { $skuOf[$i] = (string)($l['sku'] ?? ''); continue; }
+        $res = golpos_create_product([
+            'name' => (string)$l['name'], 'price' => (float)($l['price'] ?? 0),
+            'cost' => (float)($l['unit_cost'] ?? 0), 'barcode' => (string)($l['barcode'] ?? ''),
+            'category' => 'Counter', 'stock' => 0,
+        ]);
+        if (isset($res['error'])) {
+            $failed[] = ['name' => (string)$l['name'], 'reason' => (string)$res['error']];
+            $landed[$i] = false;
+            continue;
+        }
+        $p = $res['product'];
+        $skuOf[$i] = (string)$p['sku'];
+        $created[] = ['name' => (string)$p['name'], 'price' => (float)$p['price'],
+                      'cost' => (float)($l['unit_cost'] ?? 0), 'qty' => (int)$l['qty'],
+                      'line' => $i, 'received' => false, 'after' => null];
+    }
+    foreach (($card['lines'] ?? []) as $i => $l) {
+        if (isset($landed[$i])) { continue; } // its create already failed
+        $sku = $skuOf[$i] ?? '';
+        $res = $sku !== '' ? golpos_receive_stock($sku, (int)$l['qty']) : null;
+        if ($res === null) {
+            $failed[] = ['name' => (string)$l['name'],
+                         'reason' => !empty($l['new'])
+                             ? 'added to the catalog, but its stock could not be received.'
+                             : 'its stock could not be received.'];
+            $landed[$i] = false;
+            continue;
+        }
+        $landed[$i] = true;
+        if (!empty($l['new'])) {
+            foreach ($created as $ci => $c) {
+                if ($c['line'] === $i) {
+                    $created[$ci]['received'] = true;
+                    $created[$ci]['after'] = $res['after'];
+                }
+            }
+        } else {
+            $received[] = ['name' => $res['name'], 'qty' => (int)$l['qty'],
+                           'before' => $res['before'], 'after' => $res['after']];
+        }
+    }
+    // A matched line's bill cost refreshes the stored cost when the record
+    // carries one (standalone catalog; in link mode MR.STORE keeps its own
+    // cost from its own bill lane and the sync never writes cost back).
+    if (!golpos_link_on()) {
+        $cat = golpos_catalog();
+        $dirty = false;
+        foreach (($card['lines'] ?? []) as $i => $l) {
+            if (!empty($l['new']) || empty($landed[$i])) { continue; }
+            foreach ($cat['products'] as $pi => $p) {
+                if ((string)($p['sku'] ?? '') === (string)($l['sku'] ?? '')
+                    && array_key_exists('cost', $p)
+                    && abs((float)$p['cost'] - (float)$l['unit_cost']) > 0.0001) {
+                    $cat['products'][$pi]['cost'] = (float)$l['unit_cost'];
+                    $dirty = true;
+                }
+                if ((string)($p['sku'] ?? '') === (string)($l['sku'] ?? '')) { break; }
+            }
+        }
+        if ($dirty) { golpos_save_catalog($cat); }
+    }
+    $recLines = [];
+    foreach (($card['lines'] ?? []) as $i => $l) {
+        $recLines[] = ['sku' => $skuOf[$i] ?? null, 'name' => (string)$l['name'],
+                       'qty' => (int)$l['qty'], 'unit_cost' => (float)$l['unit_cost'],
+                       'line_total' => (float)$l['line_total'],
+                       'new' => !empty($l['new']),
+                       'price' => isset($l['price']) && is_numeric($l['price']) ? (float)$l['price'] : null,
+                       'barcode' => (string)($l['barcode'] ?? ''),
+                       'landed' => !empty($landed[$i])];
+    }
+    $purchase = golpos_record_purchase([
+        'vendor' => (string)($card['vendor'] ?? ''), 'image' => (string)($card['image'] ?? ''),
+        'lines' => $recLines, 'total' => (float)($card['total'] ?? 0),
+    ]);
+    return ['created' => $created, 'received' => $received, 'failed' => $failed,
+            'purchase' => $purchase];
+}
+
 // --- the sheet PIN gate -------------------------------------------------------
 // Admin executions from a register sheet (Add Product today; the same
 // gate serves any sheet) run the chat gate's own rules on the chat's own

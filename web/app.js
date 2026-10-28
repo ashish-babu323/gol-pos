@@ -651,6 +651,18 @@ function chatCard(card) {
   } else if (card.type === 'stock_receive') {
     body = `<div class="sc-what">Stock received — ${esc(card.name)} · ${card.qty}</div>` +
       `<div class="sc-line">MR.STORE stock goes up when you confirm</div>`;
+  } else if (card.type === 'bill') {
+    // The whole bill on one card: matched lines receive stock; NEW lines
+    // are badged and show the shelf price the owner gave next to the
+    // bill's cost — the two numbers never blur.
+    const lineHtml = (card.lines || []).map(l => {
+      const qtyCost = `${l.qty} × cost ${money(l.unit_cost)}`;
+      return l.new
+        ? `<div class="sc-line"><span class="sc-newtag">NEW</span>${esc(l.name)} — ${qtyCost} · shelf ${money(l.price)}${l.barcode ? ' · barcode ' + esc(l.barcode) : ''}</div>`
+        : `<div class="sc-line">${esc(l.name)} — ${qtyCost}</div>`;
+    }).join('');
+    body = `<div class="sc-what">Bill${card.vendor ? ' — ' + esc(card.vendor) : ''} · ${money(card.total)}</div>${lineHtml}` +
+      (card.image ? `<img src="${card.image}" alt="Bill photo">` : '');
   } else if (card.type === 'photo_read') {
     const found = card.regions === null || card.regions === undefined
       ? 'SAM gave no read on this photo'
@@ -676,7 +688,11 @@ async function sendPhoto(file, promptText) {
   chatMsg('📷 Photo sent' + (promptText ? ' — "' + promptText + '"' : ''), 'me');
   const fd = new FormData();
   fd.append('photo', file);
+  // The session rides along: a bill's price wait waits in this session,
+  // and the owner's chat answers complete it here.
+  fd.append('session', SESSION_ID);
   if (promptText) { fd.append('prompt', promptText); }
+  if (/\b(bill|invoice)\b/i.test(promptText || '')) { fd.append('mode', 'bill'); }
   const res = await fetch('../server/photo.php', { method: 'POST', body: fd });
   const r = await res.json();
   if (r.reply) { chatMsg(r.reply, 'gol'); }

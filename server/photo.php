@@ -11,6 +11,10 @@
 //
 // If SAM does not answer, the photo still stages with regions = null and an
 // honest note — the lane degrades gracefully, the register never breaks.
+//
+// A photo the owner marks as a bill (prompt "bill" / "invoice", or mode=bill)
+// takes the bill branch instead: Spark reads the printed lines and the bill
+// lane matches them to the catalog (see golpos_bill_process in store.php).
 
 declare(strict_types=1);
 require __DIR__ . '/store.php';
@@ -47,6 +51,31 @@ $imagePath = 'uploads/photos/' . $file;
 
 $prompt = trim((string)($_POST['prompt'] ?? ''));
 if ($prompt === '') { $prompt = 'product'; }
+
+// The chat session rides along so a bill's price wait (below) waits in
+// the SAME session the owner's chat answers in.
+$sessionId = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($_POST['session'] ?? ''));
+if ($sessionId === '') { $sessionId = 'anon'; }
+
+// A vendor bill is a different read from a product photo: Spark reads the
+// printed lines (name / qty / unit cost / barcode) and the bill lane
+// (store.php golpos_bill_process) matches them to the catalog — matched
+// lines stage at once as one bill card; new lines wait in the session on
+// the owner's shelf prices, never on invented ones. If the read fails,
+// the photo is saved and the reply says so honestly — nothing staged.
+$isBill = (string)($_POST['mode'] ?? '') === 'bill'
+    || preg_match('/(bill|invoice|बिल)/iu', $prompt) === 1;
+if ($isBill) {
+    $read = golpos_meta_read_bill('data:' . $mime . ';base64,' . base64_encode($bytes));
+    if ($read === null) {
+        pout(['reply' => "Photo saved — my eyes didn't answer just now, so there's no bill read on it. "
+            . 'Nothing was staged or entered; try the bill photo again.']);
+    }
+    $r = golpos_bill_process($read, $imagePath, $sessionId);
+    $out = ['reply' => $r['reply']];
+    if (isset($r['card'])) { $out['card'] = $r['card']; }
+    pout($out);
+}
 
 $sam = golpos_meta_sam('data:' . $mime . ';base64,' . base64_encode($bytes), $prompt);
 
