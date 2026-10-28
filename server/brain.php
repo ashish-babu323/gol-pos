@@ -114,6 +114,21 @@ $S = [
     'np' => '%s ko mulya pahile nai %s chha.',
     'hi' => '%s ka daam pehle se hi %s hai.',
     'dev' => '%s को मूल्य पहिल्यै %s छ।'],
+  'price_ask' => [
+    'en' => '%s — what should the new price be? Tell me the price and I\'ll stage the card.',
+    'np' => '%s ko naya mulya kati rakhne? Mulya bhannus, card stage garchhu.',
+    'hi' => '%s ka naya daam kitna rakhoon? Daam bataiye, card stage karta hoon.',
+    'dev' => '%s को नयाँ मूल्य कति राख्ने? मूल्य भन्नुस्, कार्ड स्टेज गर्छु।'],
+  'price_ask_which' => [
+    'en' => 'Which price for %s — %s or %s? I won\'t guess.',
+    'np' => '%s ko mulya kun — %s ki %s? Ma anuman gardina.',
+    'hi' => '%s ka daam kaun sa — %s ya %s? Main andaza nahi lagaunga.',
+    'dev' => '%s को मूल्य कुन — %s कि %s? म अनुमान गर्दिनँ।'],
+  'price_ask_which_plain' => [
+    'en' => 'Which price — %s or %s? I won\'t guess.',
+    'np' => 'Kun mulya — %s ki %s? Ma anuman gardina.',
+    'hi' => 'Kaun sa daam — %s ya %s? Main andaza nahi lagaunga.',
+    'dev' => 'कुन मूल्य — %s कि %s? म अनुमान गर्दिनँ।'],
   'card_staged' => [
     'en' => 'Card ready — say "gol" to confirm.',
     'np' => 'Card baneko chhu — pakka garna "gol" bhannus.',
@@ -736,6 +751,186 @@ function golpos_week_facts(string $shop, array $products): array {
     return [implode("\n", $lines), $figures, $weekTx, $weekGross, $today, $monthGross, $monthTx, $monthCash, $monthCard];
 }
 
+// --- number MEANING: a price, a count, or part of a name ----------------------
+// A number in the owner's sentence is one of three things: a PRICE, a COUNT,
+// or part of a product's NAME (Coca-Cola 20oz). Reading the first number in
+// the message as the price staged "$20.00" when the owner said "change the
+// price of coca cola 20 oz to $3" — the size was read as money (owner-caught,
+// Oct 28). These extractors are the fix, shared by every numeric intent, and
+// they never guess: ambiguous or absent comes back as a status and the lane
+// ASKS. The rules, in order:
+//   1. The matched product is consumed FIRST: its catalog name, wherever it
+//      literally appears in the message, is blanked before any number is
+//      read — extraction runs on what remains.
+//   2. A number glued to a size unit (20 oz, 12oz, 16.9oz, 4pk, 500ml) is
+//      part of a name — blanked; never money, never a count.
+//   3. An explicit $ amount is money and always wins as the price. A $ amount
+//      followed by "bata/from" is the FROM price of a change, not a
+//      candidate. Two different live candidates = ambiguity — ask.
+//   4. Without $, the price is the number bound to a price word (after
+//      to/at/price/mulya/dam/daam, or before the postposition ma), or the
+//      one candidate left standing.
+// A count is bound to its own shapes instead: a count classifier (ota/vata/
+// वटा/pcs), a receive verb (received/got), or the item word it counts.
+function golpos_blank(string $s, array $spans): string {
+    usort($spans, fn($a, $b) => $b['start'] <=> $a['start']);
+    foreach ($spans as $sp) {
+        $s = substr_replace($s, str_repeat(' ', $sp['len']), $sp['start'], $sp['len']);
+    }
+    return $s;
+}
+// Spans that can never carry a price or a count: the product's own name and
+// every size-glued number. Returns [working string, spans blanked in it].
+function golpos_mask_sizes(string $work, ?array $product): string {
+    $spans = [];
+    if ($product && !empty($product['name']) &&
+        preg_match('/' . preg_quote((string)$product['name'], '/') . '/iu', $work, $mm, PREG_OFFSET_CAPTURE)) {
+        $spans[] = ['start' => $mm[0][1], 'len' => strlen($mm[0][0])];
+    }
+    if (preg_match_all('/\d+(?:\.\d+)?[\s-]*(?:fl\s*oz|oz|ml|ltr|litres?|liters?|l|gm|g|kg|lb|pk|packs?|count|ct)\b/iu',
+                       $work, $um, PREG_OFFSET_CAPTURE)) {
+        foreach ($um[0] as $u) { $spans[] = ['start' => $u[1], 'len' => strlen($u[0])]; }
+    }
+    return golpos_blank($work, $spans);
+}
+// Every number token left standing: value, byte span, and whether it wore a $.
+function golpos_num_spans(string $work): array {
+    $out = [];
+    if (preg_match_all('/\$\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)/', $work, $m, PREG_OFFSET_CAPTURE)) {
+        foreach ($m[0] as $i => $full) {
+            $dollar = ($m[1][$i][1] ?? -1) >= 0;
+            $out[] = ['value' => (float)($dollar ? $m[1][$i][0] : $m[2][$i][0]),
+                      'start' => $full[1], 'len' => strlen($full[0]), 'dollar' => $dollar];
+        }
+    }
+    return $out;
+}
+function golpos_word_before(string $s, int $start): string {
+    if (preg_match('/([^\s:;,]+)\s*$/u', substr($s, 0, $start), $m)) {
+        return mb_strtolower(trim($m[1], "\"'"));
+    }
+    return '';
+}
+function golpos_word_after(string $s, int $end): string {
+    if (preg_match('/^\s*([^\s:;,]+)/u', substr($s, $end), $m)) {
+        return mb_strtolower(trim($m[1], "\"'"));
+    }
+    return '';
+}
+// The price the owner actually said: ['status' => ok|none|ambiguous, ...].
+function golpos_extract_price(string $msg, ?array $product): array {
+    $work = golpos_mask_sizes(golpos_norm_digits($msg), $product);
+    $nums = golpos_num_spans($work);
+    if (!$nums) { return ['status' => 'none']; }
+    $fromWords = ['bata', 'बाट', 'from'];
+    $bindWords = ['to', 'at', 'price', 'mulya', 'dam', 'daam', 'दाम', 'मूल्य', '=', 'rs', 'rs.'];
+    $classifiers = ['ota', 'vata', 'वटा', 'pcs', 'pieces', 'piece'];
+    $dollars = []; $bound = []; $all = [];
+    foreach ($nums as $n) {
+        $after = golpos_word_after($work, $n['start'] + $n['len']);
+        if (in_array($after, $fromWords, true)) { continue; } // "2.19 bata 2.50" — the FROM price
+        if (in_array($after, $classifiers, true)) { continue; } // "20 ota" — a count, never money
+        $all[] = $n['value'];
+        if ($n['dollar']) { $dollars[] = $n['value']; continue; }
+        $before = golpos_word_before($work, $n['start']);
+        if (in_array($before, $bindWords, true) || $after === 'ma' || $after === 'मा') {
+            $bound[] = $n['value'];
+        }
+    }
+    $distinct = fn($a) => array_values(array_unique(array_map(fn($v) => round($v, 2), $a)));
+    $d = $distinct($dollars);
+    if (count($d) === 1) { return ['status' => 'ok', 'value' => $d[0]]; }
+    if (count($d) > 1) { return ['status' => 'ambiguous', 'candidates' => $d]; }
+    $b = $distinct($bound);
+    if (count($b) === 1) { return ['status' => 'ok', 'value' => $b[0]]; }
+    if (count($b) > 1) { return ['status' => 'ambiguous', 'candidates' => $b]; }
+    $a = $distinct($all);
+    if (count($a) === 1) { return ['status' => 'ok', 'value' => $a[0]]; }
+    if (count($a) > 1) { return ['status' => 'ambiguous', 'candidates' => $a]; }
+    return ['status' => 'none'];
+}
+// The count the owner actually said ("coke 20 ota ayo" -> 20), or null when
+// no number is bound as a count. Money is never a count; a size is never a
+// count; an unbound tie returns null rather than a guess.
+function golpos_extract_count(string $msg, ?array $product): ?float {
+    $work = golpos_mask_sizes(golpos_norm_digits($msg), $product);
+    if (preg_match_all('/\$\s*\d+(?:\.\d+)?/', $work, $dm, PREG_OFFSET_CAPTURE)) {
+        $spans = [];
+        foreach ($dm[0] as $d) { $spans[] = ['start' => $d[1], 'len' => strlen($d[0])]; }
+        $work = golpos_blank($work, $spans);
+    }
+    $nums = golpos_num_spans($work);
+    if (!$nums) { return null; }
+    $classifiers = ['ota', 'vata', 'वटा', 'pcs', 'pieces', 'piece'];
+    $verbs = ['received', 'receive', 'got', 'restock', 'restocked', 'ayo', 'aayo', 'आयो'];
+    $bindWords = ['to', 'at', 'price', 'mulya', 'dam', 'daam', 'दाम', 'मूल्य', '='];
+    $itemWords = [];
+    if ($product) {
+        foreach (preg_split('/[^a-z0-9]+/u', mb_strtolower((string)$product['name'])) as $w) {
+            if ($w !== '') { $itemWords[] = $w; }
+        }
+        foreach (($product['aliases'] ?? []) as $a) { $itemWords[] = mb_strtolower((string)$a); }
+    }
+    $byClass = []; $byVerb = []; $byItem = []; $rest = [];
+    foreach ($nums as $n) {
+        $before = golpos_word_before($work, $n['start']);
+        $after = golpos_word_after($work, $n['start'] + $n['len']);
+        if ($after === 'ma' || $after === 'मा' || in_array($before, $bindWords, true)) { continue; }
+        if (in_array($after, $classifiers, true)) { $byClass[] = $n['value']; continue; }
+        if (in_array($before, $verbs, true)) { $byVerb[] = $n['value']; continue; }
+        if ($after !== '' && in_array($after, $itemWords, true)) { $byItem[] = $n['value']; continue; }
+        $rest[] = $n['value'];
+    }
+    foreach ([$byClass, $byVerb, $byItem, $rest] as $pool) {
+        $d = array_values(array_unique(array_map(fn($v) => round($v, 2), $pool)));
+        if (count($d) === 1) { return $d[0]; }
+        if (count($d) > 1) { return null; }
+    }
+    return null;
+}
+// A new item's name from the owner's words: command/price words and the one
+// price token come out; the item's own sizes (12oz, 4pk) stay — they are
+// part of its name.
+function golpos_item_name_from(string $msg, ?float $price): string {
+    $drop = ['add', 'new', 'item', 'product', 'naya', 'saman', 'thap', 'thapnus', 'thapdinu',
+             'jodo', 'price', 'mulya', 'dam', 'daam', 'ma', 'ho', 'for', 'at', 'to', 'set',
+             'gara', 'gar', 'rakha', 'please', 'plz', 'ota', 'vata', 'pcs', 'pieces',
+             'नयाँ', 'नया', 'सामान', 'थप', 'थप्नुस्', 'मूल्य', 'दाम', 'मा', 'गर', 'राख'];
+    $out = []; $dropped = false;
+    foreach (preg_split('/\s+/u', trim(golpos_norm_digits($msg))) as $tok) {
+        $clean = trim((string)preg_replace('/[\p{P}\p{S}]+/u', '', (string)$tok));
+        if ($clean === '') { continue; }
+        if ($price !== null && !$dropped && is_numeric($clean)
+            && abs((float)$clean - $price) < 0.005) {
+            $dropped = true; continue; // the price token itself
+        }
+        if (in_array(mb_strtolower($clean), $drop, true)) { continue; }
+        $out[] = $clean;
+    }
+    return trim(implode(' ', $out));
+}
+// A name's comparison key: case, punctuation and size-gluing normalized, so
+// "Coca-Cola 20oz", "coca cola 20 oz" and "CocaCola 20oz" are the same name
+// — while "AAA" never collapses into "AA".
+function golpos_name_key(string $s): string {
+    $s = mb_strtolower(golpos_norm_digits($s));
+    $s = preg_replace('/(\d)(oz|pk|ct|ml|kg|gm|lb)\b/u', '$1 $2', $s);
+    $s = preg_replace('/\bpk\b/u', 'pack', (string)$s);
+    $s = preg_replace('/[\p{P}\p{S}]+/u', ' ', (string)$s);
+    return trim((string)preg_replace('/\s+/u', ' ', (string)$s));
+}
+function golpos_names_equal(string $a, string $b): bool {
+    $ka = golpos_name_key($a); $kb = golpos_name_key($b);
+    if ($ka === $kb) { return true; }
+    return str_replace(' ', '', $ka) === str_replace(' ', '', $kb);
+}
+// Stage the one new-item card shape every lane uses.
+function golpos_stage_new_item(string $name, float $price): void {
+    $card = golpos_stage(['type' => 'new_item', 'name' => $name, 'price' => $price,
+                          'category' => 'Counter', 'barcode' => '']);
+    out(['reply' => t('card_staged'), 'card' => $card]);
+}
+
 // --- the dispatch -------------------------------------------------------------
 // Every intent below runs through this one function so the access layer (the
 // boot code at the bottom of this file) can replay the owner's original
@@ -1029,12 +1224,10 @@ if (golpos_link_on() && preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khata
         $r = resolve_item($products, $msg);
         if (!empty($r['one'])) {
             $p = $r['one'];
-            $rest = preg_replace('/\b\d+(?:\.\d+)?\s*(oz|pk|lb|ml|ltr|l|g|kg)\b/iu', ' ', $msg);
-            $qty = null;
-            if (preg_match_all('/(\d+(?:\.\d+)?)/', golpos_norm_digits((string)$rest), $nm2)) {
-                $nums = array_map('floatval', $nm2[1]);
-                $qty = end($nums);
-            }
+            // The COUNT the owner said, by the shared meaning rules — never
+            // the last number standing: in "12 ota lays ayo, $1.19 ma" the
+            // count is 12 and the money stays out of the card entirely.
+            $qty = golpos_extract_count($msg, $p);
             if ($qty !== null && $qty > 0) {
                 $card = golpos_stage(['type' => 'stock_receive',
                                       'name' => $p['mr_name'] ?? $p['name'], 'qty' => $qty]);
@@ -1140,16 +1333,12 @@ if (preg_match('/(kati bikri|kitni bikri|aaja ko|aaj ka|aaja kati|becheu|आज|
 // executes only on "gol". With no price in the message Gol asks for it —
 // a price is never invented.
 if (preg_match('/(new\s+(item|product)|naya\s+(saman|item)|नयाँ|नया\s+सामान)/iu', $msg)) {
-    $price = null; $digits = '';
-    if (preg_match('/(\d+(?:\.\d{1,2})?)/', golpos_norm_digits($msg), $mm)) {
-        $price = (float)$mm[1]; $digits = $mm[1];
+    $ex = golpos_extract_price($msg, null);
+    if ($ex['status'] === 'ambiguous') {
+        out(['reply' => t('price_ask_which_plain', money($ex['candidates'][0]), money($ex['candidates'][1]))]);
     }
-    $name = preg_replace('/(new\s+(item|product)|naya\s+(saman|item)|नयाँ\s+सामान|नयाँ|नया\s+सामान)/iu', ' ', $msg);
-    $name = preg_replace('/(add|thap|थप|थप्नुस्|jodo|price|mulya|मूल्य|दाम|daam|dam)/iu', ' ', (string)$name);
-    if ($digits !== '') { $name = str_replace($digits, ' ', (string)$name); }
-    $name = preg_replace('/[\p{P}\p{S}]+/u', ' ', (string)$name);
-    $name = preg_replace('/\b(ma|मा|ho|for|at)\b/iu', ' ', (string)$name);
-    $name = trim(preg_replace('/\s+/u', ' ', (string)$name));
+    $price = $ex['status'] === 'ok' ? $ex['value'] : null;
+    $name = golpos_item_name_from($msg, $price);
     if ($name !== '') {
         if ($price === null) { out(['reply' => t('new_ask_price', $name)]); }
         $card = golpos_stage(['type' => 'new_item', 'name' => $name, 'price' => $price,
@@ -1159,12 +1348,21 @@ if (preg_match('/(new\s+(item|product)|naya\s+(saman|item)|नयाँ|नय�
 }
 
 // --- price change (staged) ---------------------------------------------------
-if (preg_match('/(\d+(?:\.\d{1,2})?)/', golpos_norm_digits($msg), $m) &&
-    preg_match('/(mulya|price|dam|daam|मूल्य|दाम).*(gara|set|badha|badal|rakha|change|badlo|karo|गर|राख|बनाउ|बदल)|(gara|set|change|badlo|गर|बनाउ).*(mulya|price|dam|daam|मूल्य|दाम)/iu', $msg)) {
+if (preg_match('/(mulya|price|dam|daam|मूल्य|दाम).*(gara|set|badha|badal|rakha|change|badlo|karo|गर|राख|बनाउ|बदल)|(gara|set|change|badlo|गर|बनाउ).*(mulya|price|dam|daam|मूल्य|दाम)/iu', $msg) ||
+    preg_match('/(price|mulya|dam|daam|मूल्य|दाम).*\bto\s*(?:\$\s*\d|\d+\.\d{1,2})/iu', golpos_norm_digits($msg))) {
     $r = resolve_item($products, $msg);
     if (!empty($r['one'])) {
         $p = $r['one'];
-        $new = (float)$m[1];
+        // The price the owner SAID, by the meaning rules — the product is
+        // matched first, its size is never money, and an explicit $ amount
+        // always wins. No readable price, or two live candidates: Gol asks
+        // and stages nothing.
+        $ex = golpos_extract_price($msg, $p);
+        if ($ex['status'] === 'ambiguous') {
+            out(['reply' => t('price_ask_which', $p['name'], money($ex['candidates'][0]), money($ex['candidates'][1]))]);
+        }
+        if ($ex['status'] !== 'ok') { out(['reply' => t('price_ask', $p['name'])]); }
+        $new = $ex['value'];
         if ($new === (float)$p['price']) { out(['reply' => t('price_same', $p['name'], money($new))]); }
         $card = golpos_stage(['type' => 'price_change', 'sku' => $p['sku'], 'name' => $p['name'],
                               'old_price' => $p['price'], 'new_price' => $new]);
@@ -1201,19 +1399,49 @@ if (preg_match('/(kati|kitna|kitne|price|mulya|dam|daam|how much|मूल्य
 }
 
 // --- add to cart ---------------------------------------------------------------
-if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप|चाहियो)/iu', $msg)) {
+if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप|चाहियो)/iu', $msg) ||
+    preg_match('/\d+(?:\.\d+)?\s*(ota|vata|वटा)\b/iu', golpos_norm_digits($msg))) {
     $r = resolve_item($products, $msg);
+    $ex = golpos_extract_price($msg, null);
+    // A price in the sentence makes it a CATALOGING sentence. Ringing never
+    // needs a price — the register knows it — so when the name the owner
+    // said is not exactly a known item's own name or alias, the item is
+    // NEW, however its words score against the shelf: "add sunrise energy
+    // drink 12oz at $3.49" is not a confused Red Bull, and "AAA batteries"
+    // is not the AA pack.
+    if ($ex['status'] === 'ok' && (!empty($r['one']) || !empty($r['many']))) {
+        $candName = golpos_item_name_from($msg, $ex['value']);
+        $exact = false;
+        foreach ((!empty($r['one']) ? [$r['one']] : $r['many']) as $cp) {
+            foreach (array_merge([$cp['name']], $cp['aliases'] ?? []) as $nm) {
+                if (golpos_names_equal((string)$nm, $candName)) { $exact = true; break 2; }
+            }
+        }
+        if (!$exact && $candName !== '') { golpos_stage_new_item($candName, $ex['value']); }
+    }
     if (!empty($r['one'])) {
-        out(['reply' => t('added_cart', $r['one']['name'], money((float)$r['one']['price'])),
-             'action' => ['type' => 'add', 'sku' => $r['one']['sku']]]);
+        // A count rides along only when the owner bound one ("2 ota coke"
+        // -> 2). The product's SIZE is never a quantity: "coke 20oz thap"
+        // adds one 20oz Coke.
+        $qty = golpos_extract_count($msg, $r['one']);
+        $n = $qty !== null && $qty > 0 ? (int)floor($qty) : 1;
+        out(['reply' => ($n > 1 ? $n . ' × ' : '') . t('added_cart', $r['one']['name'], money((float)$r['one']['price'])),
+             'action' => ['type' => 'add', 'sku' => $r['one']['sku'], 'qty' => $n]]);
     }
     if (!empty($r['many'])) {
         $list = implode(', ', array_map(fn($p) => $p['name'] . ' (' . money((float)$p['price']) . ')', $r['many']));
         out(['reply' => t('which_add', $list)]);
     }
-    // unknown item -> offer a staged new-item card when a price is present
-    if (preg_match('/(\d+(?:\.\d{1,2})?)/', $msg, $m)) {
-        out(['reply' => t('new_card_offer', money((float)$m[1]))]);
+    // unknown item + a price the owner actually said -> the new-item card
+    // itself, staged (name keeps its sizes; the price is the $ amount or
+    // the bound number, never a size). Two candidate prices -> ask.
+    if ($ex['status'] === 'ambiguous') {
+        out(['reply' => t('price_ask_which_plain', money($ex['candidates'][0]), money($ex['candidates'][1]))]);
+    }
+    if ($ex['status'] === 'ok') {
+        $name = golpos_item_name_from($msg, $ex['value']);
+        if ($name !== '') { golpos_stage_new_item($name, $ex['value']); }
+        out(['reply' => t('new_card_offer', money($ex['value']))]);
     }
     out(['reply' => t('not_found_add')]);
 }

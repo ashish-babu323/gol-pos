@@ -162,6 +162,24 @@ function resolve_item(array $products, string $text): array {
             if ($hit) { $aliasHits[] = $p; break; }
         }
     }
+    // A size the owner NAMED picks between siblings: "coke 20 ota ayo" is
+    // the 20oz Coke, not the 12pk that happens to own the bare "coke"
+    // alias — the number identifies the product (and, classifier-bound,
+    // doubles as its count). The pick counts only when exactly one product
+    // carries that size AND shares a non-size name word with the text, so a
+    // price or a count can never impersonate a size.
+    $sized = golpos_size_pick($products, $t);
+    if ($sized !== null) {
+        if (count($aliasHits) === 0) { return ['one' => $sized]; }
+        if (count($aliasHits) === 1 && $aliasHits[0]['sku'] !== $sized['sku']) {
+            return ['one' => $sized];
+        }
+        if (count($aliasHits) > 1) {
+            foreach ($aliasHits as $h) {
+                if ($h['sku'] === $sized['sku']) { return ['one' => $sized]; }
+            }
+        }
+    }
     if (count($aliasHits) === 1) { return ['one' => $aliasHits[0]]; }
     if (count($aliasHits) > 1) { return ['many' => $aliasHits]; }
     foreach ($products as $p) {
@@ -179,6 +197,41 @@ function resolve_item(array $products, string $text): array {
     $best = array_values(array_filter($hits, fn($h) => $h['s'] === $top));
     if (count($best) === 1) { return ['one' => $best[0]['p']]; }
     return ['many' => array_map(fn($h) => $h['p'], $best)];
+}
+
+// The product a named size points at, or null. Sizes are read off product
+// names (20oz, 12pk, 12 Count); the text names a size glued/spaced (20oz,
+// 20 oz) or as a bare number equal to a size's numeric part (20, for the
+// 20oz bottle). Exactly one carrier + a shared non-size word, or no pick.
+function golpos_size_pick(array $products, string $t): ?array {
+    $canon = fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
+    $sizeRe = '/(\d+(?:\.\d+)?)\s*(?:fl\s*oz|oz|ml|ltr|litres?|liters?|l|gm|g|kg|lb|pk|packs?|count|ct)\b/iu';
+    $named = [];
+    if (preg_match_all($sizeRe, $t, $sm)) {
+        foreach ($sm[1] as $v) { $named[] = $canon($v); }
+    }
+    if (!$named && preg_match_all('/(?<![\d.])(\d+(?:\.\d+)?)(?![\d.])/u', $t, $bm)) {
+        foreach ($bm[1] as $v) { $named[] = $canon($v); }
+    }
+    if (!$named) { return null; }
+    $textWords = array_filter(preg_split('/[^a-z0-9]+/u', $t) ?: [], fn($w) => $w !== '');
+    $found = [];
+    foreach ($products as $p) {
+        $sizes = [];
+        if (preg_match_all($sizeRe, mb_strtolower($p['name']), $pm)) {
+            foreach ($pm[1] as $v) { $sizes[] = $canon($v); }
+        }
+        if (!array_intersect($named, $sizes)) { continue; }
+        $words = array_filter(preg_split('/[^a-z0-9]+/u', mb_strtolower($p['name'])) ?: [],
+                              fn($w) => $w !== '' && !is_numeric($w));
+        foreach (($p['aliases'] ?? []) as $a) {
+            foreach (preg_split('/\s+/u', mb_strtolower((string)$a)) ?: [] as $w) {
+                if ($w !== '') { $words[] = $w; }
+            }
+        }
+        if (array_intersect($words, $textWords)) { $found[] = $p; }
+    }
+    return count($found) === 1 ? $found[0] : null;
 }
 
 // The day-close record: closing the day freezes the summary into ONE saved
