@@ -1675,3 +1675,112 @@ NOT done / unproven: film-distance readability of the value labels
 is the Oct 30 device pass. The MR.STORE store-Gol chat has a
 different renderer and does NOT draw these payloads yet — a named
 follow-up; the payload contract is ready for it.
+
+## The Pay Ask lane (Oct 28, 2026) — commit fa8d795, stamps d6a6e13
+
+Owner directives (Oct 28, 14:30–14:34 ET): the employee asks in HER
+OWN Gol session "can I get my pay?" → Gol computes her hours from the
+real record × her roster rate → shows HER the math → her confirm sends
+a staged request UP to the owner (hours + rate + amount + period) →
+owner approves/declines on the card → approval books the pay ONCE.
+Plus the owner-chat rate change ("Pranisha ko pay 13 bana") shipping
+in the same lane.
+
+THE MAP (recon before build, as ordered):
+- Hours evidence: the register's own unlock journal
+  (data/unlocks.json). Locks were NOT journaled before this build —
+  golpos_lock_session now writes a kind:'lock' event (the ?team feed
+  filters them out; they are evidence, not feed rows). Stint = her
+  unlock → earliest of (her lock · any later unlock · that day's
+  close by business date), SAME-DAY enders only: a next-day unlock
+  proves nothing about when she stopped, so the stint is UNENDED —
+  named in her reply, priced zero, never stretched across days (the
+  battery caught the stretch: 15h + 17.45h phantom days; fixed before
+  ship). A stint still open today with her session live counts to
+  now and says so.
+- Rate home: NO rate existed anywhere in register code. MR.STORE's
+  Settings roster ($11/hr at Lucky) is not bridge-readable today (no
+  bridge lib exposes a roster). PINNED TRUTH v1, BOTH modes: the
+  register's local people record — new `rate` + `rate_history[]`
+  ({rate, from}); a bare rate seeds from the record's `created`.
+  Bridge read of the Settings roster is the named follow-up.
+- Booking path: NO bridge-reachable pay write exists (mrstore.php
+  libs: catalog/stock/customers/calnotes/team-chat/bills only;
+  store-api/staff-pay-once.php exists but is an unwired endpoint).
+  Approval therefore books REGISTER-side: the request record in
+  data/pay_asks.json is the pay-ledger entry, its id the booking
+  reference. The Books salary write is the named follow-up — no write
+  path was invented.
+
+SHIPPED:
+- Her ask (cashier domain, NOT admin-gated; credit_attach precedent):
+  EN/NP/HI/Dev shapes ("can I get my pay", "mero talab?", "talab
+  paincha?", ...). Open period = day after the last paid period,
+  refined by covered_until interval accounting: a paid request
+  covers time up to the latest stint end it priced, so hours she
+  works later that same day price in the NEXT period — never lost,
+  never double-counted. Day-by-day lines shown to her; unrated days
+  stage NOTHING and are named (v1 honesty); a correction ("ma
+  mangalbar 4 ghanta thiye") appends VERBATIM to her staged card and
+  rides to the owner's card — evidenced hours never change.
+- Her confirm ("gol") mints ONE pending request per employee
+  (enforced at staging and at execution); a second ask returns the
+  pending one's status. Request record: employee, period, per-day
+  lines, per-rate segments, hours, amount, corrections[], unended[],
+  covered_until, status, created/decided_at/decided_by/booking_ref/
+  seen.
+- Owner side (no new screen): pending requests ride the greeting
+  team line and the ?team payload (Owner-panel Team mirror,
+  read-only); "pay requests" stages the approve card (headline +
+  period + her correction lines quoted). Approve → paid once (the
+  status check is the lock; a decided request can never re-pay).
+  "decline" (whole-message intent, intercepted before generic
+  cancel) closes it declined; she sees the plain note once in her
+  session. Plain "cancel" clears only the card — the request stays
+  pending.
+- Rate change (admin domain): name + pay word + number; staged card
+  "Pranisha — $11 → $13, from today" (old null renders "no rate on
+  record"); "by $2" phrasing computes old+2 and shows it; cancel
+  writes nothing; confirm appends rate_history effective today —
+  history never rewrites, and a period SPANNING the change splits at
+  the change date on her read and the owner's card alike.
+- Language mirror: pay stems (talab/paincha/jyala/ghanta/mero) added
+  to golpos_lang's NP list — "mero talab paincha?" previously scored
+  zero and Gol answered her in English.
+- Client: chatCard renders pay_send / pay_approve / rate_change;
+  Owner Team block lists waiting pay requests from ?team.
+
+BATTERY (throwaway instance, fixture employees with planted
+journal; 57/57): EN + NP asks → math equals hand-computed session
+hours; SPANNING SPLIT hand-check: Oct 20–22 24.5h @ $11 (8.5 + 8 +
+8-via-close) + Oct 24–25 11.5h @ $13 (6 + 5.5) = $419.00, both segment
+lines shown; correction verbatim on her card AND the owner's card,
+amount unchanged; duplicate ask → pending status, still one record;
+approve → paid with booking_ref = record id, second approve
+impossible (nothing waiting); decline → her next ask opens with the
+declined note once, then a fresh card stages; card-cancel leaves the
+request pending; same-day post-payment stint prices $13.00 in the
+next period and never double-counts; open stint ≈0.5h counts to now,
+post-pay re-ask finds nothing; Rita (no rate) → honest no-rate
+reply, no card; Laxmi's replies never contain Pranisha's figures;
+employee "pay requests" and employee rate-change both stop at the
+PIN gate and write nothing; rate-change cancel leaves roster +
+history untouched; smoke regression unlock → sale → day ask → tasks
+→ lock (journaled) → close all pass.
+
+Restorations: the throwaway (gol-pos-paytest) is deleted after the
+battery; dev + sim data directories are md5-identical before/after
+deploy (code-only ship): dev 887 / $9,178.79, today 0/0, owner's
+admin PIN and people record untouched; sim 3,000 / $57,301.04,
+people/sessions pristine. Lucky/123 production rosters were
+READ-ONLY recon throughout (the $11 figure was never a write
+target).
+
+NOT done / follow-ups (named, not hidden): (i) Books salary write on
+approval — wire store-api/staff-pay-once.php or a bridge pay lib;
+(ii) bridge read of the MR.STORE Settings roster rate (register-local
+record is v1 truth in both modes until then); (iii) link-mode hours
+still come from the register's own journal, like tasks; (iv) an
+unrated day inside an otherwise rated period stages nothing in v1 —
+the reply names the days; partial-send is a v2 decision for the
+owner.
