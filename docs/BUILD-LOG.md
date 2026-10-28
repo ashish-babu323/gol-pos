@@ -898,3 +898,102 @@ One entry per day; the git history carries the same dates.
   reprint rendering the CHOSEN sale (not the last), Reprint Last
   still rendering the newest, empty + failure states plain.
   php -l / node --check clean. Nothing deployed.
+
+## Day 3 (Oct 28) — Bill scan → catalog: the bill adds and updates products (d47a10f)
+
+- Owner's order: "gol le bill scan bata new products add and update
+  garihalcha" — from a vendor bill scan, Gol adds NEW products and
+  updates existing ones, right away. The POS had no bill lane of its
+  own (the parity map carries MR.STORE's as the model); this build
+  lays the lane on the writers that already exist — no second create,
+  no second receive.
+- The read (server/meta.php): **golpos_meta_read_bill** — Spark
+  vision-reads the bill photo into vendor + lines {name, qty,
+  unit_cost, barcode}, following the receipt reader's honesty rules:
+  per-unit costs (an extended amount is divided by its quantity), a
+  code counts only at barcode length (8–14 digits, the barcode
+  doors' discipline), anything unreadable comes back null and is
+  never reconstructed. A bill prints COSTS, never shelf prices.
+- The door (server/photo.php): a photo the owner marks as a bill
+  (prompt "bill" / "invoice", or mode=bill from the client) takes
+  the bill branch instead of SAM; the chat session rides the upload
+  so the price wait waits in the session the owner answers in. A
+  failed read saves the photo and says so — nothing staged.
+- Matching + staging (server/store.php, **golpos_bill_process** —
+  the post-vision seam, callable without a photo): each line is
+  matched by exact name/alias key, then by the shared resolver; a
+  barcode never matches a line UP into the catalog. Duplicate lines
+  merge. All-matched bills stage at once as ONE 'bill' card —
+  today's behavior. Any unmatched line makes the bill a
+  new-product proposal, and a bill NEVER stages half-ready: the
+  whole read waits in the session (**bill_await**, the existing
+  session store — no parallel store), and Gol's reply lists each
+  new item with its bill cost and asks for shelf prices.
+- The price wait (server/brain.php): while bill_await lives and no
+  card is staged, the owner's next answers belong to the bill
+  (golpos_bill_apply_prices). Per-item answers ("dried mango slices
+  3.99") price by name against the unpriced new lines only, using
+  the shared meaning extractors; one margin ("sabai ma 40%
+  margin") prices every unpriced line from its cost, rounded to
+  cents — a line whose cost never read stays unpriced rather than
+  invented. Partial answers are remembered; the re-ask names only
+  what is still missing. "cancel" drops the bill and writes
+  nothing. With prices complete, the full card stages: purchase
+  lines + receives + creates, one "gol" lands everything.
+  Execution of a 'bill' card is PIN-gated at the confirm word,
+  in the same list as stock_receive / new_item.
+- Execution (**golpos_execute_bill**): creates land first via
+  golpos_create_product (so receives can land), the purchase is
+  recorded once via **golpos_record_purchase** (data/purchases.json;
+  each line marked with what actually landed; link mode also rides
+  the link log), every line's stock arrives via
+  golpos_receive_stock — the one receive path — and a matched
+  line's unit cost refreshes the product's stored `cost` when the
+  record carries one (standalone catalog; in link mode MR.STORE
+  keeps its own cost from its own bill lane, and creates/receives
+  route through mrstore_create_product / the bridge receive, as
+  the screen flows do). A create that refuses — a barcode another
+  product already holds — is reported by name in the execution
+  reply while the rest of the bill lands; the reply is composed
+  from the executor's report, never from the card's hopes.
+- The card (web/app.js + styles.css): the bill card lists matched
+  lines as qty × cost; NEW lines carry a green NEW badge with the
+  owner's shelf price beside the bill's cost — the two numbers
+  never blur — plus the barcode when the bill printed one, and the
+  bill photo itself.
+- Verified on throwaway copies only (nothing deployed): PHP
+  battery, 52/52 — the post-vision seam driven directly with
+  canned reads + the brain/API over real HTTP: matcher
+  preconditions (bill-caps name matches; four genuinely-new names
+  read as new); (a) 2 matched + 1 new → ask-for-price reply lists
+  the new item + cost, nothing staged, the read waiting in the
+  session; (b) "sabai ma 40% margin" → card stages complete at
+  $3.36 on a $2.40 cost, total $59.40, "gol" from an unelevated
+  session executes nothing until the PIN create dance replays it —
+  then the purchase records once, matched stock lands with costs
+  refreshed (Coke 1.50 → 1.55, Lays 0.60 → 0.65), and the new
+  product exists with price / cost / stock / barcode; (c) the
+  per-item price path lands at exactly the owner's $3.99; (d) an
+  all-matched bill stages immediately with no ask; (e) a new line
+  whose barcode Pepsi already holds refuses by name in the
+  execution report while the rest of the bill lands and the
+  purchase record marks that line landed=false; (f) cancel at the
+  ask stage writes nothing. Photo endpoint over HTTP: bill mode
+  with no vision key degrades honestly (photo saved, no read,
+  nothing staged), the SAM path untouched. Non-regression: Beat-1
+  exact (6.67/0.53/7.20, $2.80 change), the owner price trap
+  stages $3.00, the access battery's report-ask still earns the
+  PIN demand with no figures. JS battery — the real chatCard
+  under a stub DOM, 8/8: NEW badge only on new lines, shelf price
+  beside cost, barcode shown, bill photo on the card, the
+  price_change card unregressed. php -l / node --check clean.
+  Nothing deployed.
+- One resolver observation carried forward, not fixed here (the
+  Add Product build noted it first): resolve_item's token scoring
+  counts a token once per occurrence in name+aliases, so an alias
+  duplicating a name word double-counts ("Mountain Mist Soda
+  12oz" scored onto Mountain Dew on 'mountain' ×2 before tying
+  out). Bill matching inherits the resolver as designed — the
+  staged card always shows the catalog name it matched, so a
+  mis-match is visible before "gol", never silent — but the
+  resolver's owners should dedupe its token multiset.
