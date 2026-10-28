@@ -989,6 +989,37 @@ $S = [
     'np' => 'Dui din barabar chha.',
     'hi' => 'Dono din barabar hain.',
     'dev' => 'दुवै दिन बराबर छ।'],
+  // --- visual reports: graph card titles (owner, Oct 28) ----------------------
+  'graph_week' => [
+    'en' => 'Last 7 days',
+    'np' => 'Pachhillo 7 din',
+    'hi' => 'Pichhle 7 din',
+    'dev' => 'पछिल्लो ७ दिन'],
+  'graph_month' => [
+    'en' => 'This month, day by day',
+    'np' => 'Yo mahina, din anusar',
+    'hi' => 'Is mahina, din ke hisaab se',
+    'dev' => 'यो महिना, दिनअनुसार'],
+  'graph_best' => [
+    'en' => 'Best sellers — %s',
+    'np' => 'Best seller — %s',
+    'hi' => 'Best seller — %s',
+    'dev' => 'बेस्ट सेलर — %s'],
+  'graph_compare' => [
+    'en' => 'Day compare',
+    'np' => 'Din ko tulana',
+    'hi' => 'Din ki tulna',
+    'dev' => 'दिनको तुलना'],
+  'graph_today' => [
+    'en' => 'Today',
+    'np' => 'Aaja',
+    'hi' => 'Aaj',
+    'dev' => 'आज'],
+  'graph_empty' => [
+    'en' => 'Nothing to draw yet — no sales in this range.',
+    'np' => 'Ahile korna kei chhaina — yo range ma bikri chhaina.',
+    'hi' => 'Abhi kuchh dikhane ko nahi hai — is range mein bikri nahi hai.',
+    'dev' => 'अहिले कोर्न केही छैन — यो दायरामा बिक्री छैन।'],
 ];
 function t(string $key, ...$args): string {
     global $S, $L;
@@ -1410,28 +1441,39 @@ function golpos_meta_compose(string $shop, string $facts, string $userMsg, ?stri
 // per-day totals for the last 7 days, the week aggregate, the tender split,
 // and the top sellers by revenue. Returns [facts string, grounding figures].
 function golpos_week_facts(string $shop, array $products): array {
-    $days = [];
-    for ($i = 6; $i >= 0; $i--) { $days[date('Y-m-d', strtotime("-{$i} days"))] = ['gross' => 0.0, 'txns' => 0]; }
-    $items = []; $weekGross = 0.0; $weekTx = 0; $cash = 0.0; $card = 0.0;
-    $monthPrefix = date('Y-m'); $monthGross = 0.0; $monthTx = 0; $monthCash = 0.0; $monthCard = 0.0;
+    // Top sellers by revenue come from the raw log — line detail lives
+    // only there. Every TOTAL below comes from golpos_day_summary, the
+    // one function the day lane, the compare lane and the visual-report
+    // payload all read, so the facts, the fallback lines and the drawn
+    // bars agree by construction — refunds included (a refund adjusts
+    // the day it was rung on, everywhere, the same way).
+    $items = [];
+    $weekStart = date('Y-m-d', strtotime('-6 days'));
     foreach (golpos_sales() as $s) {
         $d = substr((string)($s['at'] ?? ''), 0, 10);
-        if (strpos($d, $monthPrefix) === 0) {
-            $mTot = (float)($s['total'] ?? 0);
-            $monthGross += $mTot; $monthTx++;
-            if (($s['tender'] ?? '') === 'cash') { $monthCash += $mTot; } else { $monthCard += $mTot; }
-        }
-        if (!isset($days[$d])) { continue; }
-        $tot = (float)($s['total'] ?? 0);
-        $days[$d]['gross'] += $tot; $days[$d]['txns']++;
-        $weekGross += $tot; $weekTx++;
-        if (($s['tender'] ?? '') === 'cash') { $cash += $tot; } else { $card += $tot; }
+        if ($d < $weekStart || $d > date('Y-m-d')) { continue; }
         foreach (($s['lines'] ?? []) as $l) {
             $n = (string)($l['name'] ?? '');
             if ($n !== '') { $items[$n] = ($items[$n] ?? 0.0) + (float)($l['line_total'] ?? 0); }
         }
     }
     arsort($items);
+    $days = []; $weekGross = 0.0; $weekTx = 0; $cash = 0.0; $card = 0.0;
+    for ($i = 6; $i >= 0; $i--) {
+        $ymd = date('Y-m-d', strtotime("-{$i} days"));
+        $s = golpos_day_summary($ymd);
+        $days[$ymd] = ['gross' => (float)$s['gross'], 'txns' => (int)$s['txns']];
+        $weekGross += (float)$s['gross']; $weekTx += (int)$s['txns'];
+        $cash += (float)$s['cash']; $card += (float)$s['card'];
+    }
+    $weekGross = round($weekGross, 2); $cash = round($cash, 2); $card = round($card, 2);
+    $monthGross = 0.0; $monthTx = 0; $monthCash = 0.0; $monthCard = 0.0;
+    for ($d = 1; $d <= (int)date('j'); $d++) {
+        $s = golpos_day_summary(date('Y-m-') . str_pad((string)$d, 2, '0', STR_PAD_LEFT));
+        $monthGross += (float)$s['gross']; $monthTx += (int)$s['txns'];
+        $monthCash += (float)$s['cash']; $monthCard += (float)$s['card'];
+    }
+    $monthGross = round($monthGross, 2); $monthCash = round($monthCash, 2); $monthCard = round($monthCard, 2);
     $today = golpos_day_summary(date('Y-m-d'));
     $lines = ["Shop: {$shop}. Last 7 days (date — total — sales):"];
     $figures = [money($weekGross), money($today['gross'])];
@@ -2469,6 +2511,49 @@ function golpos_day_label(string $ymd): string {
     if ($ymd === date('Y-m-d')) { return 'Today (' . date('M j', strtotime($ymd)) . ')'; }
     if ($ymd === date('Y-m-d', strtotime('-1 day'))) { return 'Yesterday (' . date('M j', strtotime($ymd)) . ')'; }
     return date('M j', strtotime($ymd));
+}
+
+// --- visual reports: ONE payload, computed once (owner, Oct 28) ----------------
+// Report answers carry a graph payload the chat renders as an inline
+// card under the text. PROVENANCE LAW: the payload is built by the same
+// lane, from the same golpos_day_summary / golpos_day_items figures the
+// text states — never a second read for the picture. If the text says
+// $1,240, the bars sum to $1,240 by construction. An all-zero range is
+// flagged empty and the client draws an honest flat card, never a shape.
+function golpos_graph_payload(string $kind, string $title, array $series, float $total, ?array $focus = null): array {
+    $empty = true;
+    foreach ($series as $p) { if ((float)($p['value'] ?? 0) != 0.0) { $empty = false; break; } }
+    $g = ['kind' => $kind, 'title' => $title, 'unit' => 'money',
+          'series' => $series, 'total' => round($total, 2), 'empty' => $empty];
+    if ($empty) { $g['empty_text'] = t('graph_empty'); }
+    if ($focus !== null) { $g['focus'] = $focus; }
+    return $g;
+}
+// Per-day gross bars for the trailing $n days ending today, from the
+// same day summaries every total in this brain is read from.
+function golpos_graph_days_series(int $n, ?string $focusYmd = null): array {
+    $series = []; $total = 0.0;
+    for ($i = $n - 1; $i >= 0; $i--) {
+        $ymd = date('Y-m-d', strtotime("-{$i} days"));
+        $v = round((float)golpos_day_summary($ymd)['gross'], 2);
+        $total = round($total + $v, 2);
+        $p = ['label' => date('D j', strtotime($ymd)), 'value' => $v];
+        if ($focusYmd !== null && $ymd === $focusYmd) { $p['highlight'] = true; }
+        $series[] = $p;
+    }
+    return [$series, $total];
+}
+// Per-day gross points for the current month, day 1 through today.
+function golpos_graph_month_series(): array {
+    $series = []; $total = 0.0;
+    for ($d = 1; $d <= (int)date('j'); $d++) {
+        $ymd = date('Y-m-') . str_pad((string)$d, 2, '0', STR_PAD_LEFT);
+        $v = round((float)golpos_day_summary($ymd)['gross'], 2);
+        $total = round($total + $v, 2);
+        $series[] = ['label' => date('M j', strtotime($ymd)), 'value' => $v,
+                     'highlight' => $ymd === date('Y-m-d')];
+    }
+    return [$series, $total];
 }
 
 // --- employee lane composition --------------------------------------------------
@@ -4518,12 +4603,22 @@ if (golpos_is_bestseller_ask($msg) || golpos_is_compare_ask($msg)) {
         $diff = round((float)$b['gross'] - (float)$a['gross'], 2);
         $tail = $diff > 0 ? t('cmp_diff_up', 'Today', money($diff))
             : ($diff < 0 ? t('cmp_diff_down', 'Today', money(abs($diff))) : t('cmp_diff_even'));
+        // The two bars ARE the two figures in the sentence — same reads.
+        $graph = golpos_graph_payload('compare', t('graph_compare'), [
+            ['label' => golpos_day_label($yday), 'value' => round((float)$a['gross'], 2)],
+            ['label' => golpos_day_label($today), 'value' => round((float)$b['gross'], 2),
+             'highlight' => true],
+        ], round((float)$a['gross'] + (float)$b['gross'], 2));
         out(['reply' => t('cmp_line', golpos_day_label($yday), money((float)$a['gross']), (int)$a['txns'],
-                          golpos_day_label($today), money((float)$b['gross']), (int)$b['txns'], $tail)]);
+                          golpos_day_label($today), money((float)$b['gross']), (int)$b['txns'], $tail),
+             'graph' => $graph]);
     }
     $ymd = preg_match('/(hijo|yesterday|हिजो)/iu', $msg) === 1 ? $yday : $today;
     $items = golpos_day_items($ymd);
-    if (!$items) { out(['reply' => t('best_none', golpos_day_label($ymd))]); }
+    if (!$items) {
+        out(['reply' => t('best_none', golpos_day_label($ymd)),
+             'graph' => golpos_graph_payload('hbars', t('graph_best', golpos_day_label($ymd)), [], 0.0)]);
+    }
     $fmtTop = static function (array $list): string {
         return implode('; ', array_map(static fn($i) => $i['name'] . ' ×' . $i['qty']
             . ' (' . money((float)$i['rev']) . ')', $list));
@@ -4532,8 +4627,15 @@ if (golpos_is_bestseller_ask($msg) || golpos_is_compare_ask($msg)) {
     usort($byQty, static fn($x, $y) => ($y['qty'] <=> $x['qty']) ?: ($y['rev'] <=> $x['rev']));
     $byRev = $items;
     usort($byRev, static fn($x, $y) => ($y['rev'] <=> $x['rev']) ?: ($y['qty'] <=> $x['qty']));
+    // Horizontal bars from the SAME sorted list the sentence names: the
+    // top-3-by-revenue figures in the text are bars 1–3, value for value.
+    $topRev = array_slice($byRev, 0, 5);
+    $series = array_map(static fn($i) => ['label' => (string)$i['name'],
+        'value' => round((float)$i['rev'], 2), 'sub' => '×' . (int)$i['qty']], $topRev);
+    $gTotal = 0.0; foreach ($series as $p) { $gTotal = round($gTotal + $p['value'], 2); }
     out(['reply' => t('best_line', golpos_day_label($ymd),
-                      $fmtTop(array_slice($byQty, 0, 3)), $fmtTop(array_slice($byRev, 0, 3)))]);
+                      $fmtTop(array_slice($byQty, 0, 3)), $fmtTop(array_slice($byRev, 0, 3))),
+         'graph' => golpos_graph_payload('hbars', t('graph_best', golpos_day_label($ymd)), $series, $gTotal)]);
 }
 
 // --- analysis / advice: the DEEP-THINK lane (Muse Wonder) --------------------
@@ -4544,18 +4646,31 @@ if (golpos_is_bestseller_ask($msg) || golpos_is_compare_ask($msg)) {
 // grounding law: a reply is accepted only if it carries a real figure.
 if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|kasto|kina|hapta|हप्ता|week|month|mahina|महिना|suggest|advice|sujhab|sujhav|sallah|slow|trend|improv)/iu', $msg)) {
     [$facts, $figures, $weekTx, $weekGross, $todaySum, $monthGross, $monthTx, $monthCash, $monthCard] = golpos_week_facts($shop, $products);
-    if ($weekTx === 0 && $monthTx === 0) { out(['reply' => t('week_none')]); }
+    // The visual report for this lane, built ONCE from the same day
+    // summaries the facts were assembled from: month asks draw the
+    // month spark, week asks the 7-day bars. It rides every answer this
+    // lane gives — composed or template — because it reports the same
+    // range the words describe, from the same reads.
+    $isMonthAsk = preg_match('/(month|mahina|महिना)/iu', $msg) === 1;
+    if ($isMonthAsk) {
+        [$mSeries, $mTotal] = golpos_graph_month_series();
+        $graph = golpos_graph_payload('spark', t('graph_month'), $mSeries, $mTotal);
+    } else {
+        [$wSeries, $wTotal] = golpos_graph_days_series(7, date('Y-m-d'));
+        $graph = golpos_graph_payload('bars', t('graph_week'), $wSeries, $wTotal);
+    }
+    if ($weekTx === 0 && $monthTx === 0) { out(['reply' => t('week_none'), 'graph' => $graph]); }
     $grounded = function (?string $reply) use ($figures): bool {
         if ($reply === null) { return false; }
         foreach ($figures as $f) { if (strpos($reply, $f) !== false) { return true; } }
         return false;
     };
     $reply = golpos_meta_compose($shop, $facts, $msg, golpos_wonder_model(), true);
-    if ($grounded($reply)) { out(['reply' => $reply]); }
+    if ($grounded($reply)) { out(['reply' => $reply, 'graph' => $graph]); }
     $reply = golpos_meta_compose($shop, $facts, $msg);
-    if ($grounded($reply)) { out(['reply' => $reply]); }
-    if (preg_match('/(month|mahina|महिना)/iu', $msg)) { out(['reply' => t('month_line', money($monthGross), $monthTx, money($monthCash), money($monthCard))]); }
-    out(['reply' => t('week_line', money($weekGross), $weekTx, money($todaySum['gross']))]);
+    if ($grounded($reply)) { out(['reply' => $reply, 'graph' => $graph]); }
+    if ($isMonthAsk) { out(['reply' => t('month_line', money($monthGross), $monthTx, money($monthCash), money($monthCard)), 'graph' => $graph]); }
+    out(['reply' => t('week_line', money($weekGross), $weekTx, money($todaySum['gross'])), 'graph' => $graph]);
 }
 
 // --- close the day: writes the day record ------------------------------------
@@ -4589,17 +4704,24 @@ if (preg_match('/(close|banda|बन्द|क्लोज)/iu', $msg)) {
 // --- day total ---------------------------------------------------------------
 if (preg_match('/(kati bikri|kitni bikri|aaja ko|aaj ka|aaja kati|becheu|आज|हिसाब|बिक्री|today|close|banda|hisab|hisaab|sales|total)/iu', $msg)) {
     $s = golpos_day_summary(date('Y-m-d'));
+    // The day's graph: the trailing 7 days with today lit — the same
+    // day summaries this lane's own figure comes from. The focus pins
+    // the asked day, so the bar under the sentence is the sentence's
+    // number, value for value.
+    [$dSeries, $dTotal] = golpos_graph_days_series(7, date('Y-m-d'));
+    $graph = golpos_graph_payload('bars', t('graph_week'), $dSeries, $dTotal,
+        ['label' => t('graph_today'), 'value' => round((float)$s['gross'], 2)]);
     if ($s['txns'] === 0) {
-        out(['reply' => t('day_none')]);
+        out(['reply' => t('day_none'), 'graph' => $graph]);
     }
     // Muse composes the day line from the exact figures; template if it can't.
     $facts = "Today's sales at {$shop} so far: total " . money($s['gross']) . " across {$s['txns']} sales"
         . " — cash " . money($s['cash']) . ", card " . money($s['card']) . "."
         . (golpos_link_on() ? " These are the POS till's own figures; stock figures live in MR.STORE." : "");
     $reply = golpos_meta_compose($shop, $facts, $msg);
-    if ($reply !== null && strpos($reply, money($s['gross'])) !== false) { out(['reply' => $reply]); }
+    if ($reply !== null && strpos($reply, money($s['gross'])) !== false) { out(['reply' => $reply, 'graph' => $graph]); }
     out(['reply' => t('day_total', money($s['gross']), $s['txns'], money($s['cash']), money($s['card']))
-                    . (golpos_link_on() ? "\n" . t('src_till') : '')]);
+                    . (golpos_link_on() ? "\n" . t('src_till') : ''), 'graph' => $graph]);
 }
 
 // --- new item (staged) ---------------------------------------------------------

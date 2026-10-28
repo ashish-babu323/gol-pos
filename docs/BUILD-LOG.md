@@ -1598,3 +1598,77 @@ there is nothing to migrate). The button flow was batteried over its
 exact HTTP contract plus served-asset checks (stamp ?v=4d84a9a,
 node-checked on both stages) — a physical finger tap-through is the
 Oct 30 hardware pass, same as the camera/mic proofs.
+
+## Visual Reports — graph cards in the register chat (Oct 28, 2026)
+
+Owner directive (Oct 28, 14:29 ET): reports in the POS chat must SHOW
+as graphs — "physical representations so that judges or users can
+enjoy the view" — in the chat itself, never a separate reports screen
+(no-menu law).
+
+PROVENANCE LAW (the heart of the build): every report answer now
+carries ONE structured payload (graph: kind, title, unit, series of
+{label, value, sub?, highlight?}, total, focus?) computed by the SAME
+lane, from the SAME golpos_day_summary / golpos_day_items reads that
+compose the sentence above it. The client renders the picture from
+that payload only — there is no second data read for the graph, ever.
+If the text says $1,240, the bars sum to $1,240 by construction.
+
+To make that true for the week/month lane, golpos_week_facts now
+derives every total (week, month, tender split) from
+golpos_day_summary instead of raw sale sums: before, a refund rung
+today made the week line and the day line disagree (the week counted
+the pre-refund gross). Item revenue (top sellers) still comes from
+the raw log — line detail lives only there.
+
+Shapes: day asks and week asks -> 7 vertical bars (trailing 7 days,
+today lit #2563eb, the rest #93c5fd; the day lane also pins a focus =
+today's figure, the exact number its sentence states); day compare ->
+two paired bars (yesterday vs today, the sentence's two figures);
+best sellers -> horizontal bars from the SAME revenue sort the text
+names (text's top-3-by-revenue are bars 1-3, value for value; sub =
+×qty); month asks -> a day-by-day spark (area + line, first/peak/last
+labelled). An all-zero range is flagged empty and renders an honest
+flat card ("Nothing to draw yet") — never an invented shape.
+Non-report answers carry no payload and render exactly as before.
+
+Client: graphSvg() is a pure payload -> inline-SVG function (Gol blue
+family, no deps, no chart library) and chatGraph() drops the white
+card into the conversation under the reply in sendChat. Any new icon
+would be inline SVG per the standing rule; this build adds none.
+
+Battery: 121 checks over real HTTP chat turns on two throwaways
+(fixture week: $100 / $150.50 / $0 / $200.25 / $175 / $225.75 / $70
+after a $10 refund rung today): 86 payload asserts (each shape in EN
+and NP — payload present, series sum == payload total == text figure
+where the text states one, labels == asked range, today highlighted;
+empty instance -> flat cards on day/week/best/compare; price,
+greeting, stock and a staged price-change carry NO graph), 19
+renderer asserts on the real captured payloads (values, names,
+compare labels untruncated), 11 employee-lane smoke (unlock as a
+throwaway cashier -> ring a sale -> day ask's graph focus moves to
+the new $74.73 -> admin-gated day close with PIN -> locked -> PIN
+please), plus live sim proofs: the graph's 7 bars equal an
+independent hand-sum of the sim journal day by day (Oct 22-28:
+$1,898.26 / $1,870.66 / $1,864.94 / $1,588.49 / $1,873.62 / $1,954.32 /
+$1,741.72; week $12,792.01) and its best-seller bars equal the
+journal's item aggregation.
+
+Two pre-existing catches named, NOT fixed here (routing/language
+layer, not the graph): NP "...bikri bhayo?" phrasings are captured
+by an earlier lane as an item statement (the owner's own "aaja kati
+bho?" routes to the day lane and graphs correctly), and short NP
+forms like "yo hapta kasto cha?" don't trip the language mirror's
+stem list, so those answers (and their graph titles) stay English —
+the payload itself is correct. Both belong to a language pass with
+its own regression battery.
+
+Restorations: throwaway copies deleted from the server after the
+battery; dev and sim data untouched by the proofs (sim sessions file
+restored byte-exact; journal still 3,000 / $57,301.04; dev still
+887 / $9,178.79, today 0/0, owner admin PIN untouched).
+
+NOT done / unproven: film-distance readability of the value labels
+is the Oct 30 device pass. The MR.STORE store-Gol chat has a
+different renderer and does NOT draw these payloads yet — a named
+follow-up; the payload contract is ready for it.

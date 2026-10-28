@@ -889,6 +889,96 @@ function chatCard(card) {
   });
   $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
 }
+// --- visual reports: the graph card -------------------------------------------
+// Pure renderer: brain payload -> inline SVG, no other data source. The
+// figures were computed ONCE, server-side, by the same lane that wrote
+// the sentence above the card (provenance law) — this function only draws.
+function gfmt(v) {
+  const n = Number(v) || 0;
+  if (Math.abs(n) >= 1000) { return '$' + Math.round(n).toLocaleString('en-US'); }
+  return money(n);
+}
+function graphSvg(g) {
+  const vals = g.series.map(p => Number(p.value) || 0);
+  const max = Math.max(...vals, 0);
+  if (g.kind === 'hbars') {
+    const W = 336, rowH = 27, nameW = 112, barMax = 130;
+    const H = g.series.length * rowH + 4;
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(g.title || '')}">`;
+    g.series.forEach((p, i) => {
+      const y = i * rowH + 4;
+      const w = max > 0 ? Math.max(2, (Number(p.value) / max) * barMax) : 2;
+      const name = p.label.length > 16 ? p.label.slice(0, 15).trimEnd() + '…' : p.label;
+      s += `<text x="0" y="${y + 13}" font-size="11.5" fill="#334155">${esc(name)}</text>`;
+      s += `<rect x="${nameW}" y="${y + 2}" width="${w.toFixed(1)}" height="13" rx="3" fill="#2563eb"></rect>`;
+      s += `<text x="${(nameW + w + 6).toFixed(1)}" y="${y + 13}" font-size="11.5" font-weight="700" fill="#0f172a">${gfmt(p.value)}${p.sub ? `<tspan fill="#64748b" font-weight="400"> ${esc(p.sub)}</tspan>` : ''}</text>`;
+    });
+    return s + '</svg>';
+  }
+  if (g.kind === 'spark') {
+    const W = 336, H = 118, padX = 8, top = 16, base = H - 16;
+    const n = g.series.length;
+    const min = Math.min(...vals, 0);
+    const span = (max - min) || 1;
+    const X = (i) => n === 1 ? W / 2 : padX + (i * (W - 2 * padX)) / (n - 1);
+    const Y = (v) => base - ((v - min) / span) * (base - top);
+    const pts = g.series.map((p, i) => `${X(i).toFixed(1)},${Y(Number(p.value) || 0).toFixed(1)}`).join(' ');
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(g.title || '')}">`;
+    s += `<polygon points="${padX},${base} ${pts} ${W - padX},${base}" fill="#2563eb" opacity="0.12"></polygon>`;
+    s += `<polyline points="${pts}" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"></polyline>`;
+    const peak = vals.indexOf(max);
+    const seen = new Set();
+    [[0, g.series[0]], [peak, g.series[peak]], [n - 1, g.series[n - 1]]].forEach(([i, p]) => {
+      if (seen.has(i) || !p) { return; } seen.add(i);
+      const anchor = i === 0 ? 'start' : (i === n - 1 ? 'end' : 'middle');
+      s += `<circle cx="${X(i).toFixed(1)}" cy="${Y(Number(p.value) || 0).toFixed(1)}" r="3" fill="#2563eb"></circle>`;
+      s += `<text x="${X(i).toFixed(1)}" y="${(Y(Number(p.value) || 0) - 6).toFixed(1)}" font-size="10.5" font-weight="700" fill="#0f172a" text-anchor="${anchor}">${gfmt(p.value)}</text>`;
+    });
+    s += `<text x="${padX}" y="${H - 3}" font-size="10" fill="#64748b">${esc(g.series[0].label)}</text>`;
+    s += `<text x="${W - padX}" y="${H - 3}" font-size="10" fill="#64748b" text-anchor="end">${esc(g.series[n - 1].label)}</text>`;
+    return s + '</svg>';
+  }
+  // bars + compare share the column renderer.
+  const W = 336, top = 20, base = 126, H = 148, padX = 8;
+  const n = g.series.length;
+  const slot = (W - 2 * padX) / n;
+  const barW = Math.min(g.kind === 'compare' ? 64 : 42, slot * 0.58);
+  const neg = Math.min(...vals, 0);
+  const span = (max - neg) || 1;
+  const zeroY = base - ((0 - neg) / span) * (base - top);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(g.title || '')}">`;
+  s += `<line x1="${padX}" y1="${zeroY.toFixed(1)}" x2="${W - padX}" y2="${zeroY.toFixed(1)}" stroke="#cbd5e1" stroke-width="1"></line>`;
+  g.series.forEach((p, i) => {
+    const v = Number(p.value) || 0;
+    const x = padX + slot * i + (slot - barW) / 2;
+    const h = Math.max(2, (Math.abs(v) / span) * (base - top));
+    const y = v >= 0 ? zeroY - h : zeroY;
+    const fill = v === 0 ? '#cbd5e1' : (p.highlight ? '#2563eb' : '#93c5fd');
+    s += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${fill}"></rect>`;
+    s += `<text x="${(x + barW / 2).toFixed(1)}" y="${(v >= 0 ? y - 5 : y + h + 12).toFixed(1)}" font-size="11" font-weight="700" fill="#0f172a" text-anchor="middle">${gfmt(v)}</text>`;
+    const maxLbl = g.kind === 'compare' ? 20 : 12;
+    const lbl = p.label.length > maxLbl ? p.label.slice(0, maxLbl - 1).trimEnd() + '…' : p.label;
+    s += `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 4}" font-size="10.5" ${p.highlight ? 'font-weight="700" fill="#2563eb"' : 'fill="#64748b"'} text-anchor="middle">${esc(lbl)}</text>`;
+  });
+  return s + '</svg>';
+}
+function chatGraph(g) {
+  if (!g || !Array.isArray(g.series)) { return; }
+  const d = document.createElement('div');
+  d.className = 'msg gol graph-card';
+  let inner = `<div class="graph-head"><span class="graph-title">${esc(g.title || '')}</span><span class="graph-total">${money(g.total)}</span></div>`;
+  if (g.empty) {
+    inner += `<div class="graph-empty">${esc(g.empty_text || 'No sales in this range yet.')}</div>`;
+  } else {
+    inner += graphSvg(g);
+  }
+  if (g.focus) {
+    inner += `<div class="graph-foot">${esc(g.focus.label)} — <b>${money(g.focus.value)}</b></div>`;
+  }
+  d.innerHTML = inner;
+  $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
+}
+
 // --- photo lane: upload -> SAM reads it -> staged card ------------------------
 async function sendPhoto(file, promptText) {
   chatMsg('📷 Photo sent' + (promptText ? ' — "' + promptText + '"' : ''), 'me');
@@ -919,6 +1009,7 @@ async function sendChat(text) {
   // digits standing in the chat history.
   if (r.pin_mask && mine) { mine.textContent = '••••'; }
   if (r.reply) { chatMsg(r.reply, 'gol'); }
+  if (r.graph) { chatGraph(r.graph); }
   applyLockState(r.locked, r.actor);
   if (r.unlock_event && r.unlock_event.id) { attachUnlockFrame(r.unlock_event.id); }
   if (r.card) { chatCard(r.card); }

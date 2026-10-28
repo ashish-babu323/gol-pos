@@ -352,6 +352,15 @@ button { font: inherit; cursor: pointer; }
 .msg.card .sc-newtag { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 1.1px; color: #fff; background: #2e9e5b; padding: 2px 7px; border-radius: 999px; margin-right: 6px; vertical-align: 1px; }
 .msg.card img { max-width: 100%; border-radius: 10px; display: block; margin: 8px 0; }
 .msg.card button { margin-top: 10px; width: 100%; min-height: 52px; border: none; color: #fff; font-weight: 800; padding: 14px 12px; border-radius: 12px; font-size: 15.5px; background: linear-gradient(135deg, #5b93ff, #2563eb); box-shadow: 0 8px 18px rgba(37,99,235,.4); }
+.msg.graph-card { background: #fff; border: 1px solid #dbeafe; color: #0f172a; max-width: 94%; align-self: stretch; border-radius: 16px; padding: 12px 14px 10px; box-shadow: 0 4px 14px rgba(37,99,235,.10); }
+.graph-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.graph-title { font-weight: 700; font-size: 13.5px; color: #1e3a8a; }
+.graph-total { font-weight: 800; font-size: 16.5px; color: #2563eb; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.graph-foot { margin-top: 5px; font-size: 12.5px; color: #475569; }
+.graph-foot b { color: #0f172a; }
+.graph-empty { font-size: 13px; color: #64748b; padding: 10px 2px 6px; }
+.msg.graph-card svg { display: block; width: 100%; height: auto; }
+.msg.graph-card svg text { font-family: inherit; }
 .chat-chips { display: flex; gap: 8px; padding: 10px 12px; overflow-x: auto; flex: none; background: var(--form-bg); border-top: 1px solid var(--form-line); scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .chat-chips::-webkit-scrollbar { display: none; }
 .chat-chips button { flex: none; min-height: 48px; padding: 10px 15px; border-radius: 999px; font-size: 14px; font-weight: 700; white-space: nowrap; background: var(--chip-bg); border: 1px solid var(--chip-line); color: var(--chip-ink); }
