@@ -778,3 +778,69 @@ One entry per day; the git history carries the same dates.
   already reads ?v=ff6a208, no bump needed). This commit adds only
   the bridge create function and this entry. php -l / node --check
   clean. Nothing deployed.
+
+## Day 3 (Oct 28) — Barcode doors: one barcode, three ways in (47dbe41)
+- Owner: "gol ma direct barcode haldida pugcha" — in Gol, just
+  putting the barcode directly is enough — and "add products le
+  register ko scanner bata barcode liyera pani add garna sakcha":
+  the Add Product sheet can also take the code from the scanner.
+  One barcode now enters through three doors.
+- Door 1 — the chat sentence (server/brain.php). A new
+  golpos_extract_barcode joins the number-meaning layer: a labeled
+  run ("barcode 012345678905", "barcode: 0123...") or a bare run of
+  8–14 digits is read FIRST in both lanes that can create an item
+  (the explicit new-item lane and the add lane's cataloging paths)
+  and blanked out of the working string, so price, count and name
+  extraction never see it — this morning the same run priced an
+  item at $12,345,678,905.00 and asked "which price?". Under 8
+  digits is not a barcode; a run glued to a size unit is a name's
+  size. The staged card carries the code (and the chat card renders
+  a "Barcode …" line), execution writes it onto the product, and a
+  code another product already carries — as its barcode or its
+  sku, the golpos_create_product test — refuses the add outright
+  with that path's own words ("That barcode is already on
+  Coca-Cola 20oz."), at stage time and again at confirm time in
+  case the code was taken in between. Saying the holder's own code
+  with its name ("add coke 049000000443") simply rings the item.
+- Rider in the same layer: golpos_item_name_from never dropped a
+  punctuated price token — "$3.99" cleans to "399", "3.25" to
+  "325", neither equals the price, so every chat-added item kept
+  the remnant in its name ("Mango Lassi 325"). The drop test now
+  reads the raw token as a pure number (letters make it a size,
+  never the price); names come out clean ("Mango Lassi").
+- Door 2 — the scanner into the form (web/app.js). The Add Product
+  sheet's barcode field is scanner-ready: a hardware scanner is a
+  keyboard wedge and ends its burst with Enter, and that Enter is
+  now swallowed in the field (preventDefault; focus moves to
+  Opening stock) — never a submit, never a create. Nothing else
+  about the sheet changed. openProductSheet takes an optional
+  prefill string; the button's click handler passes an event, so
+  only a real string pre-fills (the battery caught the event
+  landing in the field as "[object Object]" — guarded).
+- Door 3 — scan-unknown at the register (web/app.js). A scan or
+  scan-entry lookup that finds nothing now splits by shape: a
+  genuine barcode shape (8–14 digits) raises a toast offer — "Not
+  in the catalog — <code>" + an "Add it?" button — that opens the
+  Add Product sheet with the code pre-filled (creation still
+  PIN-gates inside the sheet, untouched); a short code or a name
+  miss keeps today's plain not-found word in chat. One small CSS
+  rule dresses the toast's button.
+- Verified on throwaway copies only (nothing deployed): PHP
+  battery on the real server, 38/38 — labeled + bare codes land
+  on the card and on the created product; the no-$ sentence reads
+  its price from the plain figure, never the run; a 5-digit run
+  is ignored as a barcode; both lanes refuse a taken code naming
+  Coca-Cola 20oz and stage nothing; the executor refuses a code
+  taken between stage and confirm, naming the form-created
+  holder, exactly one holder standing; the number-meaning traps
+  stay green (owner sentence → $3.00, size-not-money, bata/from,
+  same-price, ask-on-missing, ask-on-two, classifier count) and
+  Beat-1 through the API is exact (6.67/0.53/7.20, $2.80 change).
+  JS battery — the real app.js under a parsing stub DOM against
+  the real API, 15/15: Beat-1 totals, shelf fills, keypad-pane
+  rows, keypad manual $10 → 10/0.80/10.80; the unknown-scan offer
+  opens the sheet pre-filled; short-code and name misses show no
+  offer; a simulated scanner burst fills the barcode field, its
+  Enter is swallowed, focus lands on stock, no create fires; the
+  staged card shows its barcode line and a barcode-less card
+  doesn't. php -l / node --check clean. Nothing deployed.
