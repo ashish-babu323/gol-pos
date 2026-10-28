@@ -183,8 +183,20 @@ if ($method === 'GET' && isset($_GET['credit'])) {
 }
 if ($method === 'GET' && isset($_GET['settings'])) {
     // Receipt print settings — the ONE store both doors (Gol chat and the
-    // owner panel form) read and write.
-    echo json_encode(golpos_settings(), JSON_UNESCAPED_UNICODE);
+    // owner panel form) read and write. The Register Camera effective
+    // state rides along (Part B): in link mode it is computed from the
+    // MR.STORE master's profile record; standalone it is the register's
+    // own keys. The client obeys THIS block for every camera decision,
+    // so the till and the facts can never drift apart.
+    $out = golpos_settings();
+    $out['regcam'] = golpos_regcam_state();
+    echo json_encode($out, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($method === 'GET' && isset($_GET['footage'])) {
+    // The register's footage shelf: sales carrying a counter frame or an
+    // event clip, newest first (ids + facts; frame.php serves bytes).
+    echo json_encode(['footage' => golpos_footage_list()], JSON_UNESCAPED_UNICODE);
     exit;
 }
 if ($method === 'GET' && isset($_GET['inbox'])) {
@@ -405,7 +417,9 @@ if ($method === 'POST') {
             $gate = golpos_sheet_pin($in);
             if (empty($gate['ok'])) { echo json_encode($gate, JSON_UNESCAPED_UNICODE); exit; }
         }
-        echo json_encode(golpos_save_settings($in['settings']), JSON_UNESCAPED_UNICODE);
+        $saved = golpos_save_settings($in['settings']);
+        $saved['regcam'] = golpos_regcam_state();
+        echo json_encode($saved, JSON_UNESCAPED_UNICODE);
         exit;
     }
     if (isset($in['stock_add']) && is_array($in['stock_add'])) {

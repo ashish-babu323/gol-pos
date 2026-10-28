@@ -51,6 +51,23 @@ if ($method === 'GET' && isset($_GET['txn'])) {
     exit;
 }
 
+if ($method === 'GET' && isset($_GET['clip'])) {
+    // The event clip window (Part B): serves the clip saved for one cash
+    // sale to the Transactions panel and the footage list.
+    $found = golpos_clip_file((string)$_GET['clip']);
+    if ($found === null) {
+        http_response_code(404);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'no clip for that sale']);
+        exit;
+    }
+    [$path, $mime] = $found;
+    header('Content-Type: ' . $mime);
+    header('Cache-Control: private, max-age=300');
+    readfile($path);
+    exit;
+}
+
 header('Content-Type: application/json; charset=utf-8');
 
 if ($method === 'POST' && isset($_POST['unlock'])) {
@@ -97,6 +114,65 @@ if ($method === 'POST' && isset($_POST['unlock'])) {
     exit;
 }
 
+if ($method === 'POST' && isset($_FILES['clip'])) {
+    // The event clip (Part B): a few seconds around one cash tender,
+    // recorded from the live watch stream. A clip lands ONLY while
+    // footage recording is effective — the MR.STORE master in link
+    // mode, the register's own record key standalone — and only for a
+    // cash sale, like the still frame. The mic flag rides as metadata.
+    $txn = trim((string)($_POST['txn'] ?? ''));
+    $sale = preg_match('/^txn_[a-z0-9]+$/', $txn) ? golpos_sale_by_id($txn) : null;
+    if ($sale === null) {
+        http_response_code(404);
+        echo json_encode(['error' => 'unknown sale — no clip saved']);
+        exit;
+    }
+    if (($sale['tender'] ?? '') !== 'cash') {
+        http_response_code(422);
+        echo json_encode(['error' => 'clips pair with cash sales only']);
+        exit;
+    }
+    $rc = golpos_regcam_state();
+    if (!$rc['record']) {
+        http_response_code(422);
+        echo json_encode(['error' => 'event footage recording is off — no clip saved']);
+        exit;
+    }
+    if (($_FILES['clip']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        http_response_code(422);
+        echo json_encode(['error' => 'no clip received']);
+        exit;
+    }
+    $tmp = (string)$_FILES['clip']['tmp_name'];
+    if (!is_uploaded_file($tmp) || (int)$_FILES['clip']['size'] > 30 * 1024 * 1024) {
+        http_response_code(422);
+        echo json_encode(['error' => 'that clip could not be read']);
+        exit;
+    }
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime = $finfo ? (string)finfo_file($finfo, $tmp) : '';
+    $exts = ['video/webm' => 'webm', 'video/mp4' => 'mp4'];
+    if (!isset($exts[$mime])) {
+        http_response_code(422);
+        echo json_encode(['error' => 'clips are video — WebM or MP4']);
+        exit;
+    }
+    // One clip per sale: a re-take replaces the earlier clip, never a
+    // second file claiming the same moment.
+    foreach (array_values($exts) as $e) { @unlink(golpos_frames_dir() . '/' . $txn . '_clip.' . $e); }
+    $path = golpos_frames_dir() . '/' . $txn . '_clip.' . $exts[$mime];
+    if (!move_uploaded_file($tmp, $path)) {
+        http_response_code(500);
+        echo json_encode(['error' => 'the clip could not be saved']);
+        exit;
+    }
+    golpos_mark_sale_clip($txn, ['ext' => $exts[$mime], 'mime' => $mime,
+        'audio' => !empty($_POST['audio']), 'at' => date('c')]);
+    echo json_encode(['ok' => true, 'txn' => $txn, 'clip' => true,
+                      'audio' => !empty($_POST['audio'])], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 if ($method === 'POST') {
     $txn = trim((string)($_POST['txn'] ?? ''));
     $sale = preg_match('/^txn_[a-z0-9]+$/', $txn) ? golpos_sale_by_id($txn) : null;
@@ -108,6 +184,16 @@ if ($method === 'POST') {
     if (($sale['tender'] ?? '') !== 'cash') {
         http_response_code(422);
         echo json_encode(['error' => 'frames pair with cash sales only']);
+        exit;
+    }
+    // The master's server-side word (Part B): in link mode the still
+    // frame is evidence of a store whose Register Camera is ON. A client
+    // that forgot to obey (or a stray upload) saves nothing while the
+    // master is off. Standalone keeps the old permissive door.
+    $rc = golpos_regcam_state();
+    if ($rc['mode'] === 'link' && !$rc['master']) {
+        http_response_code(422);
+        echo json_encode(['error' => 'Register Camera is off in MR.STORE Settings for this store — no frame saved']);
         exit;
     }
     if (empty($_FILES['photo']) || ($_FILES['photo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {

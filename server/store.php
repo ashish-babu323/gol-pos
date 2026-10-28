@@ -795,6 +795,15 @@ function golpos_settings_defaults(): array {
         // so the receipt and the moment stay paired. Default OFF; card
         // sales never take a frame; a missing camera never blocks a sale.
         'watch_frame' => false,
+        // Register Camera Part B (Oct 28): on a STANDALONE register the
+        // local flip above stands in for the MR.STORE master, and these
+        // two are the register's own audio / event-footage switches —
+        // the same names MR.STORE's Settings carry per store. In link
+        // mode they are ignored: the master's children rule (see
+        // golpos_regcam_state). Defaults OFF: video-only still frames,
+        // the pre-Part-B behavior, until the owner turns them on.
+        'register_camera_audio' => false,
+        'register_camera_record' => false,
         // Refunds + customer credit (owner directive, Oct 28): refunds
         // are allowed by default and demand the admin PIN; a sale stays
         // refundable at the till for 30 days (older routes the owner to
@@ -819,6 +828,7 @@ function golpos_settings(): array {
 function golpos_save_settings(array $in): array {
     $cur = golpos_settings();
     foreach (['show_address', 'show_phone', 'logo', 'show_tax', 'auto_open', 'register_open', 'watch_frame',
+              'register_camera_audio', 'register_camera_record',
               'refunds_allowed', 'refund_pin', 'credit_redeem'] as $k) {
         if (array_key_exists($k, $in)) { $cur[$k] = (bool)$in[$k]; }
     }
@@ -2554,4 +2564,51 @@ function golpos_frame_file(string $txn): ?array {
         if (is_file($p)) { return [$p, $mime]; }
     }
     return null;
+}
+
+// --- Event clips (Register Camera Part B, Oct 28) ---------------------------
+// When footage recording is effective, a cash tender also keeps a short
+// clip beside the still frame: data/frames/<txn>_clip.<ext>, with its
+// capture facts (extension, mime, whether the mic was in the stream,
+// when) recorded on the sale itself as 'clip' — the same pairing rule as
+// frames: a clip never invents the sale it claims to witness, and card
+// sales never carry one (frame.php refuses them at the door).
+function golpos_mark_sale_clip(string $txn, array $meta): bool {
+    $sales = golpos_sales();
+    foreach ($sales as $i => $s) {
+        if ((string)($s['id'] ?? '') === $txn) {
+            $sales[$i]['clip'] = $meta;
+            golpos_write('sales.json', $sales);
+            return true;
+        }
+    }
+    return false;
+}
+
+// The saved clip's [path, mime] for a sale, or null.
+function golpos_clip_file(string $txn): ?array {
+    if (!preg_match('/^txn_[a-z0-9]+$/', $txn)) { return null; }
+    $mimes = ['webm' => 'video/webm', 'mp4' => 'video/mp4'];
+    foreach ($mimes as $ext => $mime) {
+        $p = golpos_frames_dir() . '/' . $txn . '_clip.' . $ext;
+        if (is_file($p)) { return [$p, $mime]; }
+    }
+    return null;
+}
+
+// The footage shelf for one register: every sale carrying a frame or a
+// clip, newest first — the read model behind api.php?footage and the
+// footage list page. Ids and facts only; frame.php serves the bytes.
+function golpos_footage_list(int $cap = 100): array {
+    $rows = [];
+    foreach (golpos_sales() as $s) {
+        $hasFrame = !empty($s['frame']) && golpos_frame_file((string)($s['id'] ?? '')) !== null;
+        $clip = (isset($s['clip']) && is_array($s['clip'])) ? $s['clip'] : null;
+        if ($clip !== null && golpos_clip_file((string)($s['id'] ?? '')) === null) { $clip = null; }
+        if (!$hasFrame && $clip === null) { continue; }
+        $rows[] = ['txn' => (string)($s['id'] ?? ''), 'at' => (string)($s['at'] ?? ''),
+                   'total' => (float)($s['total'] ?? 0), 'tender' => (string)($s['tender'] ?? ''),
+                   'frame' => $hasFrame, 'clip' => $clip];
+    }
+    return array_slice(array_reverse($rows), 0, $cap);
 }

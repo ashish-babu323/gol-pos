@@ -240,6 +240,52 @@ function mrstore_settings(): ?array {
             'source' => 'mrstore'];
 }
 
+// --- Register Camera: the MR.STORE master, obeyed (Part B) ------------------
+// Part A stores register_camera / register_camera_audio /
+// register_camera_record in the store's ONE shop_profile record — the
+// record mrstore_settings() already reads — so obedience reads the same
+// profile: top level first (the lm_ops_kv mirror shape), store_ops next
+// (the cloud shape), strict truthy, absent = OFF (the camera never
+// defaults on). Child switches count only while the master is on, and
+// the register's local flip (watch_frame) decides per-till only under
+// the master: master OFF -> no stream ever, whatever the flip says.
+//
+// Standalone registers have no MR.STORE above them: the local flip
+// stands in for the master, and audio/record are the register's own
+// settings keys of the same names (defaults OFF — still frames only,
+// exactly the pre-Part-B behavior until the owner turns them on).
+function golpos_regcam_truthy($v): bool {
+    return $v === true || $v === 1 || $v === '1' || $v === 'true';
+}
+
+function golpos_regcam_state(): array {
+    $flip = !empty(golpos_settings()['watch_frame']);
+    if (golpos_link_on()) {
+        $set = mrstore_settings();
+        $profile = (isset($set['profile']) && is_array($set['profile'])) ? $set['profile'] : [];
+        $ops = (isset($profile['store_ops']) && is_array($profile['store_ops'])) ? $profile['store_ops'] : [];
+        $raw = static function (string $k) use ($profile, $ops): bool {
+            if (array_key_exists($k, $profile)) { return golpos_regcam_truthy($profile[$k]); }
+            if (array_key_exists($k, $ops)) { return golpos_regcam_truthy($ops[$k]); }
+            return false;
+        };
+        $master = $raw('register_camera');
+        $audio = $raw('register_camera_audio');
+        $record = $raw('register_camera_record');
+        return ['mode' => 'link', 'master' => $master,
+                'audio' => $master && $audio, 'record' => $master && $record,
+                'audio_raw' => $audio, 'record_raw' => $record,
+                'flip' => $flip, 'stream' => $master && $flip];
+    }
+    $s = golpos_settings();
+    $audio = !empty($s['register_camera_audio']);
+    $record = !empty($s['register_camera_record']);
+    return ['mode' => 'standalone', 'master' => $flip,
+            'audio' => $audio, 'record' => $record,
+            'audio_raw' => $audio, 'record_raw' => $record,
+            'flip' => $flip, 'stream' => $flip];
+}
+
 // --- the register catalog, from MR.STORE live state --------------------------
 function mrstore_sim_price(array $p): array {
     foreach (['retail', 'price'] as $k) {

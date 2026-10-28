@@ -339,6 +339,36 @@ $S = [
     'np' => 'Cash sale ma camera frame on garne ki off? On gare harek cash sale sanga counter ko photo save huncha.',
     'hi' => 'Cash sale par camera frame on rakhoon ya off? On karne se har cash sale ke saath counter ki photo save hoti hai.',
     'dev' => 'नगद बिक्रीमा क्यामेरा फ्रेम अन गर्ने कि अफ? अन गरे हरेक नगद बिक्रीसँग काउन्टरको फोटो सेभ हुन्छ।'],
+  'cam_state_link_off' => [
+    'en' => 'Register Camera is OFF for this store — the master switch lives in MR.STORE Settings, and while it is off no camera stream runs on this register, whatever the till flip says. It can be changed only in MR.STORE Settings, never from chat.',
+    'np' => 'Register Camera yo pasal ko lagi bandha chha — master switch MR.STORE Settings ma chha, ra tyo bandha bhaye samma till ko flip j sukai bhaye pani yo register ma camera chaldaina. Yo chat bata hoina, MR.STORE Settings bata matra ferinchha.',
+    'hi' => 'Register Camera is store ke liye band hai — master switch MR.STORE Settings mein hai, aur jab tak woh band hai, till flip kuchh bhi ho, is register par camera nahi chalega. Yeh chat se nahi, sirf MR.STORE Settings se badalta hai.',
+    'dev' => 'रजिस्टर क्यामेरा यस पसलका लागि बन्द छ — मास्टर स्विच MR.STORE सेटिङमा छ, र त्यो बन्द भए सम्म टिलको फ्लिप जे भए पनि यो रजिस्टरमा क्यामेरा चल्दैन। यो च्याटबाट होइन, MR.STORE सेटिङबाट मात्र फेरिन्छ।'],
+  'cam_state_link_on' => [
+    'en' => 'Register Camera (MR.STORE master): on · audio %s · event footage %s · this till\'s flip %s — so the camera stream at this register is %s.',
+    'np' => 'Register Camera (MR.STORE master): khula · audio %s · event footage %s · yo till ko flip %s — tyasaile yo register ma camera stream %s chha.',
+    'hi' => 'Register Camera (MR.STORE master): chalu · audio %s · event footage %s · is till ka flip %s — isliye is register par camera stream %s hai.',
+    'dev' => 'रजिस्टर क्यामेरा (MR.STORE मास्टर): खुला · अडियो %s · इभेन्ट फुटेज %s · यस टिलको फ्लिप %s — त्यसैले यस रजिस्टरमा क्यामेरा स्ट्रिम %s छ।'],
+  'cam_state_local' => [
+    'en' => 'This register runs standalone — its own flip is the master: camera frame %s · mic audio %s · event footage %s.',
+    'np' => 'Yo register standalone chha — usko afnai flip nai master ho: camera frame %s · mic audio %s · event footage %s.',
+    'hi' => 'Yeh register standalone hai — iska apna flip hi master hai: camera frame %s · mic audio %s · event footage %s.',
+    'dev' => 'यो रजिस्टर standalone छ — उसको आफ्नै फ्लिप नै मास्टर हो: क्यामेरा फ्रेम %s · माइक अडियो %s · इभेन्ट फुटेज %s।'],
+  'cam_master_hold' => [
+    'en' => 'That switch belongs to the Register Camera master in MR.STORE Settings — chat cannot change it, and while the master is off the till flip is held with it.',
+    'np' => 'Tyo switch MR.STORE Settings ko Register Camera master ko ho — chat le ferna mildaina, ra master bandha bhaye samma till ko flip pani tesai sanga rokine chha.',
+    'hi' => 'Woh switch MR.STORE Settings ke Register Camera master ka hai — chat use nahi badal sakta, aur master band rehne tak till flip bhi usi ke saath ruka rahega.',
+    'dev' => 'त्यो स्विच MR.STORE सेटिङको रजिस्टर क्यामेरा मास्टरको हो — च्याटले फेर्न मिल्दैन, र मास्टर बन्द रहे सम्म टिलको फ्लिप पनि त्यसैसँग रोकिन्छ।'],
+  'cam_ask_audio' => [
+    'en' => 'Should the register mic join the camera stream — audio on or off? On means event clips record sound too.',
+    'np' => 'Register ko mic camera stream ma jodne — audio on ki off? On gare event clip ma awaj pani record hunchha.',
+    'hi' => 'Register ka mic camera stream se jodein — audio on ya off? On karne se event clip mein awaaz bhi record hogi.',
+    'dev' => 'रजिस्टरको माइक क्यामेरा स्ट्रिममा जोड्ने — अडियो अन कि अफ? अन गरे इभेन्ट क्लिपमा आवाज पनि रेकर्ड हुन्छ।'],
+  'cam_ask_record' => [
+    'en' => 'Should event footage be recorded — record on or off? On keeps a short clip with each cash sale, beside the counter photo.',
+    'np' => 'Event footage record garne — record on ki off? On gare harek cash sale sanga chhoto clip pani baschha, counter photo ko satha ma.',
+    'hi' => 'Event footage record karein — record on ya off? On karne se har cash sale ke saath ek chhota clip bhi rahega, counter photo ke saath.',
+    'dev' => 'इभेन्ट फुटेज रेकर्ड गर्ने — रेकर्ड अन कि अफ? अन गरे हरेक नगद बिक्रीसँग छोटो क्लिप पनि बस्छ, काउन्टर फोटोको साथमा।'],
   'stock_one' => [
     'en' => '%s — %s on hand (MR.STORE live stock).',
     'np' => '%s — %s ota chha (MR.STORE live stock).',
@@ -969,6 +999,8 @@ function golpos_setting_label(string $key): string {
       'batch_mode'   => ['en' => 'Batch close mode', 'np' => 'Batch close mode', 'hi' => 'Batch close mode', 'dev' => 'ब्याच क्लोज मोड'],
       'card_surcharge_pct' => ['en' => 'Card surcharge', 'np' => 'Card surcharge', 'hi' => 'Card surcharge', 'dev' => 'कार्ड सरचार्ज'],
       'watch_frame'  => ['en' => 'Camera frame on cash sales', 'np' => 'Cash sale ma camera frame', 'hi' => 'Cash sale par camera frame', 'dev' => 'नगद बिक्रीमा क्यामेरा फ्रेम'],
+      'register_camera_audio' => ['en' => 'Camera audio (mic)', 'np' => 'Camera audio (mic)', 'hi' => 'Camera audio (mic)', 'dev' => 'क्यामेरा अडियो (माइक)'],
+      'register_camera_record' => ['en' => 'Event footage recording', 'np' => 'Event footage record', 'hi' => 'Event footage record', 'dev' => 'इभेन्ट फुटेज रेकर्ड'],
       'refunds_allowed' => ['en' => 'Refunds allowed', 'np' => 'Refund khula', 'hi' => 'Refund khula', 'dev' => 'फिर्ता खुला'],
       'refund_pin'   => ['en' => 'Refund PIN', 'np' => 'Refund ma PIN', 'hi' => 'Refund par PIN', 'dev' => 'फिर्तामा PIN'],
       'refund_window_days' => ['en' => 'Refund window', 'np' => 'Refund ko samaya (din)', 'hi' => 'Refund window (din)', 'dev' => 'फिर्ता अवधि (दिन)'],
@@ -983,7 +1015,7 @@ function golpos_time12(string $hhmm): string {
 }
 function golpos_setting_display(string $key, $v): string {
     if (in_array($key, ['show_address', 'show_phone', 'show_tax'], true)) { return golpos_shown((bool)$v); }
-    if (in_array($key, ['logo', 'auto_open', 'watch_frame', 'refunds_allowed', 'refund_pin', 'credit_redeem'], true)) { return golpos_onoff((bool)$v); }
+    if (in_array($key, ['logo', 'auto_open', 'watch_frame', 'register_camera_audio', 'register_camera_record', 'refunds_allowed', 'refund_pin', 'credit_redeem'], true)) { return golpos_onoff((bool)$v); }
     if ($key === 'refund_window_days') { return (string)(int)$v . ((int)$v === 1 ? ' day' : ' days'); }
     if ($key === 'card_surcharge_pct') { return rtrim(rtrim(number_format((float)$v, 1, '.', ''), '0'), '.') . '%'; }
     if ($key === 'copies') { return (string)(int)$v; }
@@ -1009,6 +1041,14 @@ function golpos_settings_read_reply(): string {
     $lines[] = '• ' . golpos_setting_label('card_surcharge_pct') . ': '
         . golpos_setting_display('card_surcharge_pct', $s['card_surcharge_pct']);
     $lines[] = '• ' . golpos_setting_label('watch_frame') . ': ' . golpos_onoff((bool)$s['watch_frame']);
+    $rc = golpos_regcam_state();
+    if ($rc['mode'] === 'link') {
+        $lines[] = '• Register Camera (MR.STORE master): ' . golpos_onoff($rc['master'])
+            . ' · audio ' . golpos_onoff($rc['audio']) . ' · footage ' . golpos_onoff($rc['record']);
+    } else {
+        $lines[] = '• ' . golpos_setting_label('register_camera_audio') . ': ' . golpos_onoff((bool)$s['register_camera_audio']);
+        $lines[] = '• ' . golpos_setting_label('register_camera_record') . ': ' . golpos_onoff((bool)$s['register_camera_record']);
+    }
     $lines[] = '• ' . golpos_setting_label('refunds_allowed') . ': ' . golpos_onoff((bool)$s['refunds_allowed']);
     $lines[] = '• ' . golpos_setting_label('refund_pin') . ': ' . golpos_onoff((bool)$s['refund_pin']);
     $lines[] = '• ' . golpos_setting_label('refund_window_days') . ': '
@@ -3326,6 +3366,56 @@ if (preg_match('/(watch\s*frame|camera\s*frame|counter\s*frame)/iu', $msg)) {
     $off = golpos_wants_off($msg);
     if ($off !== null) { golpos_stage_setting('watch_frame', !$off); }
     out(['reply' => t('setting_ask_watch')]);
+}
+
+// --- Register Camera: the master, its children, the state (Part B) ----------
+// One obedience for every camera word that reaches here. In link mode
+// the MR.STORE master rules: its children (audio, footage) change only
+// in MR.STORE Settings — chat says so and stages nothing — and the till
+// flip is HELD while the master is off. Standalone, the register's own
+// audio/record keys stage like any other setting. State asks answer
+// from golpos_regcam_state() — the same facts the till itself obeys —
+// never from the local flip alone. A state ask ("camera on chha?") is
+// always a read, never a flip change wearing a question's clothes.
+$rcState = golpos_regcam_state();
+if (preg_match('/(camera|क्यामेरा|\bcam\b)/iu', $msg)) {
+    $isStateAsk = preg_match('/(chha|chhan|chha\?|छ|is\b|are\b|status|haal|हाल)/iu', $msg) === 1;
+    if (preg_match('/(audio|mic|sound|awaj|आवाज|अडियो)/iu', $msg)) {
+        if ($rcState['mode'] === 'link') { out(['reply' => t('cam_master_hold')]); }
+        $off = golpos_wants_off($msg);
+        if (!$isStateAsk && $off !== null) { golpos_stage_setting('register_camera_audio', !$off); }
+        if ($isStateAsk) {
+            out(['reply' => t('cam_state_local', golpos_onoff($rcState['flip']),
+                golpos_onoff($rcState['audio']), golpos_onoff($rcState['record']))]);
+        }
+        out(['reply' => t('cam_ask_audio')]);
+    }
+    if (preg_match('/(record|footage|clip|रेकर्ड)/iu', $msg)) {
+        if ($rcState['mode'] === 'link') { out(['reply' => t('cam_master_hold')]); }
+        $off = golpos_wants_off($msg);
+        if (!$isStateAsk && $off !== null) { golpos_stage_setting('register_camera_record', !$off); }
+        if ($isStateAsk) {
+            out(['reply' => t('cam_state_local', golpos_onoff($rcState['flip']),
+                golpos_onoff($rcState['audio']), golpos_onoff($rcState['record']))]);
+        }
+        out(['reply' => t('cam_ask_record')]);
+    }
+    $off = golpos_wants_off($msg);
+    if (!$isStateAsk && $off !== null) {
+        // A bare "camera on gara / camera off gara" is the till flip by
+        // another name — staged like the frame lane, unless the master
+        // holds it.
+        if ($rcState['mode'] === 'link' && !$rcState['master']) { out(['reply' => t('cam_master_hold')]); }
+        golpos_stage_setting('watch_frame', !$off);
+    }
+    if ($rcState['mode'] === 'link') {
+        if (!$rcState['master']) { out(['reply' => t('cam_state_link_off')]); }
+        out(['reply' => t('cam_state_link_on',
+            golpos_onoff($rcState['audio']), golpos_onoff($rcState['record']),
+            golpos_onoff($rcState['flip']), golpos_onoff($rcState['stream']))]);
+    }
+    out(['reply' => t('cam_state_local',
+        golpos_onoff($rcState['flip']), golpos_onoff($rcState['audio']), golpos_onoff($rcState['record']))]);
 }
 
 // --- batch close: stage the unbatched card segment (execution on "gol") -----

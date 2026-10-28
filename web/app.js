@@ -42,8 +42,23 @@ async function loadSettings() {
   try { const r = await fetch(API + '?settings'); receiptSettings = await r.json(); }
   catch (e) { /* keep the last known settings; the register never stops */ }
   applyStorePill();
-  syncWatchCam(); // the cash-frame camera follows the watch_frame setting
+  syncWatchCam(); // the cash-frame camera follows the effective camera state
 }
+// --- Register Camera: the effective state (Part B) ----------------------------
+// api.php ?settings carries a regcam block computed server-side from the
+// SAME facts in both modes — the MR.STORE master + this till's flip in
+// link mode, the register's own keys standalone. Every camera decision
+// below reads it through these three doors, so the till can never drift
+// from the truth: stream = master && flip (link) / flip (standalone).
+function regcam() { return (receiptSettings && receiptSettings.regcam) || null; }
+function camWanted() {
+  const rc = regcam();
+  if (rc) { return rc.stream === true; }
+  return !!(receiptSettings && receiptSettings.watch_frame === true); // pre-regcam fallback
+}
+function camAudioWanted() { const rc = regcam(); return !!(rc && rc.audio === true); }
+function camRecordWanted() { const rc = regcam(); return !!(rc && rc.record === true); }
+function camMasterHeld() { const rc = regcam(); return !!(rc && rc.mode === 'link' && rc.master !== true); }
 // --- store open/closed (Settings dropdown toggle, persisted server-side) -----
 // Closed pauses NEW sales: the register refuses the tap, and the sale
 // endpoint refuses the POST with the same plain words. Chat, browsing and
@@ -466,7 +481,7 @@ async function tender(kind, tendered) {
   // Register Watch: a completed CASH sale pairs its counter frame when
   // the owner turned the watch on and a camera is live. Fire-and-forget
   // AFTER the receipt — the frame is a passenger, never a gate.
-  if (kind === 'cash') { attachCashFrame(sale.id); }
+  if (kind === 'cash') { attachCashFrame(sale.id); recordCashClip(sale.id); }
   return true;
 }
 // Cash is a register step, not a blind button: the cashier sees the total,
@@ -1365,6 +1380,13 @@ function renderSettingsView() {
     row('Batch close', st.batch_mode || 'manual') +
     row('Card surcharge', fmtPct(st.card_surcharge_pct ?? 0) + '% · card sales only') +
     row('Camera frame on cash sales', onoff(st.watch_frame === true)) +
+    (st.regcam ? (st.regcam.mode === 'link'
+      ? row('Register Camera — MR.STORE master', onoff(st.regcam.master === true))
+        + row('Camera audio (MR.STORE)', onoff(st.regcam.audio_raw === true) + (st.regcam.master ? '' : ' · held by master'))
+        + row('Event footage (MR.STORE)', onoff(st.regcam.record_raw === true) + (st.regcam.master ? '' : ' · held by master'))
+        + row('Camera stream at this till', st.regcam.stream ? 'On' : (st.regcam.master ? 'Off — the till flip is off' : 'Off — held by the MR.STORE master'))
+      : row('Camera audio (this register)', onoff(st.regcam.audio === true))
+        + row('Event footage (this register)', onoff(st.regcam.record === true))) : '') +
     row('Refunds allowed', onoff(st.refunds_allowed !== false)) +
     row('Refund PIN', onoff(st.refund_pin !== false)) +
     row('Refund window', String(st.refund_window_days ?? 30) + ' days') +
@@ -1614,6 +1636,7 @@ function txnRowEl(sale) {
       : (sale.refund_status === 'partial' ? ' · PART REFUNDED' : ''))
     + '';
   if (sale.frame) { const ft = document.createElement('span'); ft.innerHTML = ' \u00b7 ' + IC_CAM + ' frame'; sub.appendChild(ft); }
+  if (sale.clip) { const ct = document.createElement('span'); ct.innerHTML = ' \u00b7 \u25b6 clip'; sub.appendChild(ct); }
   left.appendChild(time); left.appendChild(sub);
   const total = document.createElement('span'); total.className = 'txn-total';
   total.textContent = money(sale.total);
@@ -1675,6 +1698,16 @@ function txnRowEl(sale) {
       $('frameModal').classList.remove('hidden');
     });
     detail.appendChild(fb);
+  }
+  if (sale.clip) {
+    const cb = document.createElement('button');
+    cb.type = 'button'; cb.className = 'txn-frame';
+    cb.innerHTML = '\u25b6 Watch event clip' + (sale.clip.audio ? ' · with sound' : '');
+    cb.addEventListener('click', () => {
+      $('clipVideo').src = '../server/frame.php?clip=' + encodeURIComponent(sale.id || '');
+      $('clipModal').classList.remove('hidden');
+    });
+    detail.appendChild(cb);
   }
   const rp = document.createElement('button');
   rp.type = 'button'; rp.className = 'txn-reprint'; rp.textContent = 'Reprint this receipt';
@@ -1761,7 +1794,13 @@ async function smWatchAction() {
   // The camera-frame flip: an instant counter switch like the printer
   // toggle (owner 85/15 rule) — it posts watch_frame ALONE, the save the
   // server lets through ungated; configuration beyond the flip (like
-  // everything else) lives in Gol chat.
+  // everything else) lives in Gol chat. In link mode the MR.STORE
+  // master stands above the flip: while it is off the flip is HELD —
+  // tapping explains instead of saving a state the stream would defy.
+  if (camMasterHeld()) {
+    showToast('Held off — Register Camera is off in MR.STORE Settings for this store. The flip works again when the master is on.');
+    return;
+  }
   const on = (receiptSettings || {}).watch_frame === true;
   const r = await saveSetting('watch_frame', !on);
   if (!r || r.cancelled || r.locked) { return; }
@@ -2140,12 +2179,20 @@ let camDenied = false; // a refusal is remembered so the till never nags
 function setCamPill(on) {
   const p = $('camPill'); if (p) { p.classList.toggle('hidden', !on); }
 }
+let camStreamAudio = false; // whether the live stream carries the mic
 async function camStart(videoEl, soft) {
   if (!hasGUM() || camDenied) { return null; }
   try {
+    // The mic joins only when audio is effective (Part B: the master's
+    // audio child in link mode, the register's own key standalone). A
+    // stream already running with the wrong audio-ness is restarted —
+    // a mic flag that changed while the camera idled must still land.
+    const wantAudio = camAudioWanted();
+    if (camStream && camStreamAudio !== wantAudio) { camStopAll(); }
     if (!camStream) {
       camStream = await navigator.mediaDevices.getUserMedia(
-        { video: { facingMode: 'environment' }, audio: false });
+        { video: { facingMode: 'environment' }, audio: wantAudio });
+      camStreamAudio = camStream.getAudioTracks().length > 0;
     }
     if (videoEl) {
       videoEl.srcObject = camStream;
@@ -2157,6 +2204,7 @@ async function camStart(videoEl, soft) {
 }
 function camStopAll() {
   if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  camStreamAudio = false;
   // Detach the dead stream from its screens too — a stopped stream left
   // attached would keep the last frame (and a live-looking srcObject)
   // on the watch video after the setting flips off.
@@ -2164,10 +2212,10 @@ function camStopAll() {
   const cv = $('camVideo'); if (cv) { cv.srcObject = null; }
   setCamPill(false);
 }
-// The watch stream follows the watch_frame setting (called from
-// loadSettings and the settings save): on -> a live stream waits in the
-// hidden watch video with the pill showing; off -> the stream stops,
-// unless the capture view is holding it right now.
+// The watch stream follows the EFFECTIVE camera state (called from
+// loadSettings and the settings save): wanted -> a live stream waits in
+// the hidden watch video with the pill showing; not wanted -> the
+// stream stops, unless the capture view is holding it right now.
 // AUTO-ON is the owner's ruling (Oct 28): setting ON means the camera is
 // simply ON — the stream starts at register boot with no click. A boot
 // attempt can still meet a camera permission the browser has not granted
@@ -2183,7 +2231,7 @@ function armWatchRetry() {
     window.removeEventListener('pointerdown', retry, true);
     window.removeEventListener('keydown', retry, true);
     watchRetryArmed = false;
-    if (receiptSettings && receiptSettings.watch_frame === true && !camStream) {
+    if (camWanted() && !camStream) {
       camDenied = false; // the person's first touch is the fresh ask
       await camStart($('watchVideo'));
     }
@@ -2192,7 +2240,7 @@ function armWatchRetry() {
   window.addEventListener('keydown', retry, true);
 }
 async function syncWatchCam() {
-  const want = !!(receiptSettings && receiptSettings.watch_frame === true);
+  const want = camWanted();
   if (want) {
     if (!camStream) {
       const s = await camStart($('watchVideo'), true);
@@ -2218,10 +2266,12 @@ function grabFrame(videoEl) {
 }
 // Cash-tender frame pairing: after a cash sale completes, one frame from
 // the live watch camera rides to frame.php against the sale's id. No
-// live camera -> no frame and no fuss; the sale already stands.
+// live camera -> no frame and no fuss; the sale already stands. The
+// stream exists only when the effective state wants it (Part B: master
+// && flip in link mode), so obedience lives in camWanted(), not here.
 async function attachCashFrame(txnId) {
   try {
-    if (!receiptSettings || receiptSettings.watch_frame !== true) { return; }
+    if (!camWanted()) { return; }
     if (!camStream || !txnId) { return; }
     const blob = await grabFrame($('watchVideo'));
     if (!blob) { return; }
@@ -2230,6 +2280,39 @@ async function attachCashFrame(txnId) {
     fd.append('txn', txnId);
     await fetch('../server/frame.php', { method: 'POST', body: fd });
   } catch (e) { /* the frame is a passenger, never a gate */ }
+}
+// Event-clip recording (Part B): when footage recording is effective, a
+// cash tender also keeps a short clip — a few seconds from the tender
+// moment, off the same live stream, the mic included when audio is
+// effective. The clip rides to frame.php's clip door with its audio
+// fact as metadata and lands beside the still frame. No MediaRecorder
+// (or no stream) -> the still stands alone; the sale never waits.
+function recordCashClip(txnId) {
+  try {
+    if (!camRecordWanted() || !camStream || !txnId) { return; }
+    if (typeof MediaRecorder === 'undefined') { return; }
+    let mime = '';
+    for (const m of ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4']) {
+      try { if (MediaRecorder.isTypeSupported(m)) { mime = m; break; } } catch (e) { /* keep looking */ }
+    }
+    const rec = new MediaRecorder(camStream, mime ? { mimeType: mime } : undefined);
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) { chunks.push(e.data); } };
+    rec.onstop = async () => {
+      try {
+        if (!chunks.length) { return; }
+        const type = rec.mimeType || mime || 'video/webm';
+        const blob = new Blob(chunks, { type });
+        const fd = new FormData();
+        fd.append('clip', new File([blob], 'clip.' + (type.indexOf('mp4') >= 0 ? 'mp4' : 'webm'), { type }));
+        fd.append('txn', txnId);
+        fd.append('audio', camAudioWanted() ? '1' : '0');
+        await fetch('../server/frame.php', { method: 'POST', body: fd });
+      } catch (e) { /* the clip is evidence, never a gate */ }
+    };
+    rec.start(250);
+    setTimeout(() => { try { if (rec.state !== 'inactive') { rec.stop(); } } catch (e) { /* already done */ } }, 4000);
+  } catch (e) { /* no recorder, no clip, no fuss */ }
 }
 
 // --- employee lane: the morning lock, the actor, unlock photos -----------------
@@ -2268,7 +2351,7 @@ async function attachUnlockFrame(eventId) {
     if (!eventId) { return; }
     let blob = null;
     if (camStream) { blob = await grabFrame($('watchVideo')); }
-    if (!blob && receiptSettings && receiptSettings.watch_frame === true) {
+    if (!blob && camWanted()) {
       const st = await camStart($('watchVideo'));
       if (st) { blob = await grabFrame($('watchVideo')); }
     }
@@ -2319,6 +2402,18 @@ let camShot = null;    // the captured Blob waiting for its job
 async function openCam(mode) {
   camMode = mode || 'photo';
   camDenied = false; // an explicit tap is a fresh ask
+  if (camMasterHeld()) {
+    // Part B obedience: while the MR.STORE master is off, NO camera
+    // stream starts on this register — not even for a look. A photo or
+    // bill still reaches Gol through the native capture door (the same
+    // door a camera-less register uses); sensing answers honestly.
+    if (camMode === 'sense') {
+      showToast('Register Camera is off in MR.STORE Settings — no camera can start on this register.');
+      return false;
+    }
+    if (camMode === 'photo') { $('chatDrawer').classList.remove('hidden'); $('photoInput').click(); }
+    return false;
+  }
   if (!hasGUM()) {
     // No in-app camera: the native capture input is the same door.
     if (camMode === 'photo') { $('chatDrawer').classList.remove('hidden'); $('photoInput').click(); }
@@ -2347,7 +2442,7 @@ async function openCam(mode) {
 function closeCam() {
   $('camModal').classList.add('hidden');
   camShot = null;
-  if (receiptSettings && receiptSettings.watch_frame === true) { camStart($('watchVideo')); }
+  if (camWanted()) { camStart($('watchVideo')); }
   else { camStopAll(); }
 }
 async function camSnapNow() {
@@ -2375,6 +2470,10 @@ function isSenseAsk(text) {
 async function senseFlow(text) {
   chatMsg(text, 'me');
   $('chatDrawer').classList.remove('hidden');
+  if (camMasterHeld()) { // the master's word: no stream, no seeing — said plainly
+    chatMsg('Register Camera is off in MR.STORE Settings for this store, so no camera runs on this register and I can\'t see the counter from here.', 'gol');
+    return;
+  }
   if (camStream) { // the watch camera is live — answer from it at once
     const blob = await grabFrame($('watchVideo'));
     if (blob) { sendSensePhoto(new File([blob], 'counter.jpg', { type: 'image/jpeg' })); return; }
@@ -2467,6 +2566,11 @@ $('camUseSense').addEventListener('click', () => {
   const f = camShotFile(); closeCam(); sendSensePhoto(f);
 });
 $('frameClose').addEventListener('click', () => $('frameModal').classList.add('hidden'));
+$('clipClose').addEventListener('click', () => {
+  const v = $('clipVideo'); try { v.pause(); } catch (e) { /* nothing playing */ }
+  v.removeAttribute('src'); v.load();
+  $('clipModal').classList.add('hidden');
+});
 $('smScanBtn').addEventListener('click', () => { closeSettingsMenu(); openScanModal(); });
 $('scanClose').addEventListener('click', () => $('scanModal').classList.add('hidden'));
 $('scanNew').addEventListener('click', openScanModal);
