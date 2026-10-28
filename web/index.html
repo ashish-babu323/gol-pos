@@ -59,12 +59,18 @@
           <div class="sm-main"><span class="sm-label">Tax exempt</span><span class="sm-sub">No tax on the current sale only</span></div>
           <button type="button" class="sm-toggle" id="smTaxBtn" aria-pressed="false">Off</button>
         </div>
+        <div class="sm-row">
+          <div class="sm-main"><span class="sm-label">Lock register</span><span class="sm-sub">Back to PIN please — the next person opens it in their name</span></div>
+          <button type="button" class="sm-act" id="smLockBtn">Lock</button>
+        </div>
         <div class="sm-row sm-last">
           <div class="sm-main"><span class="sm-label">Store</span><span class="sm-sub">Closed pauses new sales</span></div>
           <button type="button" class="sm-toggle on" id="smStoreBtn" aria-pressed="true">Open</button>
         </div>
       </div>
     </div>
+    <span id="actorChip" class="actor-chip hidden" role="status"></span>
+    <button id="myTasksBtn" type="button" class="hidden">My Tasks</button>
     <button id="ownerBtn" type="button">Owner</button>
     <button id="golBtn" type="button" class="gol-btn">Talk to Gol</button>
   </div>
@@ -154,6 +160,15 @@
     <div id="ownerVendors"></div>
   </div>
   <div class="owner-card">
+    <div id="ownerTeam"></div>
+  </div>
+  <div class="owner-card">
+    <div id="ownerUnlocks"></div>
+  </div>
+  <div class="owner-card">
+    <div id="ownerWhatsout"></div>
+  </div>
+  <div class="owner-card">
     <div id="ownerFeed"></div>
   </div>
   <div class="owner-card">
@@ -172,6 +187,26 @@
   </div>
   <button id="ownerClose" type="button" class="ghost">Close</button>
 </section>
+
+<div class="lock-overlay hidden" id="lockOverlay" role="dialog" aria-label="Register locked">
+  <div class="lock-card">
+    <img class="lock-logo" src="assets/gol-ring-blue.png" alt="Gol">
+    <h2 class="lock-title">PIN please</h2>
+    <p class="lock-sub">The register is locked. Type your PIN in the Gol chat —<br>it opens in your name, with your tasks ready.</p>
+    <button id="lockChatBtn" type="button" class="gol-btn">Talk to Gol</button>
+  </div>
+</div>
+
+<div class="receipt hidden" id="tasksModal"><div class="receipt-card tasks-card">
+  <h3>My Tasks</h3>
+  <div id="tasksNext"></div>
+  <div id="tasksList"></div>
+  <div class="tasks-note-row">
+    <input id="taskNoteInput" type="text" placeholder="Note for the boss…" autocomplete="off">
+    <button id="taskNoteSend" type="button">Send note</button>
+  </div>
+  <button id="tasksClose" type="button" class="ghost">Close</button>
+</div></div>
 
 <div class="receipt hidden" id="receiptModal"><div class="receipt-card">
   <h3 id="receiptTitle">Receipt</h3>

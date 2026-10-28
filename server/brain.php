@@ -88,6 +88,22 @@ function out(array $r): void {
     // response's meta field for the team (and the hackathon judges) to verify;
     // the register UI ignores it.
     $r['meta'] = $GLOBALS['golpos_meta'] ?? ['provider' => 'deterministic', 'model' => null];
+    // Employee lane state (Oct 28): every brain reply carries the
+    // register's lock state and the session's actor, so the register UI
+    // can raise/lower the lock screen and stamp unlock photos without a
+    // second read. Read from the saved session — the server's truth.
+    if (!empty($GLOBALS['golpos_session_id'])) {
+        $ss = golpos_session((string)$GLOBALS['golpos_session_id']);
+        $r['locked'] = golpos_lock_state($ss);
+        if (!empty($GLOBALS['golpos_unlock_event'])) {
+            $r['unlock_event'] = $GLOBALS['golpos_unlock_event'];
+        }
+        $r['actor'] = !empty($ss['unlocked_by']) ? [
+            'name' => (string)($ss['unlocked_name'] ?? ''),
+            'role' => (string)($ss['unlocked_role'] ?? ''),
+            'email' => $ss['unlocked_by'] === 'admin' ? '' : (string)$ss['unlocked_by'],
+        ] : null;
+    }
     // When the access gate consumed this turn's message as a PIN (including
     // when it replayed the pending intent after a successful PIN), the
     // client masks the typed bubble — the digits never stand in the history.
@@ -585,6 +601,147 @@ $S = [
     'np' => 'Receipt Loyalty — leaderboard:',
     'hi' => 'Receipt Loyalty — leaderboard:',
     'dev' => 'रसिद लोयाल्टी — लिडरबोर्ड:'],
+  // --- employee lane: lock, tasks, notes, presence (owner, Oct 28) -----------
+  'pin_please' => [
+    'en' => 'PIN please — the register is locked. Type your PIN and I\'ll open it in your name.',
+    'np' => 'PIN dinus — register lock chha. PIN halnus, tapaiko naam ma khulchha.',
+    'hi' => 'PIN dijiye — register lock hai. PIN daaliye, aapke naam par khulega.',
+    'dev' => 'PIN दिनुस् — रजिस्टर लक छ। PIN हाल्नुस्, तपाईंको नाममा खुल्छ।'],
+  'unlock_shared' => [
+    'en' => 'That PIN matches more than one person on the roster — I can\'t tell who is opening the register. The owner needs to give each person their own PIN.',
+    'np' => 'Tyo PIN roster ma ek bhanda badhi manche sanga milchha — kasle khulyo thaha hundaina. Owner le harek lai afnai PIN dinu parchha.',
+    'hi' => 'Woh PIN roster mein ek se zyada logon se milta hai — kaun khol raha hai pata nahi. Owner ko har kisi ko apna PIN dena hoga.',
+    'dev' => 'त्यो PIN roster मा एकभन्दा बढी मान्छेसँग मिल्छ — कसले खोल्यो थाहा हुँदैन। Owner ले हरेकलाई आफ्नै PIN दिनुपर्छ।'],
+  'tasks_none' => [
+    'en' => 'No tasks waiting for you today.',
+    'np' => 'Aaja tapaiko lagi parkhiraheko kam chhaina.',
+    'hi' => 'Aaj aapke liye koi kaam intezaar nahi kar raha.',
+    'dev' => 'आज तपाईंका लागि पर्खिरहेको काम छैन।'],
+  'yday_unfinished' => [
+    'en' => '%d task item(s) from yesterday are still open (%s).',
+    'np' => 'Hijo ka %d kam ajhai baki chha (%s).',
+    'hi' => 'Kal ke %d kaam abhi baki hain (%s).',
+    'dev' => 'हिजोका %d काम अझै बाँकी छ (%s)।'],
+  'overnight_notes' => [
+    'en' => '%d unread note(s) from the team overnight.',
+    'np' => 'Raat bhari team bata %d note aayeko chha — padheko chhaina.',
+    'hi' => 'Raat bhar team se %d note aaye hain — padhe nahi gaye.',
+    'dev' => 'रातभरि team बाट %d note आएको छ — पढेको छैन।'],
+  'morning_plain' => [
+    'en' => 'Good morning.',
+    'np' => 'Namaste, subha bhayo.',
+    'hi' => 'Suprabhat.',
+    'dev' => 'नमस्ते, शुभ प्रभात।'],
+  'assign_roster_miss' => [
+    'en' => '%s isn\'t on the roster — I can\'t assign work to a stranger. Add them first ("add name@email.com as employee"), then assign.',
+    'np' => '%s roster ma chhaina — nachineko manche lai kam dina mildaina. Pahile add garnus ("add name@email.com as employee"), ani assign garnus.',
+    'hi' => '%s roster mein nahi hai — ajnabi ko kaam nahi de sakta. Pehle add kijiye ("add name@email.com as employee"), phir assign kijiye.',
+    'dev' => '%s roster मा छैन — नचिनेको मान्छेलाई काम दिन मिल्दैन। पहिले add गर्नुस् ("add name@email.com as employee"), अनि assign गर्नुस्।'],
+  'assign_ask_items' => [
+    'en' => 'What work should I give? Name the tasks and I\'ll stage the card.',
+    'np' => 'Ke kam dine? Kam haru bhannus, card stage garchhu.',
+    'hi' => 'Kya kaam doon? Kaam bataiye, card stage karta hoon.',
+    'dev' => 'के काम दिने? कामहरू भन्नुस्, card stage गर्छु।'],
+  'assign_edited' => [
+    'en' => 'Task card updated — %s now has %d item(s). Say "gol" to record + email, or keep editing.',
+    'np' => 'Task card update bhayo — %s ko aba %d kam chha. Record + email garna "gol" bhannus, wa edit gardai garnus.',
+    'hi' => 'Task card update ho gaya — %s ke ab %d kaam hain. Record + email ke liye "gol" kahiye, ya edit jaari rakhen.',
+    'dev' => 'Task card update भयो — %s को अब %d काम छ। Record + email गर्न "गोल" भन्नुस्, वा edit गर्दै गर्नुस्।'],
+  'assign_done_sent' => [
+    'en' => 'Tasks recorded for %s and emailed to %s: %s.',
+    'np' => '%s ko kam record bhayo, %s ma email pathaiyo: %s.',
+    'hi' => '%s ke kaam record ho gaye, %s par email bheja: %s.',
+    'dev' => '%s को काम record भयो, %s मा email पठाइयो: %s।'],
+  'assign_done_mailfail' => [
+    'en' => 'Tasks recorded for %s, but the email to %s could not be sent — the list waits in their register tasks.',
+    'np' => '%s ko kam record bhayo, tara %s ma email pathauna milena — list unko register tasks ma parkhi chha.',
+    'hi' => '%s ke kaam record ho gaye, lekin %s par email nahi bheja gaya — list unke register tasks mein intezaar kar rahi hai.',
+    'dev' => '%s को काम record भयो, तर %s मा email पठाउन मिलेन — list उनको register tasks मा पर्खिरहेको छ।'],
+  'note_ask_identity' => [
+    'en' => 'That runs from your own session — unlock the register with your PIN first, then tell me.',
+    'np' => 'Tyo afnai session bata chhalchha — pahile afno PIN le register khola garnus, ani bhannus.',
+    'hi' => 'Woh aapke apne session se chalta hai — pehle apne PIN se register kholiye, phir kahiye.',
+    'dev' => 'त्यो आफ्नै session बाट चल्छ — पहिले आफ्नो PIN ले register खोल्नुस्, अनि भन्नुस्।'],
+  'note_done' => [
+    'en' => 'Note sent to the boss: "%s"',
+    'np' => 'Boss lai note pugyo: "%s"',
+    'hi' => 'Boss ko note bheja: "%s"',
+    'dev' => 'Boss लाई note पुग्यो: "%s"'],
+  'task_done_ok' => [
+    'en' => 'Done — "%s" marked complete at %s.',
+    'np' => 'Sakiyo — "%s" %s ma done bhayo.',
+    'hi' => 'Ho gaya — "%s" %s par done ho gaya.',
+    'dev' => 'सकियो — "%s" %s मा done भयो।'],
+  'task_done_which' => [
+    'en' => 'Which task is done? Your open items: %s',
+    'np' => 'Kun kam sakiyo? Tapaiko khula kam: %s',
+    'hi' => 'Kaun sa kaam ho gaya? Aapke khule kaam: %s',
+    'dev' => 'कुन काम सकियो? तपाईंको खुला काम: %s'],
+  'team_no_notes' => [
+    'en' => '%s has sent no notes yet.',
+    'np' => '%s le ahile samma note pathaeko chhaina.',
+    'hi' => '%s ne abhi tak koi note nahi bheja.',
+    'dev' => '%s ले अहिलेसम्म note पठाएको छैन।'],
+  'roster_miss' => [
+    'en' => '%s isn\'t on the roster — no presence to show. If they work here, add them first.',
+    'np' => '%s roster ma chhaina — presence dekhaune kohi chhaina. Yaha kam garchan bhane pahile add garnus.',
+    'hi' => '%s roster mein nahi hai — presence dikhane ko koi nahi. Agar yahan kaam karte hain to pehle add kijiye.',
+    'dev' => '%s roster मा छैन — presence देखाउने कोही छैन। यहाँ काम गर्छन् भने पहिले add गर्नुस्।'],
+  'refund_route' => [
+    'en' => 'Refunds don\'t run from chat yet — the refund lane is being built to run from Transactions, so the sale stays exactly as recorded and no price is touched. Nothing changed.',
+    'np' => 'Refund ahile chat bata chaldaina — refund lane Transactions bata chalne gari baniraheko chha, tyasaile sale record ustai chha ra mulya ma kehi chalaieena. Kehi badliena.',
+    'hi' => 'Refund abhi chat se nahi chalta — refund lane Transactions se chalne ke liye ban raha hai, isliye sale record waisa hi hai aur daam nahi chhua gaya. Kuchh nahi badla.',
+    'dev' => 'Refund अहिले chat बाट चल्दैन — refund lane Transactions बाट चल्ने गरी बनिरहेको छ, त्यसैले sale record उस्तै छ र मूल्यमा केही चलाइएन। केही बदलिएन।'],
+  'stock_one_local' => [
+    'en' => '%s — %s on hand (this register\'s own shelf).',
+    'np' => '%s — %s ota chha (yahi register ko shelf).',
+    'hi' => '%s — %s maujud hai (is register ki apni shelf).',
+    'dev' => '%s — %s वटा छ (यही register को shelf)।'],
+  'stock_untracked_local' => [
+    'en' => '%s is in the catalog, but its stock count is not tracked on this register.',
+    'np' => '%s list ma chha, tara yo register ma stock count track bhayeko chhaina.',
+    'hi' => '%s list mein hai, lekin is register par stock count track nahi hota.',
+    'dev' => '%s सूचीमा छ, तर यो register मा stock count track भएको छैन।'],
+  'stock_low_head_local' => [
+    'en' => 'Out or running low at %s (this register\'s own shelf):',
+    'np' => '%s ma sakiyeko wa sakina lageko (yahi register ko shelf):',
+    'hi' => '%s mein khatam ya kam (is register ki apni shelf):',
+    'dev' => '%s मा सकिएको वा सकिन लागेको (यही register को shelf):'],
+  'stock_low_none_local' => [
+    'en' => 'Nothing is out or running low — every tracked item has more than 2 on hand (this register\'s own shelf).',
+    'np' => 'Kehi sakiyeko wa sakina lageko chhaina — sabai tracked item 2 bhanda badhi chha (yahi register ko shelf).',
+    'hi' => 'Kuchh khatam ya kam nahi hai — har tracked item 2 se zyada hai (is register ki shelf).',
+    'dev' => 'केही सकिएको वा सकिन लागेको छैन — सबै tracked item २ भन्दा बढी छ (यही register को shelf)।'],
+  'stock_notfound_local' => [
+    'en' => 'I couldn\'t find that item in this register\'s catalog.',
+    'np' => 'Yo register ko list ma tyo saman bhettina.',
+    'hi' => 'Is register ki list mein woh saaman nahi mila.',
+    'dev' => 'यो register को सूचीमा त्यो सामान भेटिन।'],
+  'stock_recv_done_local' => [
+    'en' => '%s received — stock %s → %s.',
+    'np' => '%s ayo — stock %s → %s bhayo.',
+    'hi' => '%s aaya — stock %s → %s ho gaya.',
+    'dev' => '%s आयो — stock %s → %s भयो।'],
+  'whatsout_done' => [
+    'en' => 'What\'s Out filed — %s, reported by %s. The stock count was not changed.',
+    'np' => 'What\'s Out record bhayo — %s, %s le report garyo. Stock count badliena.',
+    'hi' => 'What\'s Out record ho gaya — %s, %s ne report kiya. Stock count nahi badla.',
+    'dev' => 'What\'s Out record भयो — %s, %s ले report गर्‍यो। Stock count बदलिएन।'],
+  'whatsout_unknown' => [
+    'en' => 'I couldn\'t match that to a catalog item, so no report was filed. Closest on the shelf: %s.',
+    'np' => 'Tyo naam catalog ko saman sanga milena, report file bhayena. Shelf ma najik: %s.',
+    'hi' => 'Woh naam catalog ke saaman se nahi mila, report file nahi hui. Shelf par sabse kareeb: %s.',
+    'dev' => 'त्यो नाम catalog को सामानसँग मिलेन, report file भएन। Shelf मा नजिक: %s।'],
+  'count_done' => [
+    'en' => 'Count filed — %s: counted %s, system %s (variance %s). The shelf stock was not changed — the variance waits for the owner.',
+    'np' => 'Count file bhayo — %s: ginti %s, system %s (farak %s). Shelf stock badliena — farak owner ko kura parkhi chha.',
+    'hi' => 'Count file ho gaya — %s: ginti %s, system %s (antar %s). Shelf stock nahi badla — antar owner ke faisle ka intezaar karega.',
+    'dev' => 'Count file भयो — %s: गिन्ती %s, system %s (फरक %s)। Shelf stock बदलिएन — फरक owner को कुरा पर्खिरहेको छ।'],
+  'count_ask' => [
+    'en' => 'Tell me the count the way you counted it — "Coke 20oz ko ginti 42 chha" — item and the number you counted on the shelf.',
+    'np' => 'Ginti jastai gannu bhayo tyastai bhannus — "Coke 20oz ko ginti 42 chha" — saman ra shelf ma ganeko number.',
+    'hi' => 'Ginti jaise aapne ginni waisi bataiye — "Coke 20oz ko ginti 42 chha" — saaman aur shelf par gina number.',
+    'dev' => 'गिन्ती जस्तै गन्नुभयो त्यस्तै भन्नुस् — "Coke 20oz को गिन्ती 42 छ" — सामान र shelf मा गनेको नम्बर।'],
   // --- register order prep (owner directive, Oct 28) -------------------------
   'ord_none_needed' => [
     'en' => '%s — nothing needs ordering today: every line on its list is covered (%d lines checked). No card staged.',
@@ -845,7 +1002,13 @@ function golpos_is_batch_mode_set(string $msg): bool {
     return preg_match('/batch/iu', $msg) === 1 && preg_match('/\b(auto|manual)\b/iu', $msg) === 1;
 }
 function golpos_is_employee_intent(string $msg): bool {
-    return preg_match('/(employee|employees|staff|karmachari|कर्मचारी)/iu', $msg) === 1;
+    if (preg_match('/(employee|employees|staff|karmachari|कर्मचारी)/iu', $msg)) { return true; }
+    // An email plus a roster verb is an employee act even when the
+    // word "employee" goes unsaid — "add rita@x as closer" is how the
+    // owner actually says it (battery catch, Oct 28: the message fell
+    // through to the stock-count lane on the word "ginti").
+    return preg_match('/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/u', $msg) === 1
+        && preg_match('/(add|thap|invite|join|remove|hata|nikal|थप|निकाल|हटाउ)/iu', $msg) === 1;
 }
 function golpos_is_loyalty_board_intent(string $msg): bool {
     return preg_match('/(loyalty|leader\s*board)/iu', $msg) === 1;
@@ -897,6 +1060,113 @@ function golpos_pin_shaped(string $msg): ?string {
     $d = golpos_norm_digits(trim($msg));
     return preg_match('/^\d{4,6}$/', $d) ? $d : null;
 }
+// --- employee lane matchers + parsers (owner directive, Oct 28) ----------------
+// Shared by the gate and the dispatch, like every access matcher: the
+// gate must classify a message exactly as the dispatch will treat it.
+
+// A refund ask. Refunds are specced to run from Transactions; until
+// that lane lands, a refund word must NEVER fall into the price lane
+// (alive audit #53: "coke ko refund gara" staged a price question).
+function golpos_is_refund_ask(string $msg): bool {
+    return preg_match('/(refund|refand|farkau|farkaine|फिर्ता|रिफन्ड)/iu', $msg) === 1;
+}
+
+// Parse an assignment: "<name> lai bhandeu / kam deu: <tasks…>". The
+// items are the owner's own words, split on commas / "ani" / "and" —
+// nothing is invented; a deadline rides only when a time was said.
+function golpos_parse_task_assign(string $msg): ?array {
+    $m = null;
+    if (preg_match('/^(.+?)\s+(?:lai|laai|लाई)\s+(?:yo\s+)?(?:bhandeu|bhanideu|bhana|bhan|kam\s+deu|task\s+deu|deu|dinus|dinuhos)\s*[:\-]?\s*(.+)$/isu', $msg, $mm)) {
+        $m = $mm;
+    } elseif (preg_match('/^(?:assign|give)\s+(.+?)\s*(?:lai\s+)?[:\-]\s*(.+)$/isu', $msg, $mm)) {
+        $m = $mm;
+    }
+    if ($m === null) { return null; }
+    $who = trim((string)preg_replace('/^(please|plz|gol)\s+/iu', '', trim($m[1])));
+    $rest = trim($m[2]);
+    if ($who === '' || $rest === '') { return null; }
+    // "boss lai bhandeu" is a NOTE, never an assignment — the boss is
+    // not an assignee. (Battery catch, Oct 28: the assign parser ate
+    // the note lane's own opening words.)
+    if (preg_match('/^(boss|malik|owner|gol|बस)$/iu', $who)) { return null; }
+    $parts = preg_split('/\s*(?:,|;|\n)\s*|\s+\bani\b\s+|\s+\band\b\s+/iu', $rest) ?: [];
+    $items = []; $due = null;
+    foreach ($parts as $part) {
+        $part = trim((string)$part, " \t.!।");
+        if ($part === '' || preg_match('/^(kam|task|tasks|kaam)$/iu', $part)) { continue; }
+        $items[] = $part;
+        if ($due === null && preg_match('/\d{1,2}(?::\d{2})?\s*(?:baje|am|pm)/iu', golpos_norm_digits($part))) {
+            $hint = preg_match('/(banda|close|बन्द)/iu', $part) ? 'pm' : 'am';
+            $t24 = golpos_parse_time($part, $hint);
+            if ($t24 !== null) { $due = date('Y-m-d') . 'T' . $t24 . ':00'; }
+        }
+    }
+    if (!$items) { return null; }
+    return ['who' => $who, 'items' => $items, 'due' => $due];
+}
+
+// A note to the boss: "boss lai bhandeu: <text>" from the employee's
+// own session. Returns the note text or null.
+function golpos_parse_team_note(string $msg): ?string {
+    if (preg_match('/(?:boss|malik|owner|बस)\s*(?:lai|laai|लाई)?\s*(?:bhandeu|bhanideu|bhana|bhan|pathau|pathaideu)\s*[:\-]?\s*(.+)$/isu', $msg, $m)) {
+        $txt = trim($m[1]);
+        return $txt !== '' ? $txt : null;
+    }
+    if (preg_match('/^note\s+for\s+(?:the\s+)?boss\s*[:\-]\s*(.+)$/isu', $msg, $m)) {
+        $txt = trim($m[1]);
+        return $txt !== '' ? $txt : null;
+    }
+    return null;
+}
+
+// "mero kam ke chha?" / "my tasks" — the employee's own list.
+function golpos_is_my_tasks_ask(string $msg): bool {
+    if (preg_match('/(mero|my)\s+(kam|task|tasks|काम)/iu', $msg)) { return true; }
+    if (preg_match('/^(tasks?|kam|काम)\s*(dekha|list|show|ke|k)/iu', $msg)) { return true; }
+    return preg_match('/(kam|task)\s+(ke\s+chha|ke\s+cha|k\s+chha)/iu', $msg) === 1;
+}
+
+// An ordinal as spoken: digits, English, Romanized Nepali, Devanagari.
+function golpos_ordinal_in(string $msg): ?int {
+    $map = ['first' => 1, 'pahilo' => 1, 'पहिलो' => 1,
+            'second' => 2, 'dosro' => 2, 'दोस्रो' => 2,
+            'third' => 3, 'tesro' => 3, 'तेस्रो' => 3,
+            'fourth' => 4, 'chautho' => 4, 'चौथो' => 4,
+            'fifth' => 5, 'pachau' => 5, 'पाँचौं' => 5];
+    $n = golpos_norm_digits(mb_strtolower($msg));
+    foreach ($map as $w => $v) {
+        if (preg_match('/' . preg_quote($w, '/') . '/iu', $n)) { return $v; }
+    }
+    if (preg_match('/(\d+)\s*(?:st|nd|rd|th)\b/iu', $n, $m)) { return (int)$m[1]; }
+    return null;
+}
+
+// Team reads (owner domain): "<name> le ke bhanin?" -> that person's
+// notes; "kasle ke sakyo?" -> the whole team's progress.
+function golpos_parse_note_ask(string $msg): ?string {
+    if (preg_match('/^(.+?)\s+le\s+ke\s+(?:bhanin|bhaneko|bhanyo|bhanin|bhane)/iu', $msg, $m)) { return trim($m[1]); }
+    if (preg_match('/(?:what\s+did|notes?\s+from)\s+(.+?)\s*(?:say|bhanin)?\s*\??$/iu', $msg, $m)) { return trim($m[1]); }
+    if (preg_match('/^(.+?)\s+(?:ko|ka|ki)\s+(?:note|notes|message|sandesh)/iu', $msg, $m)) { return trim($m[1]); }
+    return null;
+}
+function golpos_is_progress_ask(string $msg): bool {
+    if (preg_match('/kasle\s+ke\s+(kam\s+)?(sakyo|sake|sakye)/iu', $msg)) { return true; }
+    if (preg_match('/(who\s+finished\s+what|team\s+progress|team\s+status)/iu', $msg)) { return true; }
+    return preg_match('/(team|kasle).{0,24}(progress|sakyo|ke\s+bhayo)/iu', $msg) === 1;
+}
+
+// A presence ask (owner domain): "<name> ko haal ke chha?", "<name> ko
+// barema bhana", "is <name> in?" — answered only when the name truly
+// resolves to the roster; anything else falls through untouched.
+function golpos_parse_presence_ask(string $msg): ?string {
+    if (preg_match('/^(.+?)\s+ko\s+(?:haal|barema|status|presence)/iu', $msg, $m)) { return trim($m[1]); }
+    if (preg_match('/^(?:about|barema)\s+(.+?)\s*\??$/iu', $msg, $m)) { return trim($m[1]); }
+    if (preg_match('/^is\s+(.+?)\s+in\s*\??$/iu', $msg, $m)) { return trim($m[1]); }
+    if (preg_match('/^(.+?)\s+(?:chha|cha|is\s+here|aayeko\s+chha)\s*\??$/iu', $msg, $m)
+        && preg_match('/(haal)/iu', $msg)) { return trim($m[1]); }
+    return null;
+}
+
 // Read a time of day out of a message -> "HH:MM" 24h, or null. With no
 // am/pm marker, the hint decides ("store 9 baje banda" means 9 PM; an
 // opening "7 baje" means 7 AM).
@@ -919,8 +1189,10 @@ function golpos_invite_link(string $token): string {
     $dir = rtrim(dirname(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/server/brain.php'))), '/');
     return $scheme . '://' . $host . $dir . '/web/invite.html?t=' . $token;
 }
-// Send the invite in Gol's voice. Returns false when mail() refuses, so the
-// caller shows the link in chat instead of pretending it sent.
+// Send the invite in Gol's voice. Returns false when mail refuses, so the
+// caller shows the link in chat instead of pretending it sent. Rides the
+// ONE mail path (store.php golpos_mail — the same path task mail uses,
+// including its test sink).
 function golpos_send_invite(string $email, string $name, string $link, string $shop): bool {
     $who = $name !== '' ? $name : $email;
     $subject = "You're invited to join {$shop} on Gol POS";
@@ -930,9 +1202,7 @@ function golpos_send_invite(string $email, string $name, string $link, string $s
         . "remember you at the register:\n\n{$link}\n\n"
         . "The link works once. If you didn't expect it, you can ignore this email.\n\n"
         . "— Gol, your store brain";
-    $headers = "From: Gol POS <no-reply@" . preg_replace('/[^A-Za-z0-9.\-]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'localhost')) . ">\r\n"
-        . "Content-Type: text/plain; charset=utf-8\r\n";
-    return @mail($email, $subject, $body, $headers);
+    return golpos_mail($email, $subject, $body);
 }
 
 // --- PRIMARY BRAIN: the Muse family via the Meta Model API -------------------
@@ -1260,6 +1530,33 @@ function golpos_card_summary(array $card): string {
                 . ' → ' . golpos_setting_display((string)($card['setting'] ?? ''), $card['new'] ?? null);
         case 'stock_receive':
             return 'stock receive — ' . ($card['name'] ?? '') . ' × ' . $qty($card['qty'] ?? 0);
+        case 'employee_add': {
+            $duties = array_values(array_map('strval', (array)($card['duties'] ?? [])));
+            $groups = [];
+            foreach (golpos_persona_data()['checklist'] as $gname => $gitems) {
+                $n = 0;
+                foreach ($gitems as $d) {
+                    if (in_array(golpos_bill_name_key((string)$d),
+                                 array_map('golpos_bill_name_key', $duties), true)) { $n++; }
+                }
+                if ($n > 0) { $groups[] = $gname . ' ' . $n; }
+            }
+            return 'add employee ' . ($card['email'] ?? '') . ' — ' . ucfirst((string)($card['role'] ?? 'cashier'))
+                . ' preset, ' . count($duties) . ' duties (' . implode(' · ', $groups) . ')'
+                . '. This persona starts knowing: ' . implode(' · ', array_slice($duties, 0, 5))
+                . (count($duties) > 5 ? ' · +' . (count($duties) - 5) . ' more' : '');
+        }
+        case 'task_assign':
+            return 'tasks for ' . ($card['employee_name'] ?? '') . ' — '
+                . count((array)($card['items'] ?? [])) . ' item(s): '
+                . implode('; ', array_map('strval', (array)($card['items'] ?? [])));
+        case 'team_note':
+            return 'note to the boss from ' . ($card['from_name'] ?? '') . ' — "' . ($card['text'] ?? '') . '"';
+        case 'whats_out':
+            return 'What\'s Out report — ' . ($card['name'] ?? '') . ' (by ' . ($card['by_name'] ?? '') . ')';
+        case 'stock_count':
+            return 'stock count — ' . ($card['name'] ?? '') . ': counted ' . $qty($card['counted'] ?? 0)
+                . ', system ' . (isset($card['system']) && $card['system'] !== null ? $qty($card['system']) : '—');
         case 'batch_close':
             return 'batch close — ' . (int)($card['count'] ?? 0) . ' card sales, ' . money((float)($card['total'] ?? 0));
         case 'bill':
@@ -1562,6 +1859,14 @@ function golpos_prep_build(array $vendor, array $products): array {
             if (!isset($seeds[$k][$f]) && isset($s[$f])) { $seeds[$k][$f] = $s[$f]; }
         }
     };
+    // What's Out reports seed FIRST (employee lane): an item a person
+    // stood in front of and reported out earns its line before any
+    // history heuristic — the report is itself the signal, and the
+    // quantity rules below give it max(sold, refill-to-par, usual).
+    foreach (golpos_whatsout_open() as $w) {
+        $wn = trim((string)($w['name'] ?? ''));
+        if ($wn !== '') { $addSeed(['name' => $wn, 'from_report' => true]); }
+    }
     foreach ((array)($vendor['typical'] ?? []) as $tl) {
         if (is_array($tl)) {
             $addSeed(['name' => (string)($tl['name'] ?? ''),
@@ -1611,13 +1916,17 @@ function golpos_prep_build(array $vendor, array $products): array {
         if ($sug === 0 && $onHand !== null && $onHand <= 0) {
             $sug = (int)($seed['qty'] ?? 0) > 0 ? (int)$seed['qty'] : 1; // OUT, no signal: the usual line
         }
+        if ($sug <= 0 && !empty($seed['from_report'])) {
+            $sug = (int)($seed['qty'] ?? 0) > 0 ? (int)$seed['qty'] : 1; // a report is itself the signal
+        }
         if ($sug <= 0) { $fine++; continue; }
         $cost = $seed['cost'] ?? null;
         if ($cost === null && $p !== null && isset($p['cost']) && is_numeric($p['cost'])) {
             $cost = (float)$p['cost'];
         }
-        $flag = ($onHand !== null && $onHand <= 0) ? 'out'
-            : ($topup > 0 ? 'low' : 'sold');
+        $flag = !empty($seed['from_report']) ? 'out'
+            : (($onHand !== null && $onHand <= 0) ? 'out'
+            : ($topup > 0 ? 'low' : 'sold'));
         $line = ['sku' => $sku, 'name' => $name, 'qty' => $sug,
                  'cost' => $cost !== null ? round((float)$cost, 2) : null,
                  'line_total' => $cost !== null ? round($sug * (float)$cost, 2) : null,
@@ -1912,6 +2221,368 @@ function golpos_day_label(string $ymd): string {
     return date('M j', strtotime($ymd));
 }
 
+// --- employee lane composition --------------------------------------------------
+// The session's actor: who this register is open as. An unlock stamps
+// it (unlocked_by / unlocked_role); a device-identified employee
+// session carries it too. Admin is the owner; an employee actor holds
+// the cashier domain only.
+function golpos_actor(): ?array {
+    $sid = (string)($GLOBALS['golpos_session_id'] ?? '');
+    if ($sid === '') { return null; }
+    $s = golpos_session($sid);
+    if (($s['unlocked_role'] ?? '') === 'employee' && !empty($s['unlocked_by'])) {
+        $e = golpos_employee((string)$s['unlocked_by']);
+        return ['email' => (string)$s['unlocked_by'], 'role' => 'employee',
+                'name' => (string)($s['unlocked_name'] ?? ''), 'record' => $e];
+    }
+    if (!empty($s['employee'])) {
+        $e = golpos_employee((string)$s['employee']);
+        if ($e !== null) {
+            return ['email' => (string)$e['email'], 'role' => 'employee',
+                    'name' => golpos_display_name($e), 'record' => $e];
+        }
+    }
+    if (!empty($s['admin'])) { return ['email' => '', 'role' => 'admin', 'name' => 'Owner', 'record' => null]; }
+    return null;
+}
+
+// The owner's team line: yesterday's unfinished items (named) +
+// overnight unread notes. Empty string when the team is clear.
+function golpos_team_line(): string {
+    $parts = [];
+    $today = date('Y-m-d');
+    $openCount = 0; $names = [];
+    foreach (golpos_tasks() as $t) {
+        if (($t['status'] ?? '') === 'superseded' || golpos_task_status($t) === 'done') { continue; }
+        if (substr((string)($t['created'] ?? ''), 0, 10) >= $today) { continue; }
+        $n = 0;
+        foreach ((array)($t['items'] ?? []) as $it) { if (empty($it['done'])) { $n++; } }
+        if ($n > 0) {
+            $openCount += $n;
+            $nm = (string)($t['employee_name'] ?? 'Team');
+            if (!in_array($nm, $names, true)) { $names[] = $nm; }
+        }
+    }
+    if ($openCount > 0) { $parts[] = t('yday_unfinished', $openCount, implode(', ', $names)); }
+    $since = strtotime(date('Y-m-d', strtotime('-1 day')) . ' 18:00');
+    $notes = 0;
+    foreach (golpos_team_notes() as $n) {
+        if (empty($n['read']) && strtotime((string)($n['at'] ?? '')) >= $since) { $notes++; }
+    }
+    if ($notes > 0) { $parts[] = t('overnight_notes', $notes); }
+    return implode("\n", $parts);
+}
+
+// One person's open items, flattened in list order — the numbering the
+// task view speaks and the done lane counts by.
+function golpos_open_items_for(string $email): array {
+    $out = [];
+    foreach (golpos_tasks_for($email) as $t) {
+        foreach ((array)($t['items'] ?? []) as $idx => $it) {
+            if (!empty($it['done'])) { continue; }
+            $out[] = ['task_id' => (string)$t['id'], 'index' => $idx,
+                      'text' => (string)($it['text'] ?? ''),
+                      'source' => (string)($t['source'] ?? 'owner'),
+                      'reason' => (string)($t['reason'] ?? '')];
+        }
+    }
+    return $out;
+}
+
+// The greeting an unlock opens with: the person's name, then the work
+// already waiting for them (owner-assigned or Gol-originated alike —
+// including anything assigned before their first ever unlock). On her
+// FIRST unlock the greeting also names her role and her standing
+// duties, briefly — the persona she was born with (owner, Oct 28).
+function golpos_unlock_greeting(array $actor, bool $firstUnlock = false, ?string $prevUnlockAt = null): string {
+    $h = (int)date('G');
+    $greet = $h < 12 ? 'Good morning' : ($h < 17 ? 'Good afternoon' : 'Good evening');
+    if (($actor['role'] ?? '') === 'employee') {
+        $email = (string)$actor['email'];
+        $lines = [$greet . ', ' . $actor['name'] . ' — the register is open in your name.'];
+        $pres = ($actor['record'] ?? null) !== null ? golpos_presence_for($actor['record']) : null;
+        $pack = $pres !== null ? array_values(array_map('strval', (array)($pres['job_pack']['items'] ?? []))) : [];
+        $packHas = static function (string $duty) use ($pack): bool {
+            foreach ($pack as $d) {
+                if (golpos_bill_name_key($d) === golpos_bill_name_key($duty)) { return true; }
+            }
+            return false;
+        };
+        if ($firstUnlock && $pack) {
+            $show = array_slice($pack, 0, 4);
+            $lines[] = 'Your role: ' . ucfirst((string)($pres['role'] ?? 'cashier'))
+                . ' — your duties: ' . implode(' · ', $show)
+                . (count($pack) > 4 ? ' · +' . (count($pack) - 4) . ' more' : '');
+        }
+        // (1) SINCE SHE WAS GONE — the delta since her last unlock,
+        // composed only from records: tasks added for her (owner or
+        // Gol), her notes still waiting on the boss, and What's Out
+        // items still open under a duty her checklist carries. A
+        // re-unlock minutes later finds an empty delta and says so.
+        if ($prevUnlockAt !== null && !$firstUnlock) {
+            $prev = strtotime($prevUnlockAt);
+            $delta = [];
+            foreach (golpos_tasks_for($email) as $t) {
+                if (strtotime((string)($t['created'] ?? '')) <= $prev) { continue; }
+                if (($t['status'] ?? '') === 'superseded') { continue; }
+                if (($t['employee_email'] ?? null) !== $email) { continue; }
+                foreach ((array)($t['items'] ?? []) as $it) {
+                    if (empty($it['done'])) {
+                        $delta[] = 'new task: ' . (string)($it['text'] ?? '')
+                            . (($t['source'] ?? '') === 'gol' ? ' (from Gol)' : ' (from the boss)');
+                    }
+                }
+            }
+            $unread = 0;
+            foreach (golpos_team_notes() as $n) {
+                if (($n['from_email'] ?? '') === $email && empty($n['read'])) { $unread++; }
+            }
+            if ($unread > 0) { $delta[] = $unread . ' of your note(s) still waiting for the boss to read'; }
+            if ($packHas("What's Out report garne")) {
+                $openOuts = golpos_whatsout_open();
+                if ($openOuts) { $delta[] = count($openOuts) . " What's Out item(s) still open"; }
+            }
+            $lines[] = $delta ? 'Since you were gone:' : 'Nothing new since you were last here.';
+            foreach (array_slice($delta, 0, 4) as $d) { $lines[] = '• ' . $d; }
+        }
+        // (2) TODAY'S SHAPE — what the day holds for HER checklist:
+        // deliveries/reps due today, her closing duty moment, counts
+        // still waiting on her.
+        $shape = [];
+        if ($packHas('delivery lina') || $packHas('bill sanga saman check garne')) {
+            foreach (golpos_vendors_due(date('Y-m-d')) as $v) {
+                $shape[] = 'rep today: ' . (string)$v['name'];
+            }
+            $dow = strtolower(date('D'));
+            foreach (golpos_vendors() as $v) {
+                if (strtolower(substr((string)($v['delivery'] ?? ''), 0, 3)) === $dow) {
+                    $shape[] = 'delivery expected today: ' . (string)$v['name'];
+                }
+            }
+        }
+        if ($packHas('day close garne')) {
+            $shape[] = 'your pack carries the close — day close + report at closing time';
+        }
+        foreach (golpos_tasks_for($email) as $t) {
+            if (($t['kind'] ?? '') !== 'whatsout_aging' || golpos_task_status($t) === 'done') { continue; }
+            foreach ((array)($t['items'] ?? []) as $it) {
+                if (empty($it['done'])) { $shape[] = 'count waiting: ' . (string)($it['text'] ?? ''); }
+            }
+        }
+        if ($shape) {
+            $lines[] = "Today's shape:";
+            foreach (array_slice($shape, 0, 4) as $sh) { $lines[] = '• ' . $sh; }
+        }
+        // (3) Her task list, duty-shaped kinds first (report before
+        // counts before the rest), then the owner's words in order.
+        $items = golpos_open_items_for($email);
+        if (!$items) {
+            $lines[] = t('tasks_none');
+        } else {
+            $kindOf = [];
+            foreach (golpos_tasks_for($email) as $t) {
+                foreach ((array)($t['items'] ?? []) as $it) {
+                    if (empty($it['done'])) {
+                        $kindOf[golpos_bill_name_key((string)($it['text'] ?? ''))] = (string)($t['kind'] ?? 'manual');
+                    }
+                }
+            }
+            $rank = static function (array $it) use ($kindOf): int {
+                $k = $kindOf[golpos_bill_name_key($it['text'])] ?? 'manual';
+                return ['report_due' => 0, 'bill_waiting' => 1, 'whatsout_aging' => 2,
+                        'manual' => 3][$k] ?? 3;
+            };
+            usort($items, static fn($a, $b) => $rank($a) <=> $rank($b));
+            $lines[] = 'Your tasks (' . count($items) . ' open):';
+            foreach ($items as $i => $it) {
+                $lines[] = ($i + 1) . '. ' . $it['text']
+                    . ($it['source'] === 'gol' && $it['reason'] !== '' ? ' — from Gol: ' . $it['reason'] : '');
+            }
+        }
+        return implode("\n", $lines);
+    }
+    $lines = [$greet . ' — admin mode, the register is open.'];
+    $tl = golpos_team_line();
+    $lines[] = $tl !== '' ? $tl : 'Team: no open tasks carried over, no unread notes.';
+    return implode("\n", $lines);
+}
+
+// The presence read (owner, admin chat): ONE summary for one person,
+// from the records the lane keeps — unlock, today's tasks, the latest
+// note, standing open items, and the din-bhari trail line. Absent data
+// is stated as absent; nothing is invented.
+function golpos_presence_reply(array $emp): string {
+    $email = (string)$emp['email'];
+    $name = golpos_display_name($emp);
+    $pres = golpos_presence_for($emp);
+    $lines = [$name . ' — presence:'];
+    $justAdded = empty($pres['first_unlock_at'])
+        && strtotime((string)($pres['added_at'] ?? '')) >= time() - 86400;
+    $lines[] = '• Role: ' . (string)($pres['role'] ?? 'employee')
+        . ' · on the roster since ' . date('M j', strtotime((string)($pres['added_at'] ?? 'now')));
+    $latest = golpos_unlock_latest_for($email);
+    if ($latest !== null) {
+        $lines[] = '• Last unlock: ' . date('M j, g:i A', strtotime((string)$latest['at']))
+            . (!empty($latest['photo']) ? ' · photo stamp saved' : ' · no photo (no camera frame)');
+    } else {
+        $lines[] = '• No unlock recorded yet.';
+    }
+    $today = date('Y-m-d');
+    $doneToday = 0; $openToday = 0; $standing = [];
+    foreach (golpos_tasks_for($email) as $t) {
+        $isToday = substr((string)($t['created'] ?? ''), 0, 10) === $today
+            || substr((string)($t['due'] ?? ''), 0, 10) === $today;
+        foreach ((array)($t['items'] ?? []) as $it) {
+            if (!empty($it['done'])) {
+                if (substr((string)($it['done_at'] ?? ''), 0, 10) === $today) { $doneToday++; }
+            } else {
+                // Standing open items carry their AGE (closure law,
+                // Oct 28): a duty stays on the record, visibly ageing,
+                // until evidence closes it.
+                $ageH = max(0, (int)floor((time() - (strtotime((string)($t['created'] ?? 'now')) ?: time())) / 3600));
+                $age = $ageH >= 48 ? intdiv($ageH, 24) . 'd' : $ageH . 'h';
+                $standing[] = (string)($it['text'] ?? '') . ' (' . $age . ')';
+                if ($isToday) { $openToday++; }
+            }
+        }
+    }
+    $lines[] = '• Today: ' . $doneToday . ' task item(s) done, ' . $openToday . ' open.';
+    $latestNote = null;
+    foreach (golpos_team_notes() as $n) {
+        if (($n['from_email'] ?? '') === $email) { $latestNote = $n; }
+    }
+    $lines[] = $latestNote !== null
+        ? '• Latest note: "' . (string)$latestNote['text'] . '" (' . date('M j, g:i A', strtotime((string)$latestNote['at'])) . ')'
+        : '• No notes from them yet.';
+    $lines[] = '• Standing open: ' . ($standing ? implode('; ', array_slice($standing, 0, 3)) : 'none');
+    $trail = golpos_presence_trail($email, $today);
+    $lines[] = '• Din bhari: ' . count($trail['done']) . ' done · ' . count($trail['notes']) . ' note(s) · '
+        . count($trail['outs']) . ' out report(s) · ' . count($trail['counts']) . ' count(s) · '
+        . count($trail['questions']) . ' question(s) asked of Gol.';
+    if ($justAdded && !$standing && $latest === null && $latestNote === null) {
+        $lines[] = 'Just added — no tasks yet, nothing filed yet.';
+    }
+    return implode("\n", $lines);
+}
+
+// Edits to a staged task_assign card, order-prep style: "dosro kam
+// hata" strikes an item, "arko thap: <task>" adds one. Returns true
+// when the message was an edit (and has been answered).
+function golpos_task_card_apply_edits(array $card, string $msg): bool {
+    $items = array_values(array_map('strval', (array)($card['items'] ?? [])));
+    if (preg_match('/(hata|hatau|remove|strike|nikal|हटाउ|निकाल)/iu', $msg)) {
+        $idx = null;
+        $ord = golpos_ordinal_in($msg);
+        if ($ord !== null && isset($items[$ord - 1])) { $idx = $ord - 1; }
+        if ($idx === null) {
+            $mk = golpos_name_key($msg);
+            foreach ($items as $i => $txt) {
+                $ik = golpos_name_key($txt);
+                if ($ik !== '' && (mb_strpos($mk, $ik) !== false || mb_strpos($ik, $mk) !== false)) { $idx = $i; break; }
+            }
+        }
+        if ($idx === null) { return false; }
+        array_splice($items, $idx, 1);
+        if (!$items) {
+            golpos_clear_pending();
+            out(['reply' => t('ask_cancelled'), 'cancelled' => true]);
+        }
+        $card['items'] = $items;
+        $card = golpos_stage($card);
+        out(['reply' => t('assign_edited', (string)$card['employee_name'], count($items)), 'card' => $card]);
+    }
+    if (preg_match('/(?:^|\b)(?:arko\s+)?(?:thap|add|jodo|thapnus|thapdeu)\s*[:\-]?\s*(.+)$/isu', $msg, $m)) {
+        $txt = trim($m[1], " \t.!।");
+        if ($txt === '') { return false; }
+        $items[] = $txt;
+        $card['items'] = $items;
+        $card = golpos_stage($card);
+        out(['reply' => t('assign_edited', (string)$card['employee_name'], count($items)), 'card' => $card]);
+    }
+    return false;
+}
+
+// --- persona helpers: the add-employee card's checklist editing ------------------
+// A duty is "mentioned" when its distinctive words all appear in the
+// message ("cooler bharnee hata" names the duty 'cooler bharnee'). The
+// owner checks/unchecks in plain words; the card carries the FINAL
+// checked set and the persona is born from exactly that set.
+function golpos_duty_mentioned(array $msgTokens, string $duty): bool {
+    // A duty is named when the owner speaks its distinctive words —
+    // all of them for a short label, at least half (and never fewer
+    // than two) for a long one: "cash ginti hata" names the duty
+    // 'cash ginti (drawer)' without saying the parenthetical.
+    $toks = array_values(array_filter(preg_split('/[^a-z0-9]+/u', golpos_bill_name_key($duty)) ?: [],
+        static fn($w) => mb_strlen((string)$w) >= 4));
+    if (!$toks) { return false; }
+    $hit = 0;
+    foreach ($toks as $tk) { if (in_array($tk, $msgTokens, true)) { $hit++; } }
+    if (count($toks) <= 2) { return $hit === count($toks); }
+    return $hit >= 2 && $hit >= (int)ceil(count($toks) / 2);
+}
+
+// Apply the check/uncheck words of a message to a duty set. Negation
+// words near a mentioned duty uncheck it; "thap/add/pani" near one
+// checks it (a bare mention in an add message changes nothing — the
+// preset already decided).
+function golpos_apply_duty_words(array $duties, string $msg, bool $editsOnly): array {
+    $data = golpos_persona_data();
+    $all = [];
+    foreach ($data['checklist'] as $items) { $all = array_merge($all, array_map('strval', $items)); }
+    $msgTokens = array_values(array_filter(preg_split('/[^a-z0-9]+/u', golpos_bill_name_key($msg)) ?: [],
+        static fn($w) => $w !== ''));
+    $neg = preg_match('/(hata|hatau|narakh|na\s+rakh|remove|exclude|binā|बिना|हटाउ)/iu', $msg) === 1;
+    $add = preg_match('/(thap|thapnus|add|include|pani|पनि|थप)/iu', $msg) === 1;
+    $keys = array_map('golpos_bill_name_key', $duties);
+    foreach ($all as $duty) {
+        if (!golpos_duty_mentioned($msgTokens, $duty)) { continue; }
+        $k = golpos_bill_name_key($duty);
+        if ($neg && in_array($k, $keys, true)) {
+            $duties = array_values(array_filter($duties,
+                static fn($d) => golpos_bill_name_key((string)$d) !== $k));
+            $keys = array_map('golpos_bill_name_key', $duties);
+        } elseif ($add && !in_array($k, $keys, true)) {
+            $duties[] = $duty;
+            $keys[] = $k;
+        }
+    }
+    // Keep checklist order, whatever the edits did.
+    $ordered = [];
+    foreach ($all as $duty) {
+        if (in_array(golpos_bill_name_key($duty), array_map('golpos_bill_name_key', $duties), true)) {
+            $ordered[] = $duty;
+        }
+    }
+    return $ordered;
+}
+
+function golpos_role_word_in(string $msg): ?string {
+    if (preg_match('/\b(cashier|closer|stocker|manager)\b/iu', $msg, $m)) {
+        return strtolower($m[1]);
+    }
+    return null;
+}
+
+// Edits to a staged employee_add card: a role word re-presets the
+// bundle, duty words check/uncheck on top. Re-stages and answers when
+// the message was an edit; returns false when it wasn't one.
+function golpos_emp_card_apply_edits(array $card, string $msg): bool {
+    $changed = false;
+    $role = golpos_role_word_in($msg);
+    if ($role !== null && $role !== ($card['role'] ?? '')) {
+        $card['role'] = $role;
+        $card['duties'] = golpos_preset_duties($role);
+        $changed = true;
+    }
+    $before = $card['duties'] ?? [];
+    $after = golpos_apply_duty_words(is_array($before) ? $before : [], $msg, true);
+    if ($after !== $before) { $card['duties'] = $after; $changed = true; }
+    if (!$changed) { return false; }
+    $card = golpos_stage($card);
+    out(['reply' => 'Add-employee card updated — ' . golpos_card_summary($card)
+        . ' Say "gol" to add + invite, or keep editing.', 'card' => $card]);
+}
+
 // --- the dispatch -------------------------------------------------------------
 // Every intent below runs through this one function so the access layer (the
 // boot code at the bottom of this file) can replay the owner's original
@@ -2019,6 +2690,26 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
         out(['reply' => t('batch_done', $b['n'], $b['count'], money((float)$b['total'])), 'done' => $card]);
     }
     // An employee-remove card: the record leaves the people store.
+    if ($card['type'] === 'employee_add') {
+        // The persona card lands: the roster write, the presence birth
+        // (inside golpos_save_employee — the pack copies the card's
+        // final checked duties), and the invite, all on the owner's gol.
+        $email = golpos_norm_email((string)($card['email'] ?? ''));
+        golpos_clear_pending();
+        if ($email === '' || golpos_employee($email) !== null) { out(['reply' => t('card_fail')]); }
+        $token = bin2hex(random_bytes(16));
+        golpos_save_employee(['name' => (string)($card['name'] ?? ''), 'email' => $email,
+            'role' => (string)($card['role'] ?? 'cashier'),
+            'duties' => array_values(array_map('strval', (array)($card['duties'] ?? []))),
+            'status' => 'invited', 'pin_hash' => null,
+            'invite_token_hash' => hash('sha256', $token), 'created' => date('c')]);
+        $nm = (string)($card['name'] ?? '');
+        $display = $nm !== '' ? "{$nm} ({$email})" : $email;
+        if (golpos_send_invite($email, $nm, golpos_invite_link($token), $shop)) {
+            out(['reply' => t('emp_added_sent', $display), 'done' => $card]);
+        }
+        out(['reply' => t('emp_added_link', $display, golpos_invite_link($token)), 'done' => $card]);
+    }
     if ($card['type'] === 'employee_remove') {
         golpos_clear_pending();
         if (golpos_remove_employee((string)$card['email'])) {
@@ -2032,13 +2723,78 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
     // includes stock_receive, so "gol" from an unelevated session demands
     // the PIN before this runs, exactly like a price change.
     if ($card['type'] === 'stock_receive') {
-        $res = mrstore_adjust_stock((string)$card['name'], (float)$card['qty']);
+        $fmt = static fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
+        if (golpos_link_on()) {
+            $res = mrstore_adjust_stock((string)$card['name'], (float)$card['qty']);
+            golpos_clear_pending();
+            if ($res === null) { out(['reply' => t('card_fail')]); }
+            golpos_link_log(['kind' => 'receive', 'name' => $res['name'], 'qty' => (float)$card['qty'],
+                             'before' => $res['before'], 'after' => $res['after'], 'via' => 'chat']);
+            out(['reply' => t('stock_recv_done', $res['name'], $fmt($res['before']), $fmt($res['after'])), 'done' => $card]);
+        }
+        // Standalone: the same card lands on the register's OWN shelf —
+        // the one receive path (golpos_receive_stock), so a spoken
+        // delivery and a tile receive compose on one number.
+        $res = golpos_receive_stock((string)($card['sku'] ?? ''), (int)$card['qty']);
         golpos_clear_pending();
         if ($res === null) { out(['reply' => t('card_fail')]); }
-        golpos_link_log(['kind' => 'receive', 'name' => $res['name'], 'qty' => (float)$card['qty'],
-                         'before' => $res['before'], 'after' => $res['after'], 'via' => 'chat']);
-        $fmt = static fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
-        out(['reply' => t('stock_recv_done', $res['name'], $fmt($res['before']), $fmt($res['after'])), 'done' => $card]);
+        out(['reply' => t('stock_recv_done_local', $res['name'], $fmt($res['before']), $fmt($res['after'])), 'done' => $card]);
+    }
+    // A task assignment (employee lane): the record lands in the task
+    // store AND the numbered list is emailed to the employee's address
+    // on file — one executor (store.php) so the reply can state both
+    // halves truthfully.
+    if ($card['type'] === 'task_assign') {
+        $res = golpos_execute_task_assign($card, $shop);
+        golpos_clear_pending();
+        $list = implode('; ', array_map(static fn($it) => (string)($it['text'] ?? ''), $res['task']['items'] ?? []));
+        if ($res['sent']) {
+            out(['reply' => t('assign_done_sent', (string)$card['employee_name'],
+                              (string)$card['employee_email'], $list), 'done' => $card]);
+        }
+        out(['reply' => t('assign_done_mailfail', (string)$card['employee_name'],
+                          (string)$card['employee_email']), 'done' => $card]);
+    }
+    // A team note: the employee's words land in the owner's inbox.
+    if ($card['type'] === 'team_note') {
+        golpos_team_note_add(['from_email' => (string)($card['from_email'] ?? ''),
+                              'from_name' => (string)($card['from_name'] ?? ''),
+                              'text' => (string)($card['text'] ?? '')]);
+        golpos_clear_pending();
+        out(['reply' => t('note_done', (string)$card['text']), 'done' => $card]);
+    }
+    // A What's Out report: a signal with a name and a time — it lands
+    // on the store's What's Out record (standalone file / the MR.STORE
+    // Floor bridge) and NEVER edits a stock count.
+    if ($card['type'] === 'whats_out') {
+        $ok = false;
+        if (golpos_link_on()) {
+            $ok = mrstore_append_whats_out((string)$card['name'],
+                    (string)($card['by_name'] ?? ''), (string)($card['by_email'] ?? ''));
+        } else {
+            golpos_whatsout_add(['name' => (string)$card['name'], 'sku' => (string)($card['sku'] ?? ''),
+                                 'by_name' => (string)($card['by_name'] ?? ''),
+                                 'by_email' => (string)($card['by_email'] ?? '')]);
+            $ok = true;
+        }
+        golpos_clear_pending();
+        if (!$ok) { out(['reply' => t('card_fail')]); }
+        out(['reply' => t('whatsout_done', (string)$card['name'], (string)($card['by_name'] ?? '')), 'done' => $card]);
+    }
+    // A stock count report: the count EVENT is filed with its variance;
+    // the shelf stock itself is never edited by a count.
+    if ($card['type'] === 'stock_count') {
+        golpos_count_add(['name' => (string)$card['name'], 'sku' => (string)($card['sku'] ?? ''),
+                          'counted' => $card['counted'] ?? null, 'system' => $card['system'] ?? null,
+                          'variance' => $card['variance'] ?? null,
+                          'by_name' => (string)($card['by_name'] ?? ''),
+                          'by_email' => (string)($card['by_email'] ?? '')]);
+        golpos_clear_pending();
+        $fmt = static fn($v) => $v === null ? '—' : rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
+        $var = ($card['variance'] ?? null) === null ? '—'
+            : (((float)$card['variance'] > 0 ? '+' : '') . $fmt($card['variance']));
+        out(['reply' => t('count_done', (string)$card['name'], $fmt($card['counted'] ?? null),
+                          $fmt($card['system'] ?? null), $var), 'done' => $card]);
     }
     // A vendor bill card: the executor lands the creates first, records
     // the purchase once, receives every line through the one receive
@@ -2148,6 +2904,14 @@ if (preg_match('/(poster|banner)/iu', $msg) ||
     out(['reply' => t('poster_route')]);
 }
 
+// --- refunds: never the price lane (alive audit #53) ---------------------------
+// A refund word is routed HERE, before every price lane can hear it:
+// the honest line — refunds will run from Transactions once that lane
+// lands — and the sale stays exactly as recorded.
+if (golpos_is_refund_ask($msg)) {
+    out(['reply' => t('refund_route')]);
+}
+
 // --- edits to a staged ORDER card ---------------------------------------------
 // While an order_prep card waits, "coke 12 hata / pepsi 20 thap" edits its
 // lines and re-stages the same order. A message that parses as no edit at
@@ -2155,6 +2919,22 @@ if (preg_match('/(poster|banner)/iu', $msg) ||
 $pendNow = golpos_pending();
 if ($pendNow !== null && ($pendNow['type'] ?? '') === 'order_prep') {
     golpos_order_apply_edits($pendNow, $msg, $products);
+}
+
+// --- edits to a staged TASK card ------------------------------------------------
+// While a task_assign card waits, "dosro kam hata" / "arko thap: …"
+// edit its items and re-stage the same card — the order-prep pattern.
+$pendTask = golpos_pending();
+if ($pendTask !== null && ($pendTask['type'] ?? '') === 'task_assign') {
+    golpos_task_card_apply_edits($pendTask, $msg);
+}
+
+// --- edits to a staged ADD-EMPLOYEE card -----------------------------------------
+// While the persona card waits, a role word re-presets the bundle and
+// duty words check/uncheck on top of it.
+$pendEmp = golpos_pending();
+if ($pendEmp !== null && ($pendEmp['type'] ?? '') === 'employee_add') {
+    golpos_emp_card_apply_edits($pendEmp, $msg);
 }
 
 // --- "stage it": speak only the truth about the card on the till -------------
@@ -2372,10 +3152,141 @@ if (preg_match('/^\s*(good\s*(morning|afternoon|evening)|namaste|namaskar|hello|
         $rec = golpos_order_for((string)$v['id'], date('Y-m-d'));
         if ($rec === null || ($rec['status'] ?? '') === 'prepared') { $waiting[] = $v; }
     }
+    // The owner's morning line (employee lane): yesterday's unfinished
+    // tasks and overnight notes ride the greeting, before anything
+    // else — the boss buzz for v1 (audit ruling S5).
+    $sessNow = golpos_session((string)($GLOBALS['golpos_session_id'] ?? ''));
+    $teamLine = !empty($sessNow['admin']) ? golpos_team_line() : '';
+    if ($teamLine !== '') {
+        $rep = $waiting ? t('morning_due',
+            implode(' + ', array_map(static fn($v) => (string)$v['name'], $waiting)),
+            (string)$waiting[0]['name']) : '';
+        out(['reply' => t('morning_plain') . "\n" . $teamLine . ($rep !== '' ? "\n" . $rep : '')]);
+    }
     if ($waiting) {
         out(['reply' => t('morning_due',
             implode(' + ', array_map(static fn($v) => (string)$v['name'], $waiting)),
             (string)$waiting[0]['name'])]);
+    }
+}
+
+// --- employee lane: assign, note back, my tasks, done marks ---------------------
+// The owner assigns (admin domain — the gate has run), the employee
+// answers from her own session (cashier domain). Assign and note both
+// stage a card; nothing fires on a bare mention of a name.
+$assignParse = golpos_parse_task_assign($msg);
+if ($assignParse !== null) {
+    $emp = golpos_employee_resolve($assignParse['who']);
+    if ($emp === null) {
+        // Two roster members sharing the name is not a stranger —
+        // say so and name both addresses, so the owner picks.
+        $sameName = [];
+        foreach (golpos_people()['employees'] as $e) {
+            if (golpos_bill_name_key(golpos_display_name($e)) === golpos_bill_name_key($assignParse['who'])
+                || golpos_bill_name_key((string)preg_replace('/\s+.*$/', '', golpos_display_name($e)))
+                   === golpos_bill_name_key($assignParse['who'])) {
+                $sameName[] = (string)$e['email'];
+            }
+        }
+        if (count($sameName) > 1) {
+            out(['reply' => 'Two people named ' . $assignParse['who'] . ' are on the roster — '
+                . implode(' / ', $sameName) . '. Say the email too and I will assign to the right one.']);
+        }
+        out(['reply' => t('assign_roster_miss', $assignParse['who'])]);
+    }
+    $card = golpos_stage(['type' => 'task_assign',
+                          'employee_email' => (string)$emp['email'],
+                          'employee_name' => golpos_display_name($emp),
+                          'items' => $assignParse['items'], 'due' => $assignParse['due']]);
+    out(['reply' => t('card_staged'), 'card' => $card]);
+}
+$noteText = golpos_parse_team_note($msg);
+if ($noteText !== null) {
+    $actor = golpos_actor();
+    if ($actor === null || ($actor['role'] ?? '') !== 'employee') {
+        out(['reply' => t('note_ask_identity')]);
+    }
+    $card = golpos_stage(['type' => 'team_note',
+                          'from_email' => (string)$actor['email'],
+                          'from_name' => (string)$actor['name'], 'text' => $noteText]);
+    out(['reply' => t('card_staged'), 'card' => $card]);
+}
+if (golpos_is_my_tasks_ask($msg)) {
+    $actor = golpos_actor();
+    if ($actor === null || ($actor['role'] ?? '') !== 'employee') {
+        out(['reply' => t('note_ask_identity')]);
+    }
+    golpos_tasks_sync(); // a task-view sync point: Gol's own tasks land here too
+    $items = golpos_open_items_for((string)$actor['email']);
+    if (!$items) { out(['reply' => t('tasks_none')]); }
+    $nextDue = golpos_next_due((string)$actor['email']);
+    $lines = $nextDue !== null
+        ? ['Next: ' . $nextDue['text'] . ($nextDue['reason'] !== '' ? ' — ' . $nextDue['reason'] : ''),
+           'Your open tasks (' . count($items) . '):']
+        : ['Your open tasks (' . count($items) . '):'];
+    foreach ($items as $i => $it) {
+        $lines[] = ($i + 1) . '. ' . $it['text']
+            . ($it['source'] === 'gol' && $it['reason'] !== '' ? ' — from Gol: ' . $it['reason'] : '');
+    }
+    out(['reply' => implode("\n", $lines)]);
+}
+// Her duties, from HER pack (owner, Oct 28): "mero duty ke ho?" is
+// answered from the persona she was born with and has grown — never
+// from a generic store list.
+if (preg_match('/(mero|my)\s+(duty|duties|job|kartabya|कर्तव्य)/iu', $msg)
+    || preg_match('/(maile\s+ke\s+ke\s+garne|what\s+are\s+my\s+duties)/iu', $msg)) {
+    $actor = golpos_actor();
+    if ($actor === null || ($actor['role'] ?? '') !== 'employee' || ($actor['record'] ?? null) === null) {
+        out(['reply' => t('note_ask_identity')]);
+    }
+    $pres = golpos_presence_for($actor['record']);
+    $pack = array_values(array_map('strval', (array)($pres['job_pack']['items'] ?? [])));
+    if (!$pack) { out(['reply' => t('tasks_none')]); }
+    $lines = ['Your duties (' . ucfirst((string)($pres['role'] ?? 'cashier')) . ' pack):'];
+    foreach ($pack as $i => $d) { $lines[] = ($i + 1) . '. ' . $d; }
+    out(['reply' => implode("\n", $lines)]);
+}
+// A done mark claims ONLY an ordinal or a named open task item — the
+// same words ("sakiyo") in a shelf statement belong to the What's Out
+// lane below, never to a task the employee didn't name.
+if (preg_match('/(sakiyo|sakyo|sakisakyo|done|finished|complete|bhaisakyo|सकियो)/iu', $msg)
+    && !preg_match('/(kati|ke\s+ke|kun|which|list|dekha)/iu', $msg)) {
+    $actor = golpos_actor();
+    if ($actor !== null && ($actor['role'] ?? '') === 'employee') {
+        $items = golpos_open_items_for((string)$actor['email']);
+        if ($items) {
+            $pick = null;
+            $ord = golpos_ordinal_in($msg);
+            if ($ord !== null && isset($items[$ord - 1])) { $pick = $items[$ord - 1]; }
+            if ($pick === null) {
+                $clean = trim((string)preg_replace(
+                    '/(sakiyo|sakyo|sakisakyo|done|finished|complete|bhaisakyo|सकियो|bhayo|ho\s*gayo)/iu', ' ', $msg));
+                $mk = golpos_name_key($clean);
+                foreach ($items as $it) {
+                    $ik = golpos_name_key($it['text']);
+                    if ($ik !== '' && $mk !== '' && (mb_strpos($mk, $ik) !== false || mb_strpos($ik, $mk) !== false)) {
+                        $pick = $it; break;
+                    }
+                }
+            }
+            if ($pick === null && count($items) === 1 && $ord === null
+                && preg_match('/^(sakiyo|sakyo|done|finished|bhaisakyo|सकियो)\s*[.!]?$/iu', trim($msg))) {
+                $pick = $items[0];
+            }
+            if ($pick !== null) {
+                foreach (golpos_tasks() as $t) {
+                    if ((string)($t['id'] ?? '') !== $pick['task_id']) { continue; }
+                    $t['items'][$pick['index']]['done'] = true;
+                    $t['items'][$pick['index']]['done_at'] = date('c');
+                    golpos_task_put($t);
+                    break;
+                }
+                out(['reply' => t('task_done_ok', $pick['text'], date('g:i A'))]);
+            }
+            $list = implode('; ', array_map(static fn($i, $it) => ($i + 1) . '. ' . $it['text'],
+                                             array_keys($items), $items));
+            out(['reply' => t('task_done_which', $list)]);
+        }
     }
 }
 
@@ -2385,7 +3296,11 @@ if (preg_match('/^\s*(good\s*(morning|afternoon|evening)|namaste|namaskar|hello|
 if (golpos_is_employee_intent($msg)) {
     $email = null;
     if (preg_match('/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/', $msg, $em)) { $email = golpos_norm_email($em[0]); }
-    if ($email !== null && preg_match('/(remove|hata|hatau|nikal|निकाल|हटाउ)/iu', $msg)) {
+    // An add verb leading the message owns it: in "add rita@x as
+    // closer, cash ginti hata" the hata strikes a DUTY on her card,
+    // not the employee (battery catch, Oct 28).
+    if ($email !== null && preg_match('/(remove|hata|hatau|nikal|निकाल|हटाउ)/iu', $msg)
+        && !preg_match('/\b(add|invite|join)\b/iu', $msg)) {
         $e = golpos_employee($email);
         if ($e === null) { out(['reply' => t('emp_not_found', $email)]); }
         $card = golpos_stage(['type' => 'employee_remove', 'email' => $email,
@@ -2397,20 +3312,31 @@ if (golpos_is_employee_intent($msg)) {
         if ($existing !== null) {
             out(['reply' => t('emp_exists', $email, (string)($existing['status'] ?? ''))]);
         }
-        $name = trim((string)preg_replace('/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/u', ' ', $msg));
-        $name = trim((string)preg_replace('/\b(add|thap|as|an|a|employee|staff|worker|new|naya|invite|please|plz)\b/iu', ' ', $name));
-        $name = trim((string)preg_replace('/[^\p{L}\s.\'-]/u', ' ', $name));
-        $name = (string)preg_replace('/\s+/', ' ', $name);
-        if (!preg_match('/^[\p{L}][\p{L} .\'-]{0,40}$/u', $name)) { $name = ''; }
-        $token = bin2hex(random_bytes(16));
-        golpos_save_employee(['name' => $name, 'email' => $email, 'role' => 'employee',
-            'status' => 'invited', 'pin_hash' => null,
-            'invite_token_hash' => hash('sha256', $token), 'created' => date('c')]);
-        $display = $name !== '' ? "{$name} ({$email})" : $email;
-        if (golpos_send_invite($email, $name, golpos_invite_link($token), $shop)) {
-            out(['reply' => t('emp_added_sent', $display)]);
+        // Her name is the plain words BEFORE the email ("add Rita
+        // Sharma rita@x …") — never the words after it: in "add
+        // rita@x as closer, cash ginti hata" everything past the email
+        // is role + duty edits, and an earlier build swallowed them as
+        // her name (battery catch, Oct 28). With no name said, the
+        // display name derives from the email itself.
+        $name = '';
+        $before = trim((string)preg_replace('/[\w.+-]+@[\w-]+(?:\.[\w-]+)+.*$/su', '', $msg));
+        $before = trim((string)preg_replace('/\b(add|invite|join|please|plz)\b/iu', ' ', $before));
+        $before = trim((string)preg_replace('/[^\p{L}\s.\'-]/u', ' ', $before));
+        $before = (string)preg_replace('/\s+/', ' ', $before);
+        if (preg_match('/^[\p{L}][\p{L} .\'-]{0,40}$/u', $before)
+            && !preg_match('/(hata|thap|pani|ginti|garne|employee|staff|cashier|closer|stocker|manager)/iu', $before)) {
+            $name = $before;
         }
-        out(['reply' => t('emp_added_link', $display, golpos_invite_link($token))]);
+        // The persona is chosen HERE (owner, Oct 28): a role word picks
+        // the preset (Cashier when none is said), duty words in the same
+        // message check/uncheck on top of it, and the staged card shows
+        // the final set — count, groups, and what she starts knowing.
+        // The add itself lands on "gol", like every roster write.
+        $role = golpos_role_word_in($msg) ?? 'cashier';
+        $duties = golpos_apply_duty_words(golpos_preset_duties($role), $msg, false);
+        $card = golpos_stage(['type' => 'employee_add', 'email' => $email, 'name' => $name,
+                              'role' => $role, 'duties' => $duties]);
+        out(['reply' => t('card_staged'), 'card' => $card]);
     }
     if (preg_match('/(list|dekha|dekhaunus|show|ko ko|kati|हेर|देखा)/iu', $msg)) {
         $emps = golpos_people()['employees'];
@@ -2435,6 +3361,64 @@ if (golpos_is_loyalty_board_intent($msg)) {
             . " ({$row['receipts']} " . ($row['receipts'] === 1 ? 'receipt' : 'receipts') . ')';
     }
     out(['reply' => implode("\n", $lines)]);
+}
+
+// --- owner team reads + presence (admin domain — the gate has run) --------------
+// The boss's side of the lane: what she said, who finished what, and
+// the presence read — all composed from the lane's own records, with
+// a generator sync first (an owner inbox read is a sync point).
+$noteWho = golpos_parse_note_ask($msg);
+if ($noteWho !== null) {
+    $emp = golpos_employee_resolve($noteWho);
+    if ($emp === null) { out(['reply' => t('roster_miss', $noteWho)]); }
+    golpos_tasks_sync();
+    $notes = [];
+    foreach (golpos_team_notes() as $n) {
+        if (($n['from_email'] ?? '') === (string)$emp['email']) { $notes[] = $n; }
+    }
+    if (!$notes) { out(['reply' => t('team_no_notes', golpos_display_name($emp))]); }
+    $notes = array_slice(array_reverse($notes), 0, 5);
+    $lines = ['Notes from ' . golpos_display_name($emp) . ':'];
+    foreach ($notes as $n) {
+        $lines[] = '• "' . (string)$n['text'] . '" — ' . date('M j, g:i A', strtotime((string)$n['at']));
+    }
+    golpos_team_notes_mark_read((string)$emp['email']);
+    out(['reply' => implode("\n", $lines)]);
+}
+if (golpos_is_progress_ask($msg)) {
+    golpos_tasks_sync();
+    $lines = ['Team progress:'];
+    $any = false;
+    foreach (golpos_people()['employees'] as $e) {
+        $email = (string)$e['email'];
+        $done = 0; $open = 0; $lastDone = '';
+        foreach (golpos_tasks_for($email) as $t) {
+            if (($t['employee_email'] ?? null) !== $email) { continue; } // own tasks only in this count
+            foreach ((array)($t['items'] ?? []) as $it) {
+                if (!empty($it['done'])) { $done++; $lastDone = (string)($it['text'] ?? ''); }
+                else { $open++; }
+            }
+        }
+        $lines[] = '• ' . golpos_display_name($e) . ' — ' . $done . ' done, ' . $open . ' open'
+            . ($lastDone !== '' ? ' · latest done: ' . $lastDone : '');
+        $any = true;
+    }
+    $roleOpen = 0;
+    foreach (golpos_tasks() as $t) {
+        if (!empty($t['employee_email']) || ($t['status'] ?? '') === 'superseded'
+            || golpos_task_status($t) === 'done') { continue; }
+        foreach ((array)($t['items'] ?? []) as $it) { if (empty($it['done'])) { $roleOpen++; } }
+    }
+    if ($roleOpen > 0) { $lines[] = '• Role tasks (unassigned) — ' . $roleOpen . ' open'; $any = true; }
+    if (!$any) { $lines[] = 'No employees on the roster yet.'; }
+    out(['reply' => implode("\n", $lines)]);
+}
+$presenceWho = golpos_parse_presence_ask($msg);
+if ($presenceWho !== null) {
+    $emp = golpos_employee_resolve($presenceWho);
+    if ($emp === null) { out(['reply' => t('roster_miss', $presenceWho)]); }
+    golpos_tasks_sync();
+    out(['reply' => golpos_presence_reply($emp)]);
 }
 $msgN = golpos_norm_digits($msg);
 if (preg_match('/(receipt|bill|print|paper|footer|logo|tax|auto|cop(y|ies)|phone|address|store name|फोन|ठेगाना|लोगो|कर)/iu', $msg)) {
@@ -2509,14 +3493,115 @@ if (preg_match('/(receipt|bill|print|paper|footer|logo|tax|auto|cop(y|ies)|phone
     // normal intents below — never a dead end.
 }
 
-// --- MR.STORE stock lane (link mode only) --------------------------------------
-// With MR.STORE connected, stock questions are answered from MR.STORE's
-// live state — never from the register's memory — and a delivery is staged
-// as a card that moves MR.STORE stock on "gol". This lane sits before the
-// price and day-total lanes because "stock kati chha?" is a stock question,
-// not a price question.
-if (golpos_link_on() && preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khatam|restock|received|delivery|ayo|aayo|स्टक|आयो)/iu', $msg)) {
+// --- What's Out REPORT lane (employee lane, Oct 28) ------------------------------
+// A statement shaped "<item> out / sakiyo / khatam" — item named, NO
+// question words — is a REPORT from the shelf, not a question: it
+// stages a whats_out card under the signed-in person's name, and the
+// confirm lands it on the store's What's Out record. The item is
+// resolved FIRST and no count is ever extracted: in "Newport 100 box
+// out" the 100 belongs to the product's NAME. Question shapes ("ke ke
+// out chha?") stay the read in the stock lane below.
+if (!preg_match('/(ke\s+ke|kati|kitna|kun|which|list|dekha|how\s+many|कति|कुन)/iu', $msg)
+    && mb_strpos($msg, '?') === false
+    && preg_match('/(\bout\b|sakiyo|sakyo|khatam|khatiyo|सकियो|खतम)/iu', $msg)) {
+    $actor = golpos_actor();
+    $r = resolve_item($products, $msg);
+    if (!empty($r['one'])) {
+        $p = $r['one'];
+        $card = golpos_stage(['type' => 'whats_out', 'sku' => (string)$p['sku'],
+                              'name' => (string)($p['mr_name'] ?? $p['name']),
+                              'by_email' => (string)($actor['email'] ?? ''),
+                              'by_name' => (string)($actor['name'] ?? 'Register')]);
+        out(['reply' => t('card_staged'), 'card' => $card]);
+    }
+    if (!empty($r['many'])) {
+        $list = implode(', ', array_map(fn($p) => $p['name'], $r['many']));
+        out(['reply' => t('which_one', $list)]);
+    }
+    // Unknown item: say so, offer the closest shelf matches, file nothing.
+    $toks = array_filter(preg_split('/[^a-z0-9]+/u', mb_strtolower($msg)) ?: [],
+        static fn($w) => mb_strlen((string)$w) >= 3);
+    $sug = [];
+    foreach ($products as $p) {
+        foreach (preg_split('/[^a-z0-9]+/u', mb_strtolower((string)$p['name'])) ?: [] as $tok) {
+            if ($tok !== '' && in_array($tok, $toks, true)) { $sug[] = (string)$p['name']; break; }
+        }
+        if (count($sug) >= 3) { break; }
+    }
+    out(['reply' => t('whatsout_unknown', $sug ? implode(', ', $sug) : '—')]);
+}
+
+// --- stock COUNT report lane (sibling of What's Out, Oct 28) ---------------------
+// A statement carrying an item + a count number + a count word
+// ("coke 20oz ko ginti 42 chha") stages a count card under the
+// counter's name: counted qty, the system qty at this moment, the
+// variance. The confirm files the count EVENT — the shelf stock is
+// never edited by a count. The number is read only AFTER the product
+// is resolved and its name masked, so "Newport 100 ko ginti 12" counts
+// the ITEM Newport 100 at 12. Question shapes stay reads (stock lane).
+if (!preg_match('/(kati|kitna|how\s+many|कति)/iu', $msg)
+    && mb_strpos($msg, '?') === false
+    && preg_match('/(ginti|ganti|count|ganne|गिन्ती|गन्ती|गणना)/iu', $msg)) {
+    $actor = golpos_actor();
+    $r = resolve_item($products, $msg);
+    if (!empty($r['one'])) {
+        $p = $r['one'];
+        $work = golpos_mask_sizes(golpos_norm_digits($msg), $p);
+        // The product's own name numbers are identity, not a count:
+        // "Newport 100 ko ginti 12" — the message rarely repeats the
+        // full shelf name ('Box'), so the size mask misses the 100 and
+        // it would stand next to the real count. Blank every number
+        // the resolved product's name carries.
+        if (preg_match_all('/\d+(?:\.\d+)?/', (string)$p['name'], $nm)) {
+            foreach (array_unique($nm[0]) as $nv) {
+                $work = (string)preg_replace('/(?<![\d.])' . preg_quote($nv, '/') . '(?![\d.])/u', ' ', $work);
+            }
+        }
+        $work = (string)preg_replace('/(ginti|ganti|count|ganne|ko|chha|cha|गिन्ती|गन्ती|गणना)/iu', ' ', $work);
+        $vals = [];
+        foreach (golpos_num_spans($work) as $n) { $vals[] = round((float)$n['value'], 2); }
+        $vals = array_values(array_unique($vals));
+        if (count($vals) === 1 && $vals[0] >= 0 && $vals[0] <= 99999) {
+            $counted = $vals[0];
+            $system = null;
+            if (golpos_link_on()) {
+                $st = mrstore_stock_of((string)($p['mr_name'] ?? $p['name']));
+                if ($st !== null) { $system = $st['onHand']; }
+            } elseif (isset($p['stock']) && is_numeric($p['stock'])) {
+                $system = $p['stock'] + 0;
+            }
+            $card = golpos_stage(['type' => 'stock_count', 'sku' => (string)$p['sku'],
+                                  'name' => (string)($p['mr_name'] ?? $p['name']),
+                                  'counted' => $counted, 'system' => $system,
+                                  'variance' => $system !== null ? round($counted - (float)$system, 2) : null,
+                                  'by_email' => (string)($actor['email'] ?? ''),
+                                  'by_name' => (string)($actor['name'] ?? 'Register')]);
+            out(['reply' => t('card_staged'), 'card' => $card]);
+        }
+        out(['reply' => t('count_ask')]);
+    }
+    if (!empty($r['many'])) {
+        $list = implode(', ', array_map(fn($p) => $p['name'], $r['many']));
+        out(['reply' => t('which_one', $list)]);
+    }
+    out(['reply' => t('count_ask')]);
+}
+
+// --- stock lane (link + standalone, one set of semantics) -------------------------
+// With MR.STORE connected, stock answers come from MR.STORE's live
+// state; standing alone they come from the register's OWN shelf — the
+// counts its tiles already show (alive audit #9/#15: standalone denied
+// its own shelf and read a spoken delivery as a customer cart). A
+// delivery stages the SAME receive card in both modes; only the
+// executor's landing differs. This lane sits before the price and
+// day-total lanes because "stock kati chha?" is a stock question.
+if (preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khatam|restock|received|delivery|ayo|aayo|ginti|स्टक|आयो)/iu', $msg)) {
+    $link = golpos_link_on();
     $fmtq = static fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
+    $onHandOf = static function (array $p) use ($link) {
+        if ($link) { return isset($p['onHand']) && is_numeric($p['onHand']) ? $p['onHand'] + 0 : null; }
+        return isset($p['stock']) && is_numeric($p['stock']) ? $p['stock'] + 0 : null;
+    };
     // a receive: "<item> <qty> ayo" / "received 24 Coke" — staged, not instant
     if (preg_match('/(ayo|aayo|aaya|received|restock|delivery|आयो)/iu', $msg)
         && !preg_match('/(kati|kun|which|list|dekha|कति|कुन)/iu', $msg)) {
@@ -2528,40 +3613,47 @@ if (golpos_link_on() && preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khata
             // count is 12 and the money stays out of the card entirely.
             $qty = golpos_extract_count($msg, $p);
             if ($qty !== null && $qty > 0) {
-                $card = golpos_stage(['type' => 'stock_receive',
+                $card = golpos_stage(['type' => 'stock_receive', 'sku' => (string)$p['sku'],
                                       'name' => $p['mr_name'] ?? $p['name'], 'qty' => $qty]);
                 out(['reply' => t('card_staged'), 'card' => $card]);
             }
         }
     }
-    // out / running-low list
+    // out / running-low list (a READ — reports stage in the lane above)
     if (preg_match('/(sakina|sakiyo|khatam|low|out|kun kun|कुन कुन)/iu', $msg)) {
         $rows = [];
         foreach ($products as $p) {
-            if (!isset($p['onHand']) || $p['onHand'] === null) { continue; }
-            if ((float)$p['onHand'] <= 2) { $rows[] = $p; }
+            $oh = $onHandOf($p);
+            if ($oh === null) { continue; }
+            if ((float)$oh <= 2) { $rows[] = [$p, $oh]; }
         }
-        usort($rows, static fn($a, $b) => (float)$a['onHand'] <=> (float)$b['onHand']);
-        if (!$rows) { out(['reply' => t('stock_low_none')]); }
-        $lines = [t('stock_low_head', $shop)];
-        foreach ($rows as $p) {
-            $lines[] = '• ' . $p['name'] . ' — ' . ((float)$p['onHand'] <= 0 ? '0 (out)' : $fmtq($p['onHand']) . ' left');
+        usort($rows, static fn($a, $b) => (float)$a[1] <=> (float)$b[1]);
+        if (!$rows) { out(['reply' => t($link ? 'stock_low_none' : 'stock_low_none_local')]); }
+        $lines = [t($link ? 'stock_low_head' : 'stock_low_head_local', $shop)];
+        foreach ($rows as [$p, $oh]) {
+            $lines[] = '• ' . $p['name'] . ' — ' . ((float)$oh <= 0 ? '0 (out)' : $fmtq($oh) . ' left');
         }
         out(['reply' => implode("\n", $lines)]);
     }
-    // one item's stock, read live from MR.STORE
+    // one item's stock
     $r = resolve_item($products, $msg);
     if (!empty($r['one'])) {
-        $st = mrstore_stock_of((string)($r['one']['mr_name'] ?? $r['one']['name']));
-        if ($st === null) { out(['reply' => t('stock_link_down')]); }
-        if ($st['onHand'] === null) { out(['reply' => t('stock_untracked', $st['name'])]); }
-        out(['reply' => t('stock_one', $st['name'], $fmtq($st['onHand']))]);
+        $p = $r['one'];
+        if ($link) {
+            $st = mrstore_stock_of((string)($p['mr_name'] ?? $p['name']));
+            if ($st === null) { out(['reply' => t('stock_link_down')]); }
+            if ($st['onHand'] === null) { out(['reply' => t('stock_untracked', $st['name'])]); }
+            out(['reply' => t('stock_one', $st['name'], $fmtq($st['onHand']))]);
+        }
+        $oh = $onHandOf($p);
+        if ($oh === null) { out(['reply' => t('stock_untracked_local', $p['name'])]); }
+        out(['reply' => t('stock_one_local', $p['name'], $fmtq($oh))]);
     }
     if (!empty($r['many'])) {
         $list = implode(', ', array_map(fn($p) => $p['name'], $r['many']));
         out(['reply' => t('which_one', $list)]);
     }
-    out(['reply' => t('stock_notfound')]);
+    out(['reply' => t($link ? 'stock_notfound' : 'stock_notfound_local')]);
 }
 
 // --- day aggregates: best sellers + day compare (hisab D-12) -------------------
@@ -2639,6 +3731,10 @@ if (preg_match('/(close|banda|बन्द|क्लोज)/iu', $msg)) {
         $reply .= "\n" . t('close_unbatched', (int)$rec['unbatched_card']['count'],
                            money((float)$rec['unbatched_card']['total']));
     }
+    // The day close ends the shift: the register returns to PIN-please
+    // (employee lane) — the next person opens it in their own name.
+    $closeSid = (string)($GLOBALS['golpos_session_id'] ?? '');
+    if ($closeSid !== '') { golpos_lock_session($closeSid); }
     out(['reply' => $reply, 'close_record' => $rec]);
 }
 
@@ -2861,11 +3957,22 @@ function golpos_needs_admin(string $msg, array $in): bool {
     if (in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true) || !empty($in['confirm'])) {
         $pend = golpos_pending();
         return $pend !== null && in_array($pend['type'] ?? '', [
-            'price_change', 'new_item', 'setting_change', 'batch_close', 'employee_remove', 'stock_receive',
-            'bill', 'order_prep', 'vendor_teach',
+            'price_change', 'new_item', 'setting_change', 'batch_close', 'employee_remove', 'employee_add',
+            'stock_receive', 'bill', 'order_prep', 'vendor_teach', 'task_assign',
         ], true);
     }
     if (preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', $msg)) { return true; }
+    // A refund ask is never an admin ask and never a price ask — it has
+    // its own honest lane (alive audit #53).
+    if (golpos_is_refund_ask($msg)) { return false; }
+    // The owner's team domain (employee lane): assigning work, reading
+    // a person's notes, team progress, and the presence read are admin
+    // asks. The employee's own lanes (her tasks, her note back, her
+    // reports and counts) are NOT — they run in the cashier domain.
+    if (golpos_parse_task_assign($msg) !== null) { return true; }
+    if (golpos_parse_note_ask($msg) !== null || golpos_is_progress_ask($msg)) { return true; }
+    $presenceWhoGate = golpos_parse_presence_ask($msg);
+    if ($presenceWhoGate !== null && golpos_employee_resolve($presenceWhoGate) !== null) { return true; }
     // Small talk is never an admin ask — "how is your day" greets, it
     // does not request a report (the shared matcher rules the dispatch
     // with the same shape).
@@ -2903,14 +4010,108 @@ if (isset($in['employee']) && is_array($in['employee'])) {
     if ($emp !== null) { $session['employee'] = (string)$emp['email']; }
 }
 
-// "lock" / "admin bata bahira" — drop elevation on the spot.
+// --- the morning lock: PIN please (employee lane, Oct 28) ----------------------
+// When the roster holds any PIN, a session starts LOCKED: the camera
+// may watch and Gol may chat, but the only conversation is "PIN
+// please." A roster PIN opens the register IN THAT PERSON'S NAME —
+// the employee's own PIN to her cashier session, the admin PIN to
+// admin mode. The standing 3-strike lockout guards this door too, and
+// a 3-strike lockout is itself stamped into the owner's unlock feed.
+// The lock is the register UI's (v1): the brain refuses every lane
+// while locked, which is the surface the till actually uses.
+if (golpos_lock_state($session)) {
+    $session['pin_stage'] = null;
+    $session['pending'] = null;
+    if (golpos_is_cancel_intent($msg) || golpos_is_lock_intent($msg)) {
+        golpos_save_session($sessionId, $session);
+        out(['reply' => t('pin_please'), 'pin_mask' => true]);
+    }
+    $pin = golpos_pin_shaped($msg);
+    if ($pin === null) {
+        if (preg_match('/^\d+$/', golpos_norm_digits(trim($msg)))) {
+            out(['reply' => t('pin_bad_format'), 'pin_mask' => true]);
+        }
+        golpos_save_session($sessionId, $session);
+        out(['reply' => t('pin_please'), 'pin_mask' => true]);
+    }
+    $now = time();
+    if ((int)($session['locked_until'] ?? 0) > $now) {
+        out(['reply' => t('pin_locked', (int)ceil(((int)$session['locked_until'] - $now) / 60)),
+             'pin_mask' => true]);
+    }
+    $actor = null;
+    $adminHash = golpos_admin_pin_hash();
+    if ($adminHash !== null && password_verify($pin, $adminHash)) {
+        $actor = ['role' => 'admin', 'email' => '', 'name' => 'Owner', 'record' => null];
+    } else {
+        $matches = [];
+        foreach (golpos_people()['employees'] as $e) {
+            if (!empty($e['pin_hash']) && password_verify($pin, (string)$e['pin_hash'])) {
+                $matches[] = $e;
+            }
+        }
+        if (count($matches) > 1) {
+            out(['reply' => t('unlock_shared'), 'pin_mask' => true]);
+        }
+        if (count($matches) === 1) {
+            $e = $matches[0];
+            $actor = ['role' => 'employee', 'email' => (string)$e['email'],
+                      'name' => golpos_display_name($e), 'record' => $e];
+        }
+    }
+    if ($actor === null) {
+        $session['attempts'] = (int)($session['attempts'] ?? 0) + 1;
+        if ($session['attempts'] >= 3) {
+            $session['attempts'] = 0;
+            $session['locked_until'] = $now + 600;
+            $GLOBALS['golpos_unlock_event'] = golpos_unlock_add(
+                ['kind' => 'lockout', 'name' => 'Unknown', 'email' => '', 'role' => '']);
+            golpos_save_session($sessionId, $session);
+            out(['reply' => t('pin_lockout'), 'pin_mask' => true]);
+        }
+        golpos_save_session($sessionId, $session);
+        $left = 3 - (int)$session['attempts'];
+        out(['reply' => t('pin_wrong', $left, $left === 1 ? 'try' : 'tries'), 'pin_mask' => true]);
+    }
+    // The unlock itself: identity stamps, the feed event, the task
+    // sync (Gol's own tasks are generated at unlock), the greeting.
+    $firstUnlock = false;
+    $prevUnlockAt = null;
+    if ($actor['role'] === 'employee' && $actor['record'] !== null) {
+        $pres = golpos_presence_for($actor['record']);
+        $firstUnlock = empty($pres['first_unlock_at']);
+        $prevUnlockAt = $pres['last_unlock_at'] ?? null;
+    }
+    $session['locked'] = false;
+    $session['admin'] = $actor['role'] === 'admin';
+    $session['attempts'] = 0;
+    $session['locked_until'] = 0;
+    $session['unlocked_by'] = $actor['role'] === 'admin' ? 'admin' : $actor['email'];
+    $session['unlocked_name'] = $actor['name'];
+    $session['unlocked_role'] = $actor['role'];
+    if ($actor['role'] === 'employee') { $session['employee'] = $actor['email']; }
+    $GLOBALS['golpos_unlock_event'] = golpos_unlock_add(
+        ['kind' => 'unlock', 'name' => $actor['name'],
+         'email' => $actor['role'] === 'admin' ? '' : $actor['email'], 'role' => $actor['role']]);
+    golpos_save_session($sessionId, $session);
+    golpos_tasks_sync();
+    if ($actor['role'] === 'employee' && $actor['record'] !== null) {
+        golpos_presence_touch_unlock($actor['record'], false);
+    }
+    out(['reply' => golpos_unlock_greeting($actor, $firstUnlock, $prevUnlockAt), 'pin_mask' => true,
+         'unlocked' => ['name' => $actor['name'], 'role' => $actor['role'],
+                        'email' => $actor['role'] === 'admin' ? '' : $actor['email']]]);
+}
+
+// "lock" / "admin bata bahira" — drop elevation on the spot AND lock
+// the register: the next person opens it with their own PIN.
 if (golpos_is_lock_intent($msg)) {
-    $session['admin'] = false;
     $session['pin_stage'] = null;
     $session['pin_tmp'] = null;
     $session['pending'] = null;
     $session['price_await'] = null;
     golpos_save_session($sessionId, $session);
+    golpos_lock_session($sessionId);
     out(['reply' => t('admin_off')]);
 }
 
@@ -2960,6 +4161,10 @@ if (!empty($session['pin_stage'])) {
         }
         golpos_set_admin_pin((string)$session['pin_tmp']);
         $session['admin'] = true;
+        $session['locked'] = false;
+        $session['unlocked_by'] = 'admin';
+        $session['unlocked_name'] = 'Owner';
+        $session['unlocked_role'] = 'admin';
         $session['pin_stage'] = null;
         $session['pin_tmp'] = null;
         $pending = $session['pending'];
@@ -2980,6 +4185,10 @@ if (!empty($session['pin_stage'])) {
         $hash = golpos_admin_pin_hash();
         if ($hash !== null && password_verify($pin, $hash)) {
             $session['admin'] = true;
+            $session['locked'] = false;
+            $session['unlocked_by'] = 'admin';
+            $session['unlocked_name'] = 'Owner';
+            $session['unlocked_role'] = 'admin';
             $session['pin_stage'] = null;
             $session['attempts'] = 0;
             $pending = $session['pending'];
@@ -3141,6 +4350,22 @@ if (empty($session['admin']) && golpos_needs_admin($msg, $in)) {
     $session['pin_stage'] = 'verify';
     golpos_save_session($sessionId, $session);
     out(['reply' => t('pin_ask')]);
+}
+
+// The presence trail's question record: an EMPLOYEE session's turns
+// are logged owner-side (what she asked Gol, and when). PIN-shaped
+// turns and PIN-flow turns are never recorded — digits are not data.
+if (empty($session['pin_stage']) && golpos_pin_shaped($msg) === null) {
+    $trailEmail = null; $trailName = '';
+    if (($session['unlocked_role'] ?? '') === 'employee' && !empty($session['unlocked_by'])) {
+        $trailEmail = (string)$session['unlocked_by'];
+        $trailName = (string)($session['unlocked_name'] ?? '');
+    } elseif (!empty($session['employee'])) {
+        $trailEmail = (string)$session['employee'];
+        $ee = golpos_employee($trailEmail);
+        $trailName = $ee !== null ? golpos_display_name($ee) : '';
+    }
+    if ($trailEmail !== null) { golpos_turn_log($sessionId, $trailEmail, $trailName, $msg); }
 }
 
 golpos_dispatch($msg, $in, $catalog, $products, $shop);

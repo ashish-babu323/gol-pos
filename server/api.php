@@ -138,6 +138,114 @@ if ($method === 'GET' && isset($_GET['inbox'])) {
                      JSON_UNESCAPED_UNICODE);
     exit;
 }
+if ($method === 'GET' && isset($_GET['lock'])) {
+    // The register's lock state for THIS session (employee lane): the
+    // UI raises the PIN screen from this read at boot and after any
+    // reply that flips it. 'roster' says whether any PIN exists at all
+    // (a virgin till never locks).
+    $sid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($_GET['session'] ?? ''));
+    $sess = $sid === '' ? [] : golpos_session($sid);
+    $actor = null;
+    if (!empty($sess['unlocked_by'])) {
+        $actor = ['name' => (string)($sess['unlocked_name'] ?? ''),
+                  'role' => (string)($sess['unlocked_role'] ?? ''),
+                  'email' => $sess['unlocked_by'] === 'admin' ? '' : (string)$sess['unlocked_by']];
+    }
+    echo json_encode(['locked' => golpos_lock_state($sess), 'roster' => golpos_roster_has_pin(),
+                      'actor' => $actor], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($method === 'GET' && isset($_GET['team'])) {
+    // The Owner panel's Team card + unlock feed + What's Out board in
+    // one read. Owner-domain: when an admin PIN exists, the session
+    // must be admin (the sheet gate's rule); a virgin setup till (no
+    // PIN yet) reads openly, like the rest of setup mode. Reading the
+    // inbox is a task sync point — Gol's own tasks generate here too.
+    $adminPin = golpos_admin_pin_hash();
+    $sid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($_GET['session'] ?? ''));
+    $sess = $sid === '' ? [] : golpos_session($sid);
+    if ($adminPin !== null && empty($sess['admin'])) {
+        http_response_code(403);
+        echo json_encode(['error' => 'pin_required']);
+        exit;
+    }
+    golpos_tasks_sync();
+    $people = [];
+    foreach (golpos_people()['employees'] as $e) {
+        $email = (string)$e['email'];
+        $pres = golpos_presence_for($e);
+        $open = 0; $done = 0; $unread = 0;
+        foreach (golpos_tasks_for($email) as $t) {
+            if (($t['employee_email'] ?? null) !== $email) { continue; }
+            foreach ((array)($t['items'] ?? []) as $it) {
+                if (!empty($it['done'])) { $done++; } else { $open++; }
+            }
+        }
+        $notes = [];
+        foreach (golpos_team_notes() as $n) {
+            if (($n['from_email'] ?? '') === $email) {
+                $notes[] = $n;
+                if (empty($n['read'])) { $unread++; }
+            }
+        }
+        $people[] = ['email' => $email, 'name' => golpos_display_name($e),
+                     'role' => (string)($pres['role'] ?? 'cashier'),
+                     'duties' => array_values((array)($pres['job_pack']['items'] ?? [])),
+                     'first_unlock_at' => $pres['first_unlock_at'] ?? null,
+                     'last_unlock_at' => $pres['last_unlock_at'] ?? null,
+                     'last_unlock_photo' => $pres['last_unlock_photo'] ?? null,
+                     'tasks_open' => $open, 'tasks_done' => $done,
+                     'notes' => array_slice(array_reverse($notes), 0, 5), 'notes_unread' => $unread,
+                     'trail' => golpos_presence_trail($email, date('Y-m-d'))];
+    }
+    $roleTasks = [];
+    foreach (golpos_tasks() as $t) {
+        if (!empty($t['employee_email']) || ($t['status'] ?? '') === 'superseded'
+            || golpos_task_status($t) === 'done') { continue; }
+        $roleTasks[] = $t;
+    }
+    echo json_encode(['people' => $people, 'tasks' => golpos_tasks(), 'role_tasks' => $roleTasks,
+                      'unlocks' => array_slice(array_reverse(golpos_unlocks()), 0, 15),
+                      'whatsout' => golpos_whatsout_open(),
+                      'counts' => array_slice(array_reverse(golpos_counts()), 0, 20)],
+                     JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($method === 'GET' && isset($_GET['mytasks'])) {
+    // The signed-in employee's own task view (a sync point too). Her
+    // identity comes from the session — unlock or device — never from
+    // a query parameter, so nobody can read another person's list.
+    $sid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($_GET['session'] ?? ''));
+    $sess = $sid === '' ? [] : golpos_session($sid);
+    $email = null;
+    if (($sess['unlocked_role'] ?? '') === 'employee' && !empty($sess['unlocked_by'])) {
+        $email = (string)$sess['unlocked_by'];
+    } elseif (!empty($sess['employee'])) {
+        $email = (string)$sess['employee'];
+    }
+    if ($email === null) {
+        echo json_encode(['tasks' => [], 'items' => []], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    golpos_tasks_sync();
+    $items = [];
+    foreach (golpos_tasks_for($email) as $t) {
+        foreach ((array)($t['items'] ?? []) as $idx => $it) {
+            if (!empty($it['done'])) { continue; }
+            $items[] = ['task_id' => (string)$t['id'], 'index' => $idx,
+                        'text' => (string)($it['text'] ?? ''),
+                        'source' => (string)($t['source'] ?? 'owner'),
+                        'reason' => (string)($t['reason'] ?? ''),
+                        'created' => (string)($t['created'] ?? '')];
+        }
+    }
+    echo json_encode(['email' => $email, 'items' => $items, 'next' => golpos_next_due($email)], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($method === 'GET' && isset($_GET['whatsout'])) {
+    echo json_encode(['open' => golpos_whatsout_open()], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 if ($method === 'GET' && isset($_GET['report'])) {
     // Manual Reports card data — the same day-summary figures the Gol chat
     // speaks, for a picked date or the last 7 days, plus the saved close
@@ -297,6 +405,36 @@ if ($method === 'POST') {
                          JSON_UNESCAPED_UNICODE);
         exit;
     }
+    if (isset($in['task_done']) && is_array($in['task_done'])) {
+        // An employee marks one of HER OWN items done from the tasks
+        // view — a tap is the act (no staged card for a done mark).
+        // Identity comes from the session; a task that isn't hers (or
+        // an open role task) refuses.
+        $sid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($in['session'] ?? ''));
+        $sess = $sid === '' ? [] : golpos_session($sid);
+        $email = null;
+        if (($sess['unlocked_role'] ?? '') === 'employee' && !empty($sess['unlocked_by'])) {
+            $email = (string)$sess['unlocked_by'];
+        } elseif (!empty($sess['employee'])) {
+            $email = (string)$sess['employee'];
+        }
+        $tid = (string)($in['task_done']['task_id'] ?? '');
+        $idx = (int)($in['task_done']['index'] ?? -1);
+        $task = null;
+        foreach (golpos_tasks() as $t) { if ((string)($t['id'] ?? '') === $tid) { $task = $t; break; } }
+        if ($email === null || $task === null || !isset($task['items'][$idx])
+            || !(($task['employee_email'] ?? null) === $email
+                 || (($task['employee_email'] ?? null) === null && !empty($task['role'])))) {
+            http_response_code(403);
+            echo json_encode(['error' => 'not your task']);
+            exit;
+        }
+        $task['items'][$idx]['done'] = true;
+        $task['items'][$idx]['done_at'] = date('c');
+        golpos_task_put($task);
+        echo json_encode(['ok' => true, 'status' => golpos_task_status($task)], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if (!empty($in['close_day'])) {
         // The panel's manual Close-the-day button — the exact close path
         // the Gol chat's close branch runs (the panel confirms by tap
@@ -305,7 +443,12 @@ if ($method === 'POST') {
         // nothing closes until the PIN lands (owner rule, Oct 28).
         $gate = golpos_sheet_pin($in);
         if (empty($gate['ok'])) { echo json_encode($gate, JSON_UNESCAPED_UNICODE); exit; }
-        echo json_encode(golpos_close_day(date('Y-m-d')), JSON_UNESCAPED_UNICODE);
+        $rec = golpos_close_day(date('Y-m-d'));
+        // The day close ends the shift (employee lane): the acting
+        // session returns to PIN-please, same as the chat close.
+        $csid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($in['session'] ?? ''));
+        if ($csid !== '') { golpos_lock_session($csid); }
+        echo json_encode($rec, JSON_UNESCAPED_UNICODE);
         exit;
     }
     if (!empty($in['seal_batch'])) {
@@ -427,6 +570,23 @@ if ($method === 'POST') {
             }
             $recordData['tendered'] = $tendered;
             $recordData['change_due'] = round($tendered - $total, 2);
+        }
+        // Who rang it: the session's unlocked identity rides the sale
+        // record (employee lane) — the owner's trail can say whose
+        // hands were on the till. No identity, no stamp.
+        $saleSid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($in['session'] ?? ''));
+        if ($saleSid !== '') {
+            $ssess = golpos_session($saleSid);
+            if (!empty($ssess['unlocked_by'])) {
+                $recordData['cashier'] = (string)($ssess['unlocked_name'] ?? '');
+                if ($ssess['unlocked_by'] !== 'admin') {
+                    $recordData['cashier_email'] = (string)$ssess['unlocked_by'];
+                }
+            } elseif (!empty($ssess['employee'])) {
+                $ce = golpos_employee((string)$ssess['employee']);
+                $recordData['cashier'] = $ce !== null ? golpos_display_name($ce) : '';
+                $recordData['cashier_email'] = (string)$ssess['employee'];
+            }
         }
         $record = golpos_append_sale($recordData);
         if (!golpos_link_on()) {

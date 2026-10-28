@@ -283,6 +283,23 @@ function mrstore_catalog_with_stock(): ?array {
         $bc = (string)($p['barcode'] ?? '');
         $onHand = isset($p['onHand']) && is_numeric($p['onHand']) ? (float)$p['onHand']
             : (isset($p['qty']) && is_numeric($p['qty']) ? (float)$p['qty'] : null);
+        // Nicknames ride the product's OWN name, not only the barcode
+        // map: a "Coke 20oz" carried in MR.STORE's catalog under its own
+        // name (no mapped barcode) must still answer to "coke" / "coca
+        // cola" — otherwise the price lane alias-hits a DIFFERENT
+        // product that owns the nickname (the 12pk) and quotes its
+        // price for the 20oz (alive audit #12, Oct 28). With the
+        // nickname on every Coke, the resolver's size pick decides.
+        $aliases = $aliasMap[$bc] ?? [];
+        if (preg_match('/\bcoke\b|coca/i', $name)) {
+            $aliases = array_values(array_unique(array_merge($aliases, ['coke', 'coca cola', 'कोक'])));
+        }
+        if (preg_match('/pepsi/i', $name)) {
+            $aliases = array_values(array_unique(array_merge($aliases, ['pepsi', 'पेप्सी'])));
+        }
+        if (preg_match('/mountain\s*dew|\bdew\b/i', $name)) {
+            $aliases = array_values(array_unique(array_merge($aliases, ['dew', 'mountain dew'])));
+        }
         $products[] = [
             'sku' => $bc !== '' ? 'bc-' . $bc : 'mr-' . $i,
             'barcode' => $bc,
@@ -291,7 +308,7 @@ function mrstore_catalog_with_stock(): ?array {
             'category' => 'MR.STORE',
             'price' => $price,
             'price_source' => $src,
-            'aliases' => $aliasMap[$bc] ?? [],
+            'aliases' => $aliases,
             'onHand' => $onHand,
         ];
     }
@@ -584,6 +601,133 @@ function mrstore_create_product(array $f): ?array {
     } catch (Throwable $e) {
         return null;
     }
+}
+
+// --- What's Out: the Floor team-chat bridge -----------------------------------
+// The store's What's Out board lives in MR.STORE as Floor team-chat
+// messages (store-api/data/team_chat_<store>.json, ops.type 'whatsout',
+// ops.lines[{name,need,left,vendor}]) — the same file and shape
+// MR.STORE's own gol_append_whats_out writes and fi_read_whats_out_
+// from_chat reads back. The register's report lane appends ONE message
+// per report through this bridge (append-only, snapshot first, same
+// dedupe stamp idea), so a report filed at the till is the Floor's
+// record — there is no POS-side mirror to drift from it.
+function mrstore_team_chat_file(): ?string {
+    if (!golpos_link_on()) { return null; }
+    $cfg = golpos_link_config();
+    return $cfg['api_dir'] . '/data/team_chat_' . $cfg['store_id'] . '.json';
+}
+
+// Open out-reports from the board, newest lists first, ONE shape with
+// the standalone store's records: [{name, at, by_name, by_email}].
+// Reporter fields ride only on messages this bridge wrote (ops carries
+// them); MR.STORE's own list messages report an empty reporter.
+function mrstore_whatsout_read(): array {
+    $f = mrstore_team_chat_file();
+    if ($f === null || !is_file($f)) { return []; }
+    $j = json_decode((string)@file_get_contents($f), true);
+    $msgs = (is_array($j) && isset($j['messages']) && is_array($j['messages'])) ? $j['messages'] : [];
+    $out = []; $lists = 0;
+    foreach (array_reverse($msgs) as $m) {
+        if (!is_array($m)) { continue; }
+        $ops = $m['ops'] ?? null;
+        $type = is_array($ops) ? strtolower((string)($ops['type'] ?? '')) : '';
+        $text = (string)($m['text'] ?? '');
+        $isOut = $type === 'whatsout' || $type === 'whats_out' || stripos($text, "what's out") !== false;
+        if (!$isOut) { continue; }
+        $items = [];
+        if (is_array($ops) && isset($ops['lines']) && is_array($ops['lines'])) { $items = $ops['lines']; }
+        elseif (is_array($ops) && isset($ops['items']) && is_array($ops['items'])) { $items = $ops['items']; }
+        $got = 0;
+        foreach ($items as $it) {
+            $name = is_string($it) ? trim($it) : trim((string)($it['name'] ?? $it['title'] ?? ''));
+            if ($name === '') { continue; }
+            $out[] = ['name' => $name, 'at' => (string)($m['at'] ?? ''),
+                      'by_name' => (string)($ops['reporter_name'] ?? ''),
+                      'by_email' => (string)($ops['reporter_email'] ?? '')];
+            $got++;
+        }
+        if ($got) { $lists++; }
+        if ($lists >= 12) { break; }
+    }
+    return $out;
+}
+
+// Append one What's Out report (one item) to the Floor board. Returns
+// true when the line stands on the board (including the same-day
+// duplicate, which is already there). Stock is never touched — a
+// report is a signal with a name and a time, not a count.
+function mrstore_append_whats_out(string $name, string $byName, string $byEmail): bool {
+    if (!mrstore_write_allowed()) { return false; }
+    $f = mrstore_team_chat_file();
+    if ($f === null) { return false; }
+    $dir = dirname($f);
+    $j = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
+    if (!is_array($j)) { $j = ['messages' => []]; }
+    if (!isset($j['messages']) || !is_array($j['messages'])) { $j['messages'] = []; }
+    $lines = [['name' => $name, 'need' => '', 'left' => '', 'vendor' => '']];
+    $stamp = 'gol_wo_' . substr(md5(golpos_link_config()['store_id'] . '|' . json_encode($lines)
+        . '|' . date('Y-m-d') . '|' . $byEmail), 0, 12);
+    foreach ($j['messages'] as $m) {
+        if (is_array($m) && (string)($m['ops']['learnId'] ?? '') === $stamp) { return true; }
+    }
+    $bakDir = $dir . '/gol-backups';
+    if (!is_dir($bakDir)) { @mkdir($bakDir, 0775, true); }
+    if (is_file($f)) {
+        @copy($f, $bakDir . '/team_chat_' . preg_replace('/[^a-z0-9]+/i', '_', golpos_link_config()['store_id'])
+            . '_' . date('YmdHis') . '.json');
+    }
+    $title = "What's out — 1 item (via Gol POS" . ($byName !== '' ? ' · by ' . $byName : '') . ')';
+    $j['messages'][] = [
+        'id' => 'gol_' . bin2hex(random_bytes(5)), 'fromId' => 'gol', 'fromName' => 'Gol', 'role' => 'owner',
+        'text' => $title, 'thread' => 'floor', 'at' => gmdate('c'),
+        'ops' => ['type' => 'whatsout', 'source' => 'gol-pos', 'title' => $title,
+            'lines' => $lines, 'image' => '', 'learnId' => $stamp,
+            'reporter_name' => $byName, 'reporter_email' => $byEmail],
+    ];
+    $j['updatedAt'] = gmdate('c');
+    $tmp = $f . '.tmp.' . getmypid() . '.' . bin2hex(random_bytes(3));
+    if (@file_put_contents($tmp, json_encode($j, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), LOCK_EX) === false) {
+        return false;
+    }
+    return @rename($tmp, $f);
+}
+
+// --- Bill waiting: the store's bill vault --------------------------------------
+// MR.STORE keeps vendor bills in store-api/data/bill_vault_<store>.json
+// (the store id with dashes folded to underscores). A bill is WAITING
+// when nothing entered stands behind it: no ledger id on the vault
+// entry and no executed purchase on this register matching vendor +
+// amount. Returns [{vendor, amount, date, name}] — the bill generator's
+// raw material; an absent vault simply means no bills are waiting.
+function mrstore_bill_vault_waiting(): array {
+    if (!golpos_link_on()) { return []; }
+    $cfg = golpos_link_config();
+    $f = $cfg['api_dir'] . '/data/bill_vault_' . str_replace('-', '_', $cfg['store_id']) . '.json';
+    if (!is_file($f)) { return []; }
+    $j = json_decode((string)@file_get_contents($f), true);
+    if (!is_array($j)) { return []; }
+    $purchases = function_exists('golpos_read') ? golpos_read('purchases.json', []) : [];
+    $out = [];
+    foreach ($j as $e) {
+        if (!is_array($e)) { continue; }
+        if (!empty($e['ledger_id'])) { continue; }
+        $vendor = trim((string)($e['vendor'] ?? ''));
+        $amount = isset($e['amount']) && is_numeric($e['amount']) ? (float)$e['amount'] : null;
+        if ($vendor === '') { continue; }
+        $matched = false;
+        foreach ((array)$purchases as $p) {
+            if (!is_array($p)) { continue; }
+            if (golpos_bill_name_key((string)($p['vendor'] ?? '')) === golpos_bill_name_key($vendor)
+                && $amount !== null && abs((float)($p['total'] ?? -1) - $amount) < 0.01) {
+                $matched = true; break;
+            }
+        }
+        if ($matched) { continue; }
+        $out[] = ['vendor' => $vendor, 'amount' => $amount,
+                  'date' => (string)($e['date'] ?? ''), 'name' => (string)($e['name'] ?? '')];
+    }
+    return $out;
 }
 
 // Append-only evidence trail on the POS side: every stock movement the

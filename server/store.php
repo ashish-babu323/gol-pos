@@ -502,6 +502,8 @@ function golpos_sheet_pin(array $in): array {
             }
             golpos_set_admin_pin((string)$s['pc_pin_tmp']);
             $s['admin'] = true; $s['pc_pin_tmp'] = null; $s['pc_pin_stage'] = null;
+            $s['locked'] = false; $s['unlocked_by'] = 'admin';
+            $s['unlocked_name'] = 'Owner'; $s['unlocked_role'] = 'admin';
             golpos_save_session($sid, $s);
             return ['ok' => true];
         }
@@ -524,6 +526,8 @@ function golpos_sheet_pin(array $in): array {
     }
     if (password_verify($pinIn, $hash)) {
         $s['admin'] = true; $s['attempts'] = 0;
+        $s['locked'] = false; $s['unlocked_by'] = 'admin';
+        $s['unlocked_name'] = 'Owner'; $s['unlocked_role'] = 'admin';
         golpos_save_session($sid, $s);
         return ['ok' => true];
     }
@@ -985,11 +989,13 @@ function golpos_save_employee(array $emp): void {
         if (($e['email'] ?? '') === ($emp['email'] ?? '')) {
             $d['employees'][$i] = $emp;
             golpos_save_people($d);
+            golpos_presence_ensure($emp);
             return;
         }
     }
     $d['employees'][] = $emp;
     golpos_save_people($d);
+    golpos_presence_ensure($emp);
 }
 
 function golpos_remove_employee(string $email): bool {
@@ -1015,6 +1021,11 @@ function golpos_session(string $id): array {
         'admin' => false, 'pin_stage' => null, 'pin_tmp' => null,
         'attempts' => 0, 'locked_until' => 0, 'pending' => null, 'employee' => null,
         'bill_await' => null, 'price_await' => null,
+        // The morning lock (employee lane, Oct 28): a session starts
+        // LOCKED and a roster PIN is what opens it. 'unlocked_by' is the
+        // identity the session carries — an employee email, or 'admin'.
+        'locked' => true, 'unlocked_by' => null, 'unlocked_name' => '',
+        'unlocked_role' => null,
     ], $s);
 }
 
@@ -1258,6 +1269,854 @@ function golpos_inbox_take(string $sessionId): array {
     unset($all[$sessionId]);
     golpos_write('inbox.json', $all);
     return $list;
+}
+
+// --- Team lane: presence, tasks, notes, unlocks, What's Out ------------------
+// The employee lane (owner directive, Oct 28). One Gol, every screen,
+// applied to people: the owner assigns work in chat, Gol itself
+// originates work from the store's real state, the employee answers
+// back through Gol, and the boss's view (Team card + presence reads)
+// is composed from these same records — never from a second copy.
+// Stores: data/presence.json (one record per roster identity, created
+// the moment the roster gains the person), data/tasks.json,
+// data/team_notes.json, data/unlocks.json, data/whatsout.json
+// (standalone What's Out reports; link mode reports ride the MR.STORE
+// Floor team-chat bridge in mrstore.php instead).
+
+// The ONE mail path for team mail (invites ride it too — see brain.php
+// golpos_send_invite). A mail sink is a TEST door only: when the
+// instance's data dir carries mail_sink.json, mail is recorded to
+// mail_sink_log.json and nothing leaves the box. Live stages carry no
+// sink file, so live mail is real mail.
+function golpos_mail(string $to, string $subject, string $body): bool {
+    if (is_file(golpos_data_dir() . '/mail_sink.json')) {
+        $log = golpos_read('mail_sink_log.json', []);
+        if (!is_array($log)) { $log = []; }
+        $log[] = ['to' => $to, 'subject' => $subject, 'body' => $body, 'at' => date('c')];
+        golpos_write('mail_sink_log.json', $log);
+        return true;
+    }
+    $headers = "From: Gol POS <no-reply@"
+        . preg_replace('/[^A-Za-z0-9.\-]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'localhost'))
+        . ">\r\nContent-Type: text/plain; charset=utf-8\r\n";
+    return @mail($to, $subject, $body, $headers);
+}
+
+// The register's own web root, derived from the request the way the
+// invite link is — the address a task email sends the employee back to.
+function golpos_register_link(): string {
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
+    $dir = rtrim(dirname(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/server/brain.php'))), '/');
+    return $scheme . '://' . $host . $dir . '/web/';
+}
+
+// How a roster record is NAMED in speech: its roster name when it has
+// one; otherwise the name its email carries ("ashish.adhikari323" ->
+// "Ashish Adhikari" — the digits are the mailbox's, not the person's).
+function golpos_display_name(array $e): string {
+    $name = trim((string)($e['name'] ?? ''));
+    if ($name !== '') { return $name; }
+    $local = explode('@', (string)($e['email'] ?? ''))[0];
+    $parts = [];
+    foreach (preg_split('/[._\-]+/u', $local) ?: [] as $w) {
+        if ($w === '' || ctype_digit($w)) { continue; }
+        $parts[] = mb_convert_case(mb_strtolower($w), MB_CASE_TITLE, 'UTF-8');
+    }
+    return $parts ? implode(' ', $parts) : (string)($e['email'] ?? '');
+}
+
+// Resolve a spoken name to ONE roster record: exact email, roster name,
+// an alias, or the name the email itself carries (full or first name).
+// Roster names/aliases only — a stranger resolves to nothing, and a
+// first name shared by two people resolves to nothing rather than a
+// guess (the standing roster-refusal rule). PIN state is irrelevant:
+// an invited employee who has not set a PIN yet is still resolvable,
+// so work assigned before their first unlock simply waits for them.
+function golpos_employee_resolve(string $who): ?array {
+    $w = mb_strtolower(trim($who));
+    if ($w === '') { return null; }
+    $emps = golpos_people()['employees'];
+    foreach ($emps as $e) {
+        if (mb_strtolower((string)($e['email'] ?? '')) === $w) { return $e; }
+    }
+    foreach ($emps as $e) {
+        if (mb_strtolower(trim((string)($e['name'] ?? ''))) === $w
+            && trim((string)($e['name'] ?? '')) !== '') { return $e; }
+        foreach ((array)($e['aliases'] ?? []) as $a) {
+            if (mb_strtolower(trim((string)$a)) === $w) { return $e; }
+        }
+    }
+    $full = []; $first = [];
+    foreach ($emps as $e) {
+        $dn = mb_strtolower(golpos_display_name($e));
+        if ($dn === $w) { $full[] = $e; }
+        $tok = explode(' ', $dn)[0] ?? '';
+        if ($tok !== '' && $tok === $w) { $first[] = $e; }
+    }
+    if (count($full) === 1) { return $full[0]; }
+    if (count($first) === 1) { return $first[0]; }
+    return null;
+}
+
+// --- presence: ONE identity across register, roster and chat ------------
+// Gol is a manager (owner rule, Oct 28, 12:53): the moment a person is
+// ADDED to the roster their presence exists — no separate setup step.
+// The record is initialized by golpos_save_employee (every roster
+// write rides it), carries an empty task list and a job-pack stub for
+// their role, and accumulates only facts: first/last unlock, the
+// photo-stamp state of the last unlock. Presence reads answer from
+// this record + tasks + notes, honestly, from day one. Identity key:
+// the email; a second roster write under a name that already has a
+// presence never mints a second presence for that name.
+function golpos_presence_all(): array {
+    $p = golpos_read('presence.json', []);
+    return is_array($p) ? $p : [];
+}
+
+// --- the duty checklist + role presets (owner, Oct 28, 13:01) --------------------
+// The checklist is the truth; a role is only a PRESET that pre-checks
+// a bundle on it. The table lives as DATA in the lane's records
+// (data/personas.json, seeded from these defaults on first use) so the
+// owner can correct the draft without a code change. A persona is
+// COPIED from the owner's final checked set at add time — after that
+// the pack is HERS: later template edits never rewrite a grown pack.
+function golpos_persona_defaults(): array {
+    $checklist = [
+        'Counter & Register' => ['register kholne/banda garne', 'customer sewa', 'lottery bikri',
+                                 'age-restricted check (vape/liquor)', 'refund ma owner lai bolauune'],
+        'Money & Close' => ['day close garne', 'Z report ko photo pathaune', 'cash ginti (drawer)',
+                            'card batch seal garne'],
+        'Bills & Deliveries' => ['delivery lina', 'bill sanga saman check garne',
+                                 'bill ko photo pathaune/halnee', 'vendor lai sodhne kura note garne'],
+        'Stock & Shelf' => ["What's Out report garne", 'stock ginti garne',
+                            'shelf bharee milaaune (facing)', 'cooler bharnee', 'expiry/miti check garne'],
+        'Store Care' => ['pasal safa garne', 'cooler/fridge ko temperature herne', 'fohor bahira rakhne'],
+        'Notes & Messages' => ['boss lai note pathaune', 'customer le sodheko kura record garne'],
+    ];
+    $all = [];
+    foreach ($checklist as $items) { $all = array_merge($all, $items); }
+    $presets = [
+        'cashier' => array_merge($checklist['Counter & Register'], $checklist['Notes & Messages'],
+                                 ["What's Out report garne"]),
+        'closer' => array_merge($checklist['Money & Close'],
+                                ['register kholne/banda garne', 'bill ko photo pathaune/halnee',
+                                 'boss lai note pathaune']),
+        'stocker' => array_merge($checklist['Stock & Shelf'],
+                                 ['delivery lina', 'bill sanga saman check garne']),
+        'manager' => $all,
+    ];
+    return ['checklist' => $checklist, 'presets' => $presets];
+}
+
+function golpos_persona_data(): array {
+    $d = golpos_read('personas.json', null);
+    if (!is_array($d) || !isset($d['checklist'], $d['presets'])) {
+        $d = golpos_persona_defaults();
+        golpos_write('personas.json', $d);
+    }
+    return $d;
+}
+
+// The duties a preset pre-checks, in checklist order.
+function golpos_preset_duties(string $role): array {
+    $data = golpos_persona_data();
+    $want = $data['presets'][strtolower(trim($role))] ?? $data['presets']['cashier'] ?? [];
+    $wantKeys = array_map('golpos_bill_name_key', $want);
+    $out = [];
+    foreach ($data['checklist'] as $items) {
+        foreach ($items as $duty) {
+            if (in_array(golpos_bill_name_key((string)$duty), $wantKeys, true)) { $out[] = (string)$duty; }
+        }
+    }
+    return $out;
+}
+
+// The first roster member whose CHECKED duties include this duty —
+// generated-task routing reads the checklist, never the preset name.
+function golpos_roster_with_duty(string $duty): ?array {
+    $key = golpos_bill_name_key($duty);
+    foreach (golpos_people()['employees'] as $e) {
+        if (($e['status'] ?? '') === 'removed') { continue; }
+        $pres = golpos_presence_for($e);
+        foreach ((array)($pres['job_pack']['items'] ?? []) as $have) {
+            if (golpos_bill_name_key((string)$have) === $key) { return $e; }
+        }
+    }
+    return null;
+}
+
+function golpos_presence_ensure(array $emp): ?array {
+    $email = golpos_norm_email((string)($emp['email'] ?? ''));
+    if ($email === '') { return null; }
+    $all = golpos_presence_all();
+    if (isset($all[$email]) && is_array($all[$email])) { return $all[$email]; }
+    $name = golpos_display_name($emp);
+    $key = golpos_bill_name_key($name);
+    if ($key !== '') {
+        foreach ($all as $rec) {
+            if (is_array($rec) && golpos_bill_name_key((string)($rec['name'] ?? '')) === $key) {
+                return $rec; // the name already has a presence — never two
+            }
+        }
+    }
+    $role = strtolower(trim((string)($emp['role'] ?? '')));
+    if (!isset(golpos_persona_data()['presets'][$role])) { $role = 'cashier'; }
+    $duties = isset($emp['duties']) && is_array($emp['duties']) && $emp['duties']
+        ? array_values(array_map('strval', $emp['duties']))
+        : golpos_preset_duties($role);
+    $rec = ['email' => $email, 'name' => $name, 'role' => $role,
+            'added_at' => (string)($emp['created'] ?? date('c')),
+            'job_pack' => ['role' => $role, 'items' => $duties],
+            'first_unlock_at' => null, 'last_unlock_at' => null,
+            'last_unlock_photo' => null];
+    $all[$email] = $rec;
+    golpos_write('presence.json', $all);
+    return $rec;
+}
+
+// The presence record for one roster member — ensured on read too, so
+// a person added before this lane existed still answers honestly.
+function golpos_presence_for(array $emp): array {
+    $rec = golpos_presence_ensure($emp);
+    if ($rec !== null) { return $rec; }
+    return ['email' => (string)($emp['email'] ?? ''), 'name' => golpos_display_name($emp),
+            'role' => (string)($emp['role'] ?? 'employee'), 'added_at' => (string)($emp['created'] ?? ''),
+            'job_pack' => ['role' => (string)($emp['role'] ?? 'employee'), 'items' => []],
+            'first_unlock_at' => null, 'last_unlock_at' => null, 'last_unlock_photo' => null];
+}
+
+// Stamp an unlock onto the person's presence (first + last + photo).
+function golpos_presence_touch_unlock(array $emp, bool $photo): void {
+    $email = golpos_norm_email((string)($emp['email'] ?? ''));
+    if ($email === '') { return; }
+    $rec = golpos_presence_for($emp);
+    $all = golpos_presence_all();
+    $key = isset($all[$email]) ? $email : (string)($rec['email'] ?? $email);
+    if (!isset($all[$key]) || !is_array($all[$key])) { $all[$key] = $rec; }
+    if (empty($all[$key]['first_unlock_at'])) { $all[$key]['first_unlock_at'] = date('c'); }
+    $all[$key]['last_unlock_at'] = date('c');
+    $all[$key]['last_unlock_photo'] = $photo;
+    golpos_write('presence.json', $all);
+}
+
+// --- the register lock ------------------------------------------------------
+// A roster PIN exists when the admin has one or any employee has set
+// theirs. With NO roster PIN anywhere the register is in setup mode
+// and never locks — a virgin till must not brick itself.
+function golpos_roster_has_pin(): bool {
+    if (golpos_admin_pin_hash() !== null) { return true; }
+    foreach (golpos_people()['employees'] as $e) {
+        if (!empty($e['pin_hash'])) { return true; }
+    }
+    return false;
+}
+
+function golpos_lock_state(array $session): bool {
+    return golpos_roster_has_pin() && !empty($session['locked']);
+}
+
+// Return a session to the PIN-please state (lock word, day close).
+function golpos_lock_session(string $sid): void {
+    $s = golpos_session($sid);
+    $s['locked'] = true;
+    $s['admin'] = false;
+    $s['unlocked_by'] = null;
+    $s['unlocked_name'] = '';
+    $s['unlocked_role'] = null;
+    $s['pin_stage'] = null;
+    $s['pin_tmp'] = null;
+    $s['pending'] = null;
+    golpos_save_session($sid, $s);
+}
+
+// --- unlock feed --------------------------------------------------------------
+// Every successful unlock and every 3-strike lockout is an EVENT with a
+// name and a time; the register camera's frame for the event lands in
+// data/frames/unlock_<id>.<ext> through frame.php and flips 'photo' to
+// true. Photos only — no biometric template is created or stored
+// anywhere in this system (owner rule, Oct 28, 12:40).
+function golpos_unlocks(): array {
+    $u = golpos_read('unlocks.json', []);
+    return is_array($u) ? array_values(array_filter($u, 'is_array')) : [];
+}
+
+function golpos_unlock_add(array $rec): array {
+    $rec['id'] = 'unl_' . substr(sha1(uniqid('', true)), 0, 10);
+    $rec['at'] = date('c');
+    if (!isset($rec['photo'])) { $rec['photo'] = false; }
+    $all = golpos_unlocks();
+    $all[] = $rec;
+    if (count($all) > 200) { $all = array_slice($all, -200); }
+    golpos_write('unlocks.json', $all);
+    return $rec;
+}
+
+function golpos_unlock_by_id(string $id): ?array {
+    foreach (golpos_unlocks() as $u) {
+        if ((string)($u['id'] ?? '') === $id) { return $u; }
+    }
+    return null;
+}
+
+function golpos_unlock_mark_photo(string $id): bool {
+    $all = golpos_unlocks();
+    foreach ($all as $i => $u) {
+        if ((string)($u['id'] ?? '') === $id) {
+            $all[$i]['photo'] = true;
+            golpos_write('unlocks.json', $all);
+            return true;
+        }
+    }
+    return false;
+}
+
+function golpos_unlock_file(string $id): ?array {
+    if (!preg_match('/^unl_[a-z0-9]+$/', $id)) { return null; }
+    $mimes = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'];
+    foreach ($mimes as $ext => $mime) {
+        $p = golpos_frames_dir() . '/unlock_' . $id . '.' . $ext;
+        if (is_file($p)) { return [$p, $mime]; }
+    }
+    return null;
+}
+
+// The latest unlock event for one email (presence reads), or null.
+function golpos_unlock_latest_for(string $email): ?array {
+    $found = null;
+    foreach (golpos_unlocks() as $u) {
+        if (($u['kind'] ?? '') === 'unlock' && ($u['email'] ?? '') === $email) { $found = $u; }
+    }
+    return $found;
+}
+
+// --- tasks --------------------------------------------------------------------
+// One record per assignment: {id, employee_email|null, employee_name,
+// role|null, items:[{text,done,done_at}], source: owner|gol, kind:
+// manual|report_due|bill_waiting|whatsout_aging, subject, reason,
+// created, due, status: open|partial|done|superseded}. A null
+// employee_email is a ROLE task (the data could not name a person —
+// the task text says so honestly) and shows to every employee.
+function golpos_tasks(): array {
+    $t = golpos_read('tasks.json', []);
+    return is_array($t) ? array_values(array_filter($t, 'is_array')) : [];
+}
+
+function golpos_save_tasks(array $tasks): void {
+    golpos_write('tasks.json', array_values($tasks));
+}
+
+function golpos_task_status(array $task): string {
+    if (($task['status'] ?? '') === 'superseded') { return 'superseded'; }
+    $items = (array)($task['items'] ?? []);
+    if (!$items) { return (string)($task['status'] ?? 'open'); }
+    $done = 0;
+    foreach ($items as $it) { if (!empty($it['done'])) { $done++; } }
+    if ($done === count($items)) { return 'done'; }
+    return $done > 0 ? 'partial' : 'open';
+}
+
+function golpos_task_add(array $rec): array {
+    $rec['id'] = 'task_' . substr(sha1(uniqid('', true)), 0, 10);
+    $rec['created'] = date('c');
+    if (!isset($rec['due'])) { $rec['due'] = null; }
+    $rec['status'] = golpos_task_status($rec);
+    $all = golpos_tasks();
+    $all[] = $rec;
+    golpos_save_tasks($all);
+    return $rec;
+}
+
+function golpos_task_put(array $rec): void {
+    $all = golpos_tasks();
+    foreach ($all as $i => $t) {
+        if ((string)($t['id'] ?? '') === (string)($rec['id'] ?? '')) {
+            $rec['status'] = golpos_task_status($rec);
+            $all[$i] = $rec;
+            golpos_save_tasks($all);
+            return;
+        }
+    }
+}
+
+// The tasks one person sees: their own, plus open role tasks.
+function golpos_tasks_for(string $email): array {
+    $out = [];
+    foreach (golpos_tasks() as $t) {
+        if (($t['status'] ?? '') === 'superseded') { continue; }
+        if (($t['employee_email'] ?? null) === $email || empty($t['employee_email'])) { $out[] = $t; }
+    }
+    return $out;
+}
+
+// Execute one confirmed task_assign card: record the assignment, then
+// email the numbered list through the ONE mail path. This is the exact
+// function the chat confirm runs — the record lands even when the mail
+// cannot, and the caller reports both halves truthfully.
+function golpos_execute_task_assign(array $card, string $shop): array {
+    $items = [];
+    foreach ((array)($card['items'] ?? []) as $txt) {
+        $txt = trim((string)$txt);
+        if ($txt !== '') { $items[] = ['text' => $txt, 'done' => false, 'done_at' => null]; }
+    }
+    $rec = golpos_task_add([
+        'employee_email' => (string)($card['employee_email'] ?? ''),
+        'employee_name' => (string)($card['employee_name'] ?? ''),
+        'role' => null, 'items' => $items, 'source' => 'owner', 'kind' => 'manual',
+        'subject' => '', 'reason' => '', 'due' => $card['due'] ?? null,
+    ]);
+    $email = (string)($card['employee_email'] ?? '');
+    $sent = false;
+    if ($email !== '') {
+        $lines = [];
+        foreach ($items as $i => $it) { $lines[] = ($i + 1) . '. ' . $it['text']; }
+        $body = 'Hi ' . (string)($card['employee_name'] ?? '') . ",\n\n"
+            . "Gol at {$shop} has work for you:\n\n" . implode("\n", $lines) . "\n";
+        if (!empty($card['due'])) { $body .= "\nDue: " . date('g:i A, M j', strtotime((string)$card['due'])) . "\n"; }
+        $body .= "\nOpen Gol at the register to see your tasks and mark them done: "
+            . golpos_register_link() . "\n\n— Gol, your store brain";
+        $sent = golpos_mail($email, "Your tasks at {$shop} — from Gol", $body);
+    }
+    return ['task' => $rec, 'sent' => $sent];
+}
+
+// --- team notes: the employee's voice back to the boss -------------------------
+function golpos_team_notes(): array {
+    $n = golpos_read('team_notes.json', []);
+    return is_array($n) ? array_values(array_filter($n, 'is_array')) : [];
+}
+
+function golpos_team_note_add(array $rec): array {
+    $rec['id'] = 'note_' . substr(sha1(uniqid('', true)), 0, 10);
+    $rec['at'] = date('c');
+    $rec['read'] = false;
+    $all = golpos_team_notes();
+    $all[] = $rec;
+    golpos_write('team_notes.json', $all);
+    return $rec;
+}
+
+function golpos_team_notes_mark_read(string $email): void {
+    $all = golpos_team_notes();
+    $changed = false;
+    foreach ($all as $i => $n) {
+        if (($n['from_email'] ?? '') === $email && empty($n['read'])) {
+            $all[$i]['read'] = true; $changed = true;
+        }
+    }
+    if ($changed) { golpos_write('team_notes.json', $all); }
+}
+
+// --- stock count reports (the What's Out discipline, applied to counts) --------
+// A count filed from the register is an EVENT — item, counted qty, the
+// system qty at that moment, the variance, by whom, when — kept in
+// data/counts.json for the presence trail and the Owner panel. Filing
+// a count NEVER edits the shelf stock: the variance waits for the
+// owner's word, exactly as a What's Out report does.
+function golpos_counts(): array {
+    $c = golpos_read('counts.json', []);
+    return is_array($c) ? array_values(array_filter($c, 'is_array')) : [];
+}
+
+function golpos_count_add(array $rec): array {
+    $rec['id'] = 'cnt_' . substr(sha1(uniqid('', true)), 0, 10);
+    $rec['at'] = date('c');
+    $rec['status'] = 'filed';
+    $all = golpos_counts();
+    $all[] = $rec;
+    golpos_write('counts.json', $all);
+    return $rec;
+}
+
+// --- employee session turns (the presence trail's question record) --------------
+// What an employee asked Gol in her own session, kept owner-side only:
+// turn text + time + her identity, appended by the brain for EMPLOYEE
+// sessions. PIN-shaped turns and PIN-flow turns are never recorded —
+// the digits are not data. Capped so the file stays a trail, not an
+// archive.
+// Mark an employee's latest unlock as photo-stamped (frame.php calls
+// this when the unlock frame lands).
+function golpos_presence_photo_mark(string $email): void {
+    $key = golpos_norm_email($email);
+    if ($key === '') { return; }
+    $all = golpos_presence_all();
+    if (!isset($all[$key]) || !is_array($all[$key])) { return; }
+    $all[$key]['last_unlock_photo'] = true;
+    golpos_write('presence.json', $all);
+}
+
+function golpos_turn_log(string $sessionId, string $email, string $name, string $text): void {
+    if ($email === '' || trim($text) === '') { return; }
+    $all = golpos_read('turns.json', []);
+    if (!is_array($all)) { $all = []; }
+    $all[] = ['session' => $sessionId, 'email' => $email, 'name' => $name,
+              'text' => mb_substr(trim($text), 0, 300), 'at' => date('c')];
+    if (count($all) > 500) { $all = array_slice($all, -500); }
+    golpos_write('turns.json', $all);
+}
+
+function golpos_turns(): array {
+    $t = golpos_read('turns.json', []);
+    return is_array($t) ? array_values(array_filter($t, 'is_array')) : [];
+}
+
+// --- the presence activity trail --------------------------------------------------
+// Her whole day, read over the records this lane already keeps — no
+// parallel log: tasks done (with times) + still open, notes sent,
+// What's Out reports filed, counts filed, and the questions she asked
+// Gol in her session (asked-and-answered: learning, never errors).
+function golpos_presence_trail(string $email, string $ymd): array {
+    $done = []; $open = [];
+    foreach (golpos_tasks_for($email) as $t) {
+        foreach ((array)($t['items'] ?? []) as $it) {
+            if (!empty($it['done'])) {
+                if (substr((string)($it['done_at'] ?? ''), 0, 10) === $ymd) {
+                    $done[] = ['text' => (string)($it['text'] ?? ''), 'at' => (string)($it['done_at'] ?? '')];
+                }
+            } else {
+                $open[] = ['text' => (string)($it['text'] ?? ''),
+                           'source' => (string)($t['source'] ?? 'owner')];
+            }
+        }
+    }
+    $notes = [];
+    foreach (golpos_team_notes() as $n) {
+        if (($n['from_email'] ?? '') === $email && substr((string)($n['at'] ?? ''), 0, 10) === $ymd) {
+            $notes[] = ['text' => (string)($n['text'] ?? ''), 'at' => (string)($n['at'] ?? '')];
+        }
+    }
+    $outs = [];
+    foreach (golpos_whatsout_open() as $w) {
+        if (($w['by_email'] ?? '') === $email && substr((string)($w['at'] ?? ''), 0, 10) === $ymd) {
+            $outs[] = ['name' => (string)($w['name'] ?? ''), 'at' => (string)($w['at'] ?? '')];
+        }
+    }
+    $counts = [];
+    foreach (golpos_counts() as $c) {
+        if (($c['by_email'] ?? '') === $email && substr((string)($c['at'] ?? ''), 0, 10) === $ymd) {
+            $counts[] = ['name' => (string)($c['name'] ?? ''), 'counted' => $c['counted'] ?? null,
+                         'system' => $c['system'] ?? null, 'variance' => $c['variance'] ?? null,
+                         'at' => (string)($c['at'] ?? '')];
+        }
+    }
+    $questions = [];
+    foreach (golpos_turns() as $q) {
+        if (($q['email'] ?? '') !== $email || substr((string)($q['at'] ?? ''), 0, 10) !== $ymd) { continue; }
+        $txt = trim((string)($q['text'] ?? ''));
+        if ($txt === '' || in_array(mb_strtolower($txt), ['gol', 'गोल', 'cancel', 'ho', 'हो'], true)) { continue; }
+        $questions[] = ['text' => $txt, 'at' => (string)($q['at'] ?? '')];
+    }
+    return ['done' => $done, 'open' => $open, 'notes' => $notes, 'outs' => $outs,
+            'counts' => $counts, 'questions' => $questions];
+}
+
+// --- What's Out reports (standalone store) --------------------------------------
+// A report is a SIGNAL with a name and a time — it never edits a stock
+// count. Link mode writes the same report to the MR.STORE Floor board
+// (mrstore_append_whats_out) and reads it back from there; standalone
+// keeps its own record here, which the Owner panel and order prep read.
+function golpos_whatsout(): array {
+    $w = golpos_read('whatsout.json', []);
+    return is_array($w) ? array_values(array_filter($w, 'is_array')) : [];
+}
+
+function golpos_whatsout_add(array $rec): array {
+    $rec['id'] = 'wo_' . substr(sha1(uniqid('', true)), 0, 10);
+    $rec['at'] = date('c');
+    $rec['status'] = 'open';
+    $all = golpos_whatsout();
+    $all[] = $rec;
+    golpos_write('whatsout.json', $all);
+    return $rec;
+}
+
+// Open out-reports as order-prep seeds + aging-generator input, ONE
+// shape for both modes: [{name, at, by_name, by_email}].
+function golpos_whatsout_open(): array {
+    if (golpos_link_on()) {
+        return mrstore_whatsout_read();
+    }
+    $out = [];
+    foreach (golpos_whatsout() as $w) {
+        if (($w['status'] ?? 'open') !== 'open') { continue; }
+        $out[] = ['name' => (string)($w['name'] ?? ''), 'at' => (string)($w['at'] ?? ''),
+                  'by_name' => (string)($w['by_name'] ?? ''), 'by_email' => (string)($w['by_email'] ?? '')];
+    }
+    return $out;
+}
+
+// --- Gol-originated tasks (owner addition, Oct 28, 12:41) -----------------------
+// MR.STORE is an inner intelligence: it watches the store's own state
+// and hands the register's Gol the work it can see waiting. The
+// generators below are DETERMINISTIC — every task names the real
+// condition that created it, carries source "gol", dedupes to one open
+// task per (kind, subject), and yields to an owner task on the same
+// subject. A generated task is an instruction only; it never executes
+// anything. Evaluated at the register's sync points: unlock, task
+// view, owner inbox read.
+function golpos_task_subject_key(string $s): string {
+    return golpos_bill_name_key($s);
+}
+
+// Does an OPEN owner task already cover this generated subject?
+function golpos_owner_covers(string $kind, string $subject): bool {
+    $sk = golpos_task_subject_key($subject);
+    foreach (golpos_tasks() as $t) {
+        if (($t['source'] ?? '') !== 'owner' || golpos_task_status($t) === 'done'
+            || ($t['status'] ?? '') === 'superseded') { continue; }
+        foreach ((array)($t['items'] ?? []) as $it) {
+            $txt = mb_strtolower((string)($it['text'] ?? ''));
+            if ($kind === 'report_due' && preg_match('/(report|close|रिपोर्ट|बन्द)/iu', $txt)) { return true; }
+            if ($kind === 'bill_waiting' && $sk !== ''
+                && mb_strpos(golpos_bill_name_key($txt), $sk) !== false) { return true; }
+            if ($kind === 'whatsout_aging' && $sk !== ''
+                && mb_strpos(golpos_bill_name_key($txt), $sk) !== false) { return true; }
+        }
+    }
+    return false;
+}
+
+// --- closure by evidence (owner definition, Oct 28, 13:06) -----------------------
+// "Control yani — AI persona le kam dinchha, ani tyo kam garnu
+// parcha." A task is a DUTY: it NEVER closes by time passing or by
+// being shown in a greeting. It closes only by evidence — a generated
+// task self-closes when its feed event lands (the close is recorded,
+// the bill is entered, the count is filed), or when she completes its
+// staged work; an owner-given task closes by her explicit done-mark
+// or its linked work event. Until evidence, it stays open, resurfaces
+// at her next greeting, and stands on the owner's trail WITH ITS AGE.
+// And the fairness flip side: a task that was never in her list can
+// never appear as "missed" anywhere — only given work counts.
+function golpos_task_close_by_feed(array $t): array {
+    $now = date('c');
+    foreach ($t['items'] as $i => $it) {
+        if (empty($it['done'])) {
+            $t['items'][$i]['done'] = true;
+            $t['items'][$i]['done_at'] = $now;
+        }
+    }
+    $t['closed_by'] = 'feed';
+    $t['closed_at'] = $now;
+    golpos_task_put($t);
+    return $t;
+}
+
+function golpos_tasks_reconcile(): void {
+    $waiting = function_exists('mrstore_bill_vault_waiting') && golpos_link_on()
+        ? mrstore_bill_vault_waiting() : [];
+    $waitingVendors = [];
+    foreach ($waiting as $b) { $waitingVendors[golpos_bill_name_key((string)($b['vendor'] ?? ''))] = true; }
+    $counts = golpos_counts();
+    foreach (golpos_tasks() as $t) {
+        if (($t['status'] ?? '') === 'superseded' || golpos_task_status($t) === 'done') { continue; }
+        $kind = (string)($t['kind'] ?? 'manual');
+        $subject = (string)($t['subject'] ?? '');
+        $created = strtotime((string)($t['created'] ?? '')) ?: 0;
+        $closeIt = false;
+        if ($kind === 'report_due' && preg_match('/^report:(\d{4}-\d{2}-\d{2})$/', $subject, $m)) {
+            $closeIt = golpos_close_record($m[1]) !== null;
+        } elseif ($kind === 'bill_waiting' && strpos($subject, 'bill:') === 0) {
+            $closeIt = golpos_link_on()
+                && !isset($waitingVendors[golpos_bill_name_key(substr($subject, 5))]);
+        } elseif ($kind === 'whatsout_aging' && strpos($subject, 'count:') === 0) {
+            $itemKey = golpos_bill_name_key(substr($subject, 6));
+            foreach ($counts as $c) {
+                if (golpos_bill_name_key((string)($c['name'] ?? '')) === $itemKey
+                    && strtotime((string)($c['at'] ?? '')) >= $created) { $closeIt = true; break; }
+            }
+        } elseif ($kind === 'manual') {
+            // An owner-given task closes by its linked work event too:
+            // "Report hal" when the close lands, "bill hal — <vendor>"
+            // when that bill is entered, "<item> count gara" when the
+            // count is filed.
+            $texts = [];
+            foreach ((array)($t['items'] ?? []) as $it) {
+                if (empty($it['done'])) { $texts[] = golpos_bill_name_key((string)($it['text'] ?? '')); }
+            }
+            $joined = implode(' ', $texts);
+            if ($joined !== '' && preg_match('/report|close/', $joined)) {
+                $closeIt = golpos_close_record(date('Y-m-d', $created)) !== null
+                    || golpos_close_record(date('Y-m-d')) !== null
+                    || golpos_close_record(date('Y-m-d', strtotime('-1 day'))) !== null;
+            }
+            if (!$closeIt && preg_match('/bill/', $joined)) {
+                // Evidence = a purchase entered at/after the task was
+                // given, for a vendor her task text names.
+                foreach ((array)golpos_read('purchases.json', []) as $purch) {
+                    if (!is_array($purch)) { continue; }
+                    $vk = golpos_bill_name_key((string)($purch['vendor'] ?? ''));
+                    $pat = strtotime((string)($purch['at'] ?? $purch['date'] ?? '')) ?: 0;
+                    if ($vk !== '' && strpos($joined, $vk) !== false && $pat >= $created) {
+                        $closeIt = true; break;
+                    }
+                }
+            }
+            if (!$closeIt && preg_match('/count|ginti/', $joined)) {
+                foreach ($counts as $c) {
+                    $ck = golpos_bill_name_key((string)($c['name'] ?? ''));
+                    if ($ck !== '' && strpos($joined, $ck) !== false
+                        && strtotime((string)($c['at'] ?? '')) >= $created) { $closeIt = true; break; }
+                }
+            }
+        }
+        if ($closeIt) { golpos_task_close_by_feed($t); }
+    }
+}
+
+function golpos_tasks_sync(): array {
+    golpos_tasks_reconcile();
+    $created = [];
+    $tasks = golpos_tasks();
+    $openGol = [];
+    foreach ($tasks as $t) {
+        if (($t['source'] ?? '') === 'gol' && golpos_task_status($t) !== 'done'
+            && ($t['status'] ?? '') !== 'superseded') {
+            $openGol[($t['kind'] ?? '') . '|' . golpos_task_subject_key((string)($t['subject'] ?? ''))] = $t;
+        }
+    }
+    $spawn = function (array $rec) use (&$created, &$openGol): void {
+        $key = ($rec['kind'] ?? '') . '|' . golpos_task_subject_key((string)($rec['subject'] ?? ''));
+        if (isset($openGol[$key])) {
+            // An owner task on the same subject retires the generated one.
+            if (golpos_owner_covers((string)$rec['kind'], (string)$rec['subject'])) {
+                $old = $openGol[$key];
+                $old['status'] = 'superseded';
+                golpos_task_put($old);
+                unset($openGol[$key]);
+            }
+            return;
+        }
+        if (golpos_owner_covers((string)$rec['kind'], (string)$rec['subject'])) { return; }
+        // A generated task already DONE for this exact condition instance
+        // (same subject, created at/after the condition's own stamp) is
+        // finished work — regeneration must not resurrect it.
+        foreach (golpos_tasks() as $t) {
+            if (($t['source'] ?? '') === 'gol' && ($t['kind'] ?? '') === ($rec['kind'] ?? '')
+                && golpos_task_subject_key((string)($t['subject'] ?? '')) === golpos_task_subject_key((string)$rec['subject'])
+                && golpos_task_status($t) === 'done'
+                && strtotime((string)($t['created'] ?? '')) >= strtotime((string)($rec['since'] ?? 'now'))) {
+                return;
+            }
+        }
+        $new = golpos_task_add($rec);
+        $openGol[$key] = $new;
+        $created[] = $new;
+    };
+
+    // (1) Report due — yesterday has no close record by morning. Only a
+    // store that actually traded can owe a report: no sales and no
+    // closes ever means a fresh till, not a missing close. Routing
+    // reads the CHECKLIST (owner, 13:01): the task lands on the roster
+    // member whose checked duties carry the day close; when nobody's
+    // do, it stays unassigned in the owner's inbox, named as such.
+    $yday = date('Y-m-d', strtotime('-1 day'));
+    if (golpos_close_record($yday) === null && golpos_sales() !== []) {
+        $closer = golpos_roster_with_duty('day close garne');
+        if ($closer !== null) {
+            $spawn(['employee_email' => (string)$closer['email'],
+                    'employee_name' => golpos_display_name($closer), 'role' => null,
+                    'items' => [['text' => 'Report hal — hijo ko close record chhaina',
+                                 'done' => false, 'done_at' => null]],
+                    'source' => 'gol', 'kind' => 'report_due', 'subject' => 'report:' . $yday,
+                    'reason' => 'Hijo (' . $yday . ') ko day close / night close record aayena',
+                    'since' => $yday . 'T00:00:00']);
+        } else {
+            $spawn(['employee_email' => null, 'employee_name' => 'Unassigned (owner inbox)', 'role' => 'closing',
+                    'items' => [['text' => 'Report hal — hijo ko close record chhaina (kunai employee ko checklist ma day-close duty checked chhaina, tyasaile yo kam kasailai assign bhayeko chhaina — owner inbox ma chha)',
+                                 'done' => false, 'done_at' => null]],
+                    'source' => 'gol', 'kind' => 'report_due', 'subject' => 'report:' . $yday,
+                    'reason' => 'Hijo (' . $yday . ') ko day close / night close record aayena',
+                    'since' => $yday . 'T00:00:00']);
+        }
+    }
+    // (2) Bill waiting — a bill in the store's vault with no entered
+    // purchase behind it. LINK MODE ONLY: standalone bills arrive as
+    // photo sessions and enter through the bill card at once, so a
+    // standalone register has no waiting-bill source and this generator
+    // stays silent there. Routes to whoever's checklist carries bills.
+    if (golpos_link_on()) {
+        $biller = golpos_roster_with_duty('bill ko photo pathaune/halnee');
+        foreach (mrstore_bill_vault_waiting() as $b) {
+            $vendor = (string)($b['vendor'] ?? '');
+            if ($vendor === '') { continue; }
+            $spawn(['employee_email' => $biller !== null ? (string)$biller['email'] : null,
+                    'employee_name' => $biller !== null ? golpos_display_name($biller) : 'Unassigned (owner inbox)',
+                    'role' => $biller !== null ? null : 'team',
+                    'items' => [['text' => 'Bill hal — ' . $vendor . ' ko bill aayeko chha, entry gara',
+                                 'done' => false, 'done_at' => null]],
+                    'source' => 'gol', 'kind' => 'bill_waiting', 'subject' => 'bill:' . $vendor,
+                    'reason' => 'Bill vault ma ' . $vendor . ' ko bill chha, entered purchase match chhaina',
+                    'since' => (string)($b['date'] ?? date('Y-m-d')) . 'T00:00:00']);
+        }
+    }
+    // (3) What's Out aging — an out report open beyond the store's
+    // usual cycle (7 days) with no count since. The count task routes
+    // to whoever's checklist carries stock counts; the original
+    // reporter keeps it when their checklist carries the duty;
+    // otherwise it lands unassigned in the owner's inbox.
+    foreach (golpos_whatsout_open() as $w) {
+        $at = strtotime((string)($w['at'] ?? ''));
+        if ($at === false || $at > time() - 7 * 86400) { continue; }
+        $name = (string)($w['name'] ?? '');
+        if ($name === '') { continue; }
+        $counter = golpos_roster_with_duty('stock ginti garne');
+        $toEmail = null; $toName = 'Unassigned (owner inbox)'; $toRole = 'team';
+        if (!empty($w['by_email'])) {
+            $rep = golpos_employee((string)$w['by_email']);
+            if ($rep !== null && $counter !== null && (string)$counter['email'] === (string)$rep['email']) {
+                $toEmail = (string)$rep['email']; $toName = golpos_display_name($rep); $toRole = null;
+            } elseif ($counter !== null) {
+                $toEmail = (string)$counter['email']; $toName = golpos_display_name($counter); $toRole = null;
+            } else {
+                $toEmail = (string)$w['by_email']; $toName = (string)($w['by_name'] ?: 'Team'); $toRole = null;
+            }
+        } elseif ($counter !== null) {
+            $toEmail = (string)$counter['email']; $toName = golpos_display_name($counter); $toRole = null;
+        }
+        $spawn(['employee_email' => $toEmail, 'employee_name' => $toName, 'role' => $toRole,
+                'items' => [['text' => $name . ' count garera bhana', 'done' => false, 'done_at' => null]],
+                'source' => 'gol', 'kind' => 'whatsout_aging', 'subject' => 'count:' . $name,
+                'reason' => "What's Out ma " . date('M j', $at) . ' dekhi khula chha, count aayeko chhaina',
+                'since' => (string)($w['at'] ?? '')]);
+    }
+    return $created;
+}
+
+// --- the NEXT due duty (owner principle, Oct 28, 13:07) ---------------------------
+// "Human le list garne bittikai sabai kam garne bani hudaina." A dumped
+// list builds no habit — so her working surface is ONE next step, at
+// its moment, with its reason. The full list stays as overview (her
+// task view, the owner's Team card); the next line is computed, never
+// stored: due-timestamped tasks first (most overdue), then Gol's duty
+// moments (a report due is due NOW, every morning), then the oldest
+// open owner task. Nothing due -> null, and the surface stays silent:
+// no nagging.
+function golpos_next_due(string $email): ?array {
+    $cands = [];
+    foreach (golpos_tasks_for($email) as $t) {
+        if (($t['status'] ?? '') === 'superseded' || golpos_task_status($t) === 'done') { continue; }
+        foreach ((array)($t['items'] ?? []) as $idx => $it) {
+            if (!empty($it['done'])) { continue; }
+            $cands[] = ['task_id' => (string)$t['id'], 'index' => $idx,
+                        'text' => (string)($it['text'] ?? ''),
+                        'source' => (string)($t['source'] ?? 'owner'),
+                        'kind' => (string)($t['kind'] ?? 'manual'),
+                        'reason' => (string)($t['reason'] ?? ''),
+                        'due' => (string)($t['due'] ?? ''),
+                        'created' => (string)($t['created'] ?? '')];
+        }
+    }
+    if (!$cands) { return null; }
+    $now = time();
+    $score = static function (array $c) use ($now): array {
+        $dueTs = $c['due'] !== '' ? (strtotime($c['due']) ?: null) : null;
+        if ($dueTs !== null && $dueTs <= $now) { return [0, $dueTs]; }        // due now / overdue
+        if ($c['source'] === 'gol') { return [1, strtotime($c['created']) ?: $now]; } // duty moments
+        if ($dueTs !== null) { return [2, $dueTs]; }                          // later today
+        return [3, strtotime($c['created']) ?: $now];                         // oldest owner task
+    };
+    usort($cands, static fn($a, $b) => $score($a) <=> $score($b));
+    return $cands[0];
 }
 
 // --- Counter frames (Register Watch, owner directive, Oct 28) ----------------

@@ -404,10 +404,12 @@ async function tender(kind, tendered) {
   const lines = [...cart.entries()].map(([sku, qty]) => ({ sku, qty }))
     .concat(manualLines.map(m => ({ manual: true, name: 'Manual amount', price: m.price, qty: 1, taxable: m.taxable })));
   const salePayload = { lines, tender: kind };
+  // (the session rides as a sibling of sale below — api.php reads it
+  // for cashier attribution on the record)
   if (kind === 'cash') { salePayload.tendered = Number(Number(tendered || 0).toFixed(2)); }
   if (taxExempt) { salePayload.tax_exempt = true; }
   const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sale: salePayload }) });
+    body: JSON.stringify({ sale: salePayload, session: SESSION_ID }) });
   const sale = await res.json();
   if (!res.ok || sale.error) {
     showToast(sale.error || 'The sale could not be recorded — the cart is unchanged.');
@@ -741,6 +743,28 @@ function chatCard(card) {
   } else if (card.type === 'batch_close') {
     body = `<div class="sc-what">Batch close — ${card.count} card sales</div>` +
       `<div class="sc-prices"><span class="sc-new">${money(card.total)}</span></div>`;
+  } else if (card.type === 'employee_add') {
+    const duties = (card.duties || []).map(d => `<div class="sc-line">✓ ${esc(d)}</div>`).join('');
+    body = `<div class="sc-what">Add employee — ${esc(card.name ? card.name + ' · ' : '')}${esc(card.email)}</div>` +
+      `<div class="sc-line">Persona: ${esc(card.role || 'cashier')} · ${esc(String((card.duties || []).length))} duties — this persona starts knowing:</div>${duties}` +
+      `<div class="sc-line">Say a duty + "hata" to uncheck it, or "role closer" to re-pick the preset — or confirm.</div>`;
+  } else if (card.type === 'task_assign') {
+    const items = (card.items || []).map((it, i) => `<div class="sc-line">${i + 1}. ${esc(it)}</div>`).join('');
+    body = `<div class="sc-what">Tasks for ${esc(card.employee_name || '')}</div>${items}` +
+      `<div class="sc-line">Confirm records them and emails the list to ${esc(card.employee_email || '')}. Edit: "dosro kam hata" / "arko thap: …"</div>`;
+  } else if (card.type === 'team_note') {
+    body = `<div class="sc-what">Note to the boss — from ${esc(card.from_name || '')}</div>` +
+      `<div class="sc-line">"${esc(card.text || '')}"</div>`;
+  } else if (card.type === 'whats_out') {
+    body = `<div class="sc-what">What's Out report — ${esc(card.name || '')}</div>` +
+      `<div class="sc-line">By ${esc(card.by_name || 'Register')} · the stock count does not change — this files the report only.</div>`;
+  } else if (card.type === 'stock_count') {
+    const fmt = (v) => v === null || v === undefined ? '—' : String(v);
+    const varTxt = card.variance === null || card.variance === undefined ? '—'
+      : (Number(card.variance) > 0 ? '+' + card.variance : String(card.variance));
+    body = `<div class="sc-what">Stock count — ${esc(card.name || '')}</div>` +
+      `<div class="sc-line">Counted ${fmt(card.counted)} · system ${fmt(card.system)} · variance ${varTxt}</div>` +
+      `<div class="sc-line">By ${esc(card.by_name || 'Register')} · confirming files the count — the shelf stock does not change.</div>`;
   } else if (card.type === 'employee_remove') {
     body = `<div class="sc-what">Remove employee — ${esc(card.name ? card.name + ' · ' : '')}${esc(card.email)}</div>`;
   } else if (card.type === 'new_item') {
@@ -793,6 +817,7 @@ function chatCard(card) {
       body: JSON.stringify(brainPayload({ confirm: true })) });
     const r = await res.json();
     chatMsg(r.reply, 'gol');
+    applyLockState(r.locked, r.actor);
     if (r.action && r.action.type === 'add') { addToCart(r.action.sku, { viaChat: true, qty: r.action.qty || 1 }); }
     loadCatalog(); loadSettings();
   });
@@ -828,6 +853,8 @@ async function sendChat(text) {
   // digits standing in the chat history.
   if (r.pin_mask && mine) { mine.textContent = '••••'; }
   if (r.reply) { chatMsg(r.reply, 'gol'); }
+  applyLockState(r.locked, r.actor);
+  if (r.unlock_event && r.unlock_event.id) { attachUnlockFrame(r.unlock_event.id); }
   if (r.card) { chatCard(r.card); }
   if (r.action && r.action.type === 'add') { addToCart(r.action.sku, { viaChat: true, qty: r.action.qty || 1 }); }
   if (r.done) { loadCatalog(); loadSettings(); }
@@ -956,6 +983,18 @@ $('photoInput').addEventListener('change', (e) => {
   sendPhoto(f, hint);
   e.target.value = '';
 });
+$('lockChatBtn').addEventListener('click', () => { $('chatDrawer').classList.remove('hidden'); $('chatInput').focus(); });
+$('myTasksBtn').addEventListener('click', openMyTasks);
+$('tasksClose').addEventListener('click', () => $('tasksModal').classList.add('hidden'));
+$('taskNoteSend').addEventListener('click', () => {
+  const v = $('taskNoteInput').value.trim();
+  if (!v) { return; }
+  $('taskNoteInput').value = '';
+  $('tasksModal').classList.add('hidden');
+  $('chatDrawer').classList.remove('hidden');
+  sendChat('boss lai bhandeu: ' + v);
+});
+{ const lb = $('smLockBtn'); if (lb) { lb.addEventListener('click', () => { $('settingsPop').classList.add('hidden'); sendChat('lock'); }); } }
 $('ownerBtn').addEventListener('click', async () => {
   $('ownerPanel').classList.remove('hidden');
   $('ownerStoreName').textContent = $('storeName').textContent;
@@ -1009,6 +1048,46 @@ $('ownerBtn').addEventListener('click', async () => {
     $('ownerVendors').querySelectorAll('[data-sheet]').forEach(b =>
       b.addEventListener('click', () => openOrderSheet(b.dataset.sheet)));
   } catch (e) { $('ownerVendors').innerHTML = ''; }
+  // Team card + unlock feed + What's Out: the employee lane's owner
+  // side, from the one ?team read (owner session — the endpoint 403s
+  // an unelevated session and the cards simply stay empty).
+  try {
+    const tm = await (await fetch(API + '?team&session=' + encodeURIComponent(SESSION_ID))).json();
+    if (tm && Array.isArray(tm.people)) {
+      const srcTag = (t) => t.source === 'gol' ? ' <small>(Gol)</small>' : ' <small>(owner)</small>';
+      $('ownerTeam').innerHTML =
+        `<h3 class="ocard-title">Team <small>— tasks, notes, the day's trail</small></h3>` +
+        (tm.people.length ? tm.people.map(pp => {
+          const tr = pp.trail || {};
+          const myTasks = (tm.tasks || []).filter(t => t.employee_email === pp.email && t.status !== 'superseded');
+          const openLines = myTasks.flatMap(t => (t.items || []).filter(i => !i.done)
+            .map(i => `<div class="sc-line">• ${esc(i.text)}${srcTag(t)}</div>`)).join('');
+          const noteLines = (pp.notes || []).map(n =>
+            `<div class="sc-line">${n.read ? '' : '🔵 '}"${esc(n.text)}" — ${esc(new Date(n.at).toLocaleString())}</div>`).join('');
+          return `<div class="team-person"><b>${esc(pp.name)}</b> <small>${esc(pp.role)} · ${pp.tasks_open} open · ${pp.tasks_done} done${pp.notes_unread ? ' · ' + pp.notes_unread + ' unread note(s)' : ''}</small>` +
+            (openLines || '') + (noteLines || '') +
+            `<div class="sc-line">Din bhari: ${(tr.done || []).length} done · ${(tr.notes || []).length} note(s) · ${(tr.outs || []).length} out report(s) · ${(tr.counts || []).length} count(s) · ${(tr.questions || []).length} question(s)</div></div>`;
+        }).join('') : '<p class="owner-muted">No employees yet — add one in the Gol chat.</p>') +
+        ((tm.role_tasks || []).length
+          ? '<p class="owner-muted">Unassigned (role) tasks: ' + tm.role_tasks.flatMap(t => (t.items || []).filter(i => !i.done).map(i => esc(i.text))).join(' · ') + '</p>' : '');
+      $('ownerUnlocks').innerHTML =
+        `<h3 class="ocard-title">Unlock feed <small>— who opened the register, and when</small></h3>` +
+        ((tm.unlocks || []).length ? tm.unlocks.map(u =>
+          `<div class="rep-row"><span>${u.kind === 'lockout' ? '⚠️ Lockout — 3 wrong PINs' : esc(u.name || 'Owner') + (u.role ? ' · ' + esc(u.role) : '')}</span>` +
+          `<b>${esc(new Date(u.at).toLocaleString())}</b>` +
+          (u.photo ? `<span><img class="unlock-thumb" src="../server/frame.php?unlock=${esc(u.id)}" alt="Unlock photo"></span>` : '<span>no photo</span>') +
+          `</div>`).join('')
+          : '<p class="owner-muted">No unlocks recorded yet.</p>');
+      $('ownerWhatsout').innerHTML =
+        `<h3 class="ocard-title">What's Out <small>— reports from the shelf (counts never change on a report)</small></h3>` +
+        ((tm.whatsout || []).length ? tm.whatsout.map(w =>
+          `<div class="rep-row"><span>${esc(w.name)}</span><b>${esc(w.by_name || '')}</b><span>${esc(new Date(w.at).toLocaleString())}</span></div>`).join('')
+          : '<p class="owner-muted">Nothing reported out.</p>') +
+        ((tm.counts || []).length
+          ? '<h3 class="ocard-title">Counts filed</h3>' + tm.counts.map(c =>
+            `<div class="rep-row"><span>${esc(c.name)}</span><b>counted ${esc(String(c.counted))} · system ${c.system === null || c.system === undefined ? '—' : esc(String(c.system))}</b><span>${esc(c.by_name || '')}</span></div>`).join('') : '');
+    }
+  } catch (e) { /* team read is owner-domain; an unelevated panel just skips it */ }
   await loadSettings(); renderSettingsView();
   renderDayClose();
   showReport('today');
@@ -1878,6 +1957,87 @@ async function attachCashFrame(txnId) {
   } catch (e) { /* the frame is a passenger, never a gate */ }
 }
 
+// --- employee lane: the morning lock, the actor, unlock photos -----------------
+// The register boots LOCKED when the roster holds a PIN: the overlay
+// covers the till, Gol chat stays reachable above it, and the only
+// conversation is "PIN please." The brain's replies carry the lock
+// state + actor; this applies them. The lock is the register UI's
+// (v1) — honest scope: it gates the till surface the cashier uses.
+let lockActor = null;
+function applyLockState(locked, actor) {
+  if (actor !== undefined) { lockActor = actor || null; }
+  const ov = $('lockOverlay');
+  if (ov && locked !== undefined && locked !== null) { ov.classList.toggle('hidden', !locked); }
+  const chip = $('actorChip');
+  if (chip) {
+    if (lockActor && lockActor.name) {
+      chip.textContent = lockActor.role === 'admin' ? 'Owner · admin' : lockActor.name;
+      chip.classList.remove('hidden');
+    } else { chip.classList.add('hidden'); }
+  }
+  const mt = $('myTasksBtn');
+  if (mt) { mt.classList.toggle('hidden', !(lockActor && lockActor.role === 'employee')); }
+}
+async function refreshLockState() {
+  try {
+    const r = await (await fetch(API + '?lock&session=' + encodeURIComponent(SESSION_ID))).json();
+    applyLockState(r.locked, r.actor);
+  } catch (e) { /* the register never stops for a state read */ }
+}
+// The unlock stamp (spec §3b): one frame from the live watch stream —
+// or a one-shot capture when the camera can start — rides to frame.php
+// against the unlock event's id. No camera -> the event simply stands
+// as "no photo"; the unlock itself never waits on a picture.
+async function attachUnlockFrame(eventId) {
+  try {
+    if (!eventId) { return; }
+    let blob = null;
+    if (camStream) { blob = await grabFrame($('watchVideo')); }
+    if (!blob && receiptSettings && receiptSettings.watch_frame === true) {
+      const st = await camStart($('watchVideo'));
+      if (st) { blob = await grabFrame($('watchVideo')); }
+    }
+    if (!blob) { return; }
+    const fd = new FormData();
+    fd.append('photo', new File([blob], 'unlock.jpg', { type: 'image/jpeg' }));
+    fd.append('unlock', eventId);
+    await fetch('../server/frame.php', { method: 'POST', body: fd });
+  } catch (e) { /* a photo is evidence, never a gate */ }
+}
+
+// --- her tasks view: the next due duty first, the list as overview --------------
+async function openMyTasks() {
+  try {
+    const r = await (await fetch(API + '?mytasks&session=' + encodeURIComponent(SESSION_ID))).json();
+    const nx = r.next;
+    $('tasksNext').innerHTML = nx
+      ? `<div class="task-next"><span class="task-next-tag">NEXT</span><b>${esc(nx.text)}</b>` +
+        (nx.reason ? `<div class="task-next-reason">${esc(nx.reason)}</div>` : '') +
+        `<button type="button" class="task-done-btn" data-done="${esc(nx.task_id)}:${nx.index}">Done</button></div>`
+      : '';
+    const items = r.items || [];
+    $('tasksList').innerHTML = items.length
+      ? items.map(it => `<div class="task-row"><span>${esc(it.text)}${it.source === 'gol' ? ' <small>(from Gol)</small>' : ''}</span>` +
+          `<button type="button" class="task-done-btn" data-done="${esc(it.task_id)}:${it.index}">Done</button></div>`).join('')
+      : '<p class="owner-muted">No open tasks — nothing waiting for you.</p>';
+    $('tasksModal').classList.remove('hidden');
+    $('tasksList').querySelectorAll('[data-done]').forEach(b =>
+      b.addEventListener('click', async () => {
+        const [tid, idx] = b.dataset.done.split(':');
+        await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task_done: { task_id: tid, index: Number(idx) }, session: SESSION_ID }) });
+        openMyTasks();
+      }));
+    const nb = $('tasksNext').querySelector('[data-done]');
+    if (nb) { nb.addEventListener('click', async () => {
+      const [tid, idx] = nb.dataset.done.split(':');
+      await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_done: { task_id: tid, index: Number(idx) }, session: SESSION_ID }) });
+      openMyTasks();
+    }); }
+  } catch (e) { showToast('Tasks could not be read.'); }
+}
+
 // --- the capture view -----------------------------------------------------------
 let camMode = 'photo'; // 'photo' | 'sense'
 let camShot = null;    // the captured Blob waiting for its job
@@ -2072,4 +2232,4 @@ async function bindLaunch() {
   } catch (e) { /* the register never stops for the link */ }
 }
 
-bindLaunch().then(() => { loadCatalog(); loadSettings(); clearTillSearch(); setTimeout(clearTillSearch, 600); });
+bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); clearTillSearch(); setTimeout(clearTillSearch, 600); });
