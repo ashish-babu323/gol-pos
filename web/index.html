@@ -31,7 +31,6 @@
           <button type="button" class="sm-act" id="smBatchBtn">Seal batch</button>
         </div>
         <div class="sm-note hidden" id="smBatchNote"></div>
-        <button type="button" class="sm-pin hidden" id="smBatchPin">Open Gol chat to enter the PIN →</button>
         <div class="sm-row">
           <div class="sm-main"><span class="sm-label">Day close</span><span class="sm-sub">Freeze today's record, batches included</span></div>
           <button type="button" class="sm-act" id="smDayCloseBtn">Close day</button>
@@ -51,6 +50,10 @@
         <div class="sm-row">
           <div class="sm-main"><span class="sm-label">Printer</span><span class="sm-sub">Receipt prints after each sale</span></div>
           <button type="button" class="sm-toggle" id="smPrinterBtn" aria-pressed="true">On</button>
+        </div>
+        <div class="sm-row">
+          <div class="sm-main"><span class="sm-label">Camera frame</span><span class="sm-sub">One counter photo saved with each cash sale</span></div>
+          <button type="button" class="sm-toggle" id="smWatchBtn" aria-pressed="false">Off</button>
         </div>
         <div class="sm-row">
           <div class="sm-main"><span class="sm-label">Tax exempt</span><span class="sm-sub">No tax on the current sale only</span></div>
@@ -286,6 +289,19 @@
     <button type="button" id="txnClose" class="ghost">Close</button>
   </div>
   <div class="txn-body" id="txnBody"><p class="txn-empty">Loading…</p></div>
+</div></div>
+
+<div class="stock-add hidden" id="pinModal"><div class="stock-card">
+  <h3 class="pin-sheet-title">Admin PIN</h3>
+  <p class="stock-pin-note" id="pinSheetNote">That's an admin action — enter the admin PIN.</p>
+  <label class="cash-label">Admin PIN
+    <input id="pinSheetInput" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••">
+  </label>
+  <p class="stock-note hidden" id="pinSheetError" role="alert"></p>
+  <div class="cash-actions">
+    <button type="button" id="pinSheetCancel" class="ghost">Cancel</button>
+    <button type="button" id="pinSheetBtn">Unlock &amp; continue</button>
+  </div>
 </div></div>
 
 <div id="toast" class="toast hidden" role="status"></div>

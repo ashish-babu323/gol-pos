@@ -650,6 +650,74 @@ $('stockPinCancel').addEventListener('click', () => {
   closeStockSheet();
 });
 
+// --- shared admin PIN sheet ---------------------------------------------------
+// The register UI's admin actions — day close, batch seal, the Store
+// toggle — post to api.php behind the sheet PIN gate (golpos_sheet_pin:
+// the Add Product gate, on the chat's own session store). gatedApiPost
+// drives it: post the action; when the
+// gate answers pin_required this sheet collects the PIN — the create
+// flow walks its two entries exactly as the server stages them — and
+// the SAME action re-posts with the PIN riding along, so the request
+// that unlocks is the request that completes the action. Cancelling
+// the sheet cancels the action; nothing half-runs. Once the session is
+// elevated, later admin actions pass silently — the server, never this
+// sheet, decides who is admin (owner rule, Oct 28).
+let pinSheetResolve = null;
+function pinSheetErrorShow(text) {
+  const el = $('pinSheetError');
+  el.textContent = text || '';
+  el.classList.toggle('hidden', !text);
+}
+function pinSheetAsk(gate) {
+  return new Promise((resolve) => {
+    pinSheetResolve = resolve;
+    $('pinSheetNote').textContent = (gate && gate.note) || (gate && gate.stage === 'create1'
+      ? 'No admin PIN yet — choose one (4–6 digits) to continue.'
+      : "That's an admin action — enter the admin PIN.");
+    pinSheetErrorShow((gate && gate.error) || '');
+    $('pinSheetBtn').textContent = gate && gate.stage === 'create1' ? 'Create PIN & continue'
+      : (gate && gate.stage === 'create2' ? 'Confirm & continue' : 'Unlock & continue');
+    $('pinSheetInput').value = '';
+    $('pinModal').classList.remove('hidden');
+    $('pinSheetInput').focus();
+  });
+}
+function pinSheetDone(pin) {
+  $('pinModal').classList.add('hidden');
+  $('pinSheetInput').value = '';
+  const resolve = pinSheetResolve;
+  pinSheetResolve = null;
+  if (resolve) { resolve(pin); }
+}
+$('pinSheetBtn').addEventListener('click', () => {
+  const pin = stockPinShape($('pinSheetInput').value);
+  if (pin === null) { pinSheetErrorShow('PINs are 4 to 6 digits.'); return; }
+  pinSheetDone(pin);
+});
+$('pinSheetCancel').addEventListener('click', () => pinSheetDone(null));
+$('pinSheetInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); $('pinSheetBtn').click(); }
+});
+async function gatedApiPost(body) {
+  let pin = null;
+  for (;;) {
+    const payload = pin === null ? body : Object.assign({}, body, { pin });
+    const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload) });
+    const r = await res.json().catch(() => ({}));
+    if (r && r.pin_required) {
+      pin = await pinSheetAsk(r);
+      if (pin === null) { return { cancelled: true }; }
+      continue;
+    }
+    if (r && r.locked) {
+      showToast(r.error || 'PIN entry is locked — try again later.');
+      return { locked: true, error: r.error };
+    }
+    return r || {};
+  }
+}
+
 // --- Gol chat ---------------------------------------------------------------
 function chatMsg(text, who) {
   const d = document.createElement('div');
@@ -941,63 +1009,40 @@ $('ownerBtn').addEventListener('click', async () => {
     $('ownerVendors').querySelectorAll('[data-sheet]').forEach(b =>
       b.addEventListener('click', () => openOrderSheet(b.dataset.sheet)));
   } catch (e) { $('ownerVendors').innerHTML = ''; }
-  await loadSettings(); renderSettingsForm();
+  await loadSettings(); renderSettingsView();
   renderDayClose();
   showReport('today');
 });
 $('ownerClose').addEventListener('click', () => $('ownerPanel').classList.add('hidden'));
 
-// --- owner panel: print settings form (the manual door, same store) ---------
-function renderSettingsForm() {
+// --- owner panel: print settings — a MIRROR, never a form -------------------
+// Owner 85/15 rule (Oct 28): the panel is a light mirror only — there is
+// NO second MR.STORE in this POS. The values below are read-only lines;
+// every change runs through Gol chat (a staged setting_change card,
+// confirmed with "gol"), and the instant flips live in the Settings
+// dropdown where the counter moment needs them. No typed-in form exists
+// anywhere in the panel.
+function renderSettingsView() {
   const st = receiptSettings || {};
-  const chk = (b) => b ? 'checked' : '';
-  const opts = (vals, cur) => vals.map(v =>
-    `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${v}</option>`).join('');
+  const onoff = (b) => b ? 'On' : 'Off';
+  const shown = (b) => b ? 'shown' : 'hidden';
+  const row = (k, v) => `<div class="rep-row"><span>${k}</span><b>${esc(v)}</b><span></span></div>`;
   $('ownerSettings').innerHTML =
-    `<h3 class="ocard-title">Receipt print settings <small>— the same store Gol chat writes</small></h3>
-     <div class="os-grid">
-       <label>Store name <input id="os_store_name" type="text" value="${esc(st.store_name || '')}"></label>
-       <label>Address <input id="os_address" type="text" value="${esc(st.address || '')}"></label>
-       <label>Phone <input id="os_phone" type="text" value="${esc(st.phone || '')}"></label>
-       <label>Footer message <input id="os_footer" type="text" value="${esc(st.footer || '')}"></label>
-       <label>Copies <select id="os_copies">${opts([1, 2, 3], st.copies)}</select></label>
-       <label>Paper width <select id="os_paper_width">${opts(['80mm', '58mm'], st.paper_width)}</select></label>
-       <label>Store opens <input id="os_store_open" type="time" value="${esc(st.store_open || '08:00')}"></label>
-       <label>Store closes <input id="os_store_close" type="time" value="${esc(st.store_close || '21:00')}"></label>
-       <label>Batch close <select id="os_batch_mode">${opts(['manual', 'auto'], st.batch_mode || 'manual')}</select></label>
-       <label>Card surcharge % <input id="os_card_surcharge_pct" type="number" min="0" max="10" step="0.1" value="${esc(st.card_surcharge_pct ?? 0)}"><span class="os-micro">added to card sales only</span></label>
-       <label class="os-chk"><input id="os_show_address" type="checkbox" ${chk(st.show_address)}> Show address line</label>
-       <label class="os-chk"><input id="os_show_phone" type="checkbox" ${chk(st.show_phone)}> Show phone line</label>
-       <label class="os-chk"><input id="os_logo" type="checkbox" ${chk(st.logo)}> Logo on receipt</label>
-       <label class="os-chk"><input id="os_show_tax" type="checkbox" ${chk(st.show_tax)}> Show tax line</label>
-       <label class="os-chk"><input id="os_auto_open" type="checkbox" ${chk(st.auto_open)}> Receipt after each sale</label>
-       <label class="os-chk"><input id="os_watch_frame" type="checkbox" ${chk(st.watch_frame)}> Camera frame on cash sales<span class="os-micro">Register Watch — one counter photo saved with each cash sale (needs a camera on this register)</span></label>
-     </div>
-     <button id="osSave" type="button">Save print settings</button> <span id="osSaved"></span>`;
-  $('osSave').addEventListener('click', saveSettingsForm);
-}
-async function saveSettingsForm() {
-  const payload = { settings: {
-    store_name: $('os_store_name').value, address: $('os_address').value,
-    phone: $('os_phone').value, footer: $('os_footer').value,
-    copies: parseInt($('os_copies').value, 10), paper_width: $('os_paper_width').value,
-    store_open: $('os_store_open').value, store_close: $('os_store_close').value,
-    batch_mode: $('os_batch_mode').value,
-    card_surcharge_pct: parseFloat($('os_card_surcharge_pct').value) || 0,
-    show_address: $('os_show_address').checked, show_phone: $('os_show_phone').checked,
-    logo: $('os_logo').checked, show_tax: $('os_show_tax').checked,
-    auto_open: $('os_auto_open').checked, watch_frame: $('os_watch_frame').checked } };
-  const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload) });
-  receiptSettings = await r.json();
-  // The server validates (a surcharge outside 0–10 never lands): the
-  // field re-reads the stored value, so what it shows is what is set.
-  const osPct = $('os_card_surcharge_pct');
-  if (osPct) { osPct.value = receiptSettings.card_surcharge_pct ?? 0; }
-  camDenied = false; // a settings save is a fresh word — the watch may retry its camera
-  syncWatchCam();
-  renderCart();
-  $('osSaved').textContent = 'Saved ✓ — Gol chat reads these same settings.';
+    `<h3 class="ocard-title">Receipt print settings <small>— mirror only · ask Gol in chat to change these</small></h3>` +
+    row('Store name', st.store_name || '') +
+    row('Address', (st.address || '') + ' · ' + shown(st.show_address !== false)) +
+    row('Phone', (st.phone || '') + ' · ' + shown(st.show_phone !== false)) +
+    row('Footer message', st.footer || '') +
+    row('Copies', String(st.copies ?? 1)) +
+    row('Paper width', st.paper_width || '') +
+    row('Tax line', shown(st.show_tax !== false)) +
+    row('Logo on receipt', onoff(st.logo !== false)) +
+    row('Receipt after each sale', onoff(st.auto_open !== false)) +
+    row('Store hours', (st.store_open || '08:00') + ' – ' + (st.store_close || '21:00')) +
+    row('Batch close', st.batch_mode || 'manual') +
+    row('Card surcharge', fmtPct(st.card_surcharge_pct ?? 0) + '% · card sales only') +
+    row('Camera frame on cash sales', onoff(st.watch_frame === true)) +
+    '<p class="owner-muted">Changes run through Gol chat — e.g. "card surcharge 3%" or "store name \'Sunrise Mart\'" — staged as a card, confirmed with "gol".</p>';
 }
 
 // --- owner panel: Close the day — the daily action, top of the panel --------
@@ -1036,9 +1081,8 @@ async function dayCloseAction() {
     return;
   }
   dayCloseArmed = false; clearTimeout(dayCloseTimer);
-  const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ close_day: true }) });
-  const rec = await r.json();
+  const rec = await gatedApiPost({ close_day: true, session: SESSION_ID });
+  if (rec.cancelled || rec.locked) { renderDayClose(); return; }
   showToast('Day closed — ' + money(rec.gross) + ' across ' + rec.txns + ' sales.');
   refreshToday(); renderDayClose(); showReport('today');
 }
@@ -1082,10 +1126,11 @@ $('dayCloseBtn').addEventListener('click', dayCloseAction);
 // Owner decision (Oct 28): the counter's working settings live behind one
 // Settings dropdown on the register — not loose buttons, not chat-only.
 // Register UI language stays English; the chat's language mirroring is
-// untouched. Every item here runs the register's existing paths: the batch
-// seals through the Gol brain (same staging, same PIN gate), the day close
-// through api.php close_day, the printer toggle writes the ONE settings
-// store the owner panel form and the chat also write.
+// untouched. Every item here runs the register's existing paths: the
+// batch seal and the day close run through api.php as admin actions
+// behind the sheet PIN gate (the chat keeps its own staged doors to the
+// same seal and the same close), the printer toggle writes the ONE
+// settings store the owner panel form and the chat also write.
 function setToggle(btn, on, text) {
   if (!btn) { return; }
   btn.classList.toggle('on', !!on);
@@ -1101,7 +1146,6 @@ function openSettingsMenu() {
   $('settingsPop').classList.remove('hidden');
   $('settingsBtn').setAttribute('aria-expanded', 'true');
   $('smBatchNote').classList.add('hidden');
-  $('smBatchPin').classList.add('hidden');
   smCloseArmed = false; clearTimeout(smCloseTimer);
   const dc = $('smDayCloseBtn');
   dc.textContent = 'Close day'; dc.classList.remove('armed');
@@ -1111,6 +1155,7 @@ async function refreshSettingsMenu() {
   await loadSettings();
   const st = receiptSettings || {};
   setToggle($('smPrinterBtn'), st.auto_open !== false);
+  setToggle($('smWatchBtn'), st.watch_frame === true);
   setToggle($('smStoreBtn'), storeIsOpen(), storeIsOpen() ? 'Open' : 'Closed');
   setToggle($('smTaxBtn'), taxExempt);
   refreshBatchRow();
@@ -1126,8 +1171,8 @@ async function refreshBatchRow() {
     smBatchSegCount = (b.unbatched && b.unbatched.count) || 0;
     smBatchStaged = (p && p.type === 'batch_close') ? p : null;
     if (smBatchStaged) {
-      info.textContent = 'Staged: ' + smBatchStaged.count + ' card sales · ' + money(smBatchStaged.total);
-      btn.textContent = 'Confirm seal'; btn.disabled = false;
+      info.textContent = 'Staged in Gol chat: ' + smBatchStaged.count + ' card sales · ' + money(smBatchStaged.total);
+      btn.textContent = 'Seal batch'; btn.disabled = false;
     } else if (smBatchSegCount > 0) {
       info.textContent = smBatchSegCount + ' card sales · ' + money(b.unbatched.total) + ' not in a batch';
       btn.textContent = 'Seal batch'; btn.disabled = false;
@@ -1144,29 +1189,21 @@ function smBatchNoteShow(text) {
   n.textContent = text; n.classList.remove('hidden');
 }
 async function smBatchAction() {
-  const hadWork = !!smBatchStaged || smBatchSegCount > 0;
-  const payload = smBatchStaged ? { confirm: true } : { message: 'Batch close' };
-  const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(brainPayload(payload)) });
-  const r = await res.json();
-  if (r.card && r.card.type === 'batch_close') {
-    // Staged — the seal itself is the next tap, still inside the menu.
-    smBatchStaged = r.card;
-    $('smBatchInfo').textContent = 'Staged: ' + r.card.count + ' card sales · ' + money(r.card.total);
-    const btn = $('smBatchBtn'); btn.textContent = 'Confirm seal'; btn.disabled = false;
-    smBatchNoteShow((r.reply || 'Card staged.') + ' Tap "Confirm seal" to finish.');
-    return;
-  }
-  if (r.reply) { smBatchNoteShow(r.reply); }
-  // No card and no completion after real work was on the table means the
-  // access gate is holding the seal for the admin PIN — say where it goes.
-  $('smBatchPin').classList.toggle('hidden', !(!r.card && !r.done && hadWork));
+  // The menu's seal is a direct admin action (api.php seal_batch, behind
+  // the sheet PIN gate) over the same unbatched segment the Gol chat's
+  // batch_close card seals — one seal, two doors; the chat door keeps
+  // its staged card, this button seals on the tap once the PIN lands.
+  const r = await gatedApiPost({ seal_batch: true, session: SESSION_ID });
+  if (r.cancelled || r.locked) { return; }
   smBatchStaged = null;
-  await refreshBatchRow();
-  if (r.done) {
-    if (r.reply) { showToast(r.reply); }
+  if (r.sealed && r.batch) {
+    showToast('Batch #' + r.batch.n + ' sealed — ' + r.batch.count + ' card sales · '
+      + money(r.batch.total) + '.');
     closeSettingsMenu();
+  } else {
+    smBatchNoteShow('All card sales are already in a batch.');
   }
+  await refreshBatchRow();
 }
 // --- the day-close row: same arm-then-run tap-confirm as the owner panel ---
 let smCloseArmed = false;
@@ -1182,9 +1219,8 @@ async function smDayCloseAction() {
   }
   smCloseArmed = false; clearTimeout(smCloseTimer);
   btn.textContent = 'Close day'; btn.classList.remove('armed');
-  const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ close_day: true }) });
-  const rec = await r.json();
+  const rec = await gatedApiPost({ close_day: true, session: SESSION_ID });
+  if (rec.cancelled || rec.locked) { return; }
   const nb = (rec.batches || []).length;
   const unb = rec.unbatched_card || { count: 0, total: 0 };
   showToast('Day closed — ' + money(rec.gross) + ' across ' + rec.txns + ' sales.'
@@ -1351,20 +1387,40 @@ function closeTxnHistory() { $('txnModal').classList.add('hidden'); }
 
 // --- toggles ------------------------------------------------------------------
 async function saveSetting(key, value) {
-  const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ settings: { [key]: value } }) });
-  receiptSettings = await r.json();
+  // One key per save, through the gated post: the server lets the two
+  // instant flips (printer auto_open, camera-frame watch_frame) through
+  // ungated and holds every other key — the Store toggle's
+  // register_open above all — for the admin PIN.
+  const r = await gatedApiPost({ settings: { [key]: value }, session: SESSION_ID });
+  if (r && !r.cancelled && !r.locked) { receiptSettings = r; }
+  return r;
 }
 async function smPrinterAction() {
   const on = (receiptSettings || {}).auto_open !== false;
-  await saveSetting('auto_open', !on);
+  const r = await saveSetting('auto_open', !on);
+  if (!r || r.cancelled || r.locked) { return; }
   setToggle($('smPrinterBtn'), !on);
   showToast(!on ? 'Printer on — the receipt prints after each sale.'
                 : 'Printer off — receipts will not print after a sale.');
 }
+async function smWatchAction() {
+  // The camera-frame flip: an instant counter switch like the printer
+  // toggle (owner 85/15 rule) — it posts watch_frame ALONE, the save the
+  // server lets through ungated; configuration beyond the flip (like
+  // everything else) lives in Gol chat.
+  const on = (receiptSettings || {}).watch_frame === true;
+  const r = await saveSetting('watch_frame', !on);
+  if (!r || r.cancelled || r.locked) { return; }
+  setToggle($('smWatchBtn'), !on);
+  camDenied = false; // a fresh word — the watch may retry its camera
+  syncWatchCam();
+  showToast(!on ? 'Camera frame on — one counter photo is saved with each cash sale.'
+                : 'Camera frame off — cash sales record no photo.');
+}
 async function smStoreAction() {
   const open = storeIsOpen();
-  await saveSetting('register_open', !open);
+  const r = await saveSetting('register_open', !open);
+  if (!r || r.cancelled || r.locked) { return; } // nothing saved — the toggle stays as it was
   applyStorePill();
   setToggle($('smStoreBtn'), !open, !open ? 'Open' : 'Closed');
   showToast(!open ? 'Store is open — sales are running.'
@@ -1385,11 +1441,6 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && settingsMenuOpen()) { closeSettingsMenu(); }
 });
 $('smBatchBtn').addEventListener('click', smBatchAction);
-$('smBatchPin').addEventListener('click', () => {
-  closeSettingsMenu();
-  $('chatDrawer').classList.remove('hidden');
-  $('chatInput').focus();
-});
 $('smDayCloseBtn').addEventListener('click', smDayCloseAction);
 $('smReprintBtn').addEventListener('click', smReprintAction);
 $('smHistoryBtn').addEventListener('click', smHistoryAction);
@@ -1398,6 +1449,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('txnModal').classList.contains('hidden')) { closeTxnHistory(); }
 });
 $('smPrinterBtn').addEventListener('click', smPrinterAction);
+$('smWatchBtn').addEventListener('click', smWatchAction);
 $('smStoreBtn').addEventListener('click', smStoreAction);
 $('smTaxBtn').addEventListener('click', smTaxAction);
 
@@ -1734,7 +1786,7 @@ let camDenied = false; // a refusal is remembered so the till never nags
 function setCamPill(on) {
   const p = $('camPill'); if (p) { p.classList.toggle('hidden', !on); }
 }
-async function camStart(videoEl) {
+async function camStart(videoEl, soft) {
   if (!hasGUM() || camDenied) { return null; }
   try {
     if (!camStream) {
@@ -1747,19 +1799,53 @@ async function camStart(videoEl) {
     }
     setCamPill(true);
     return camStream;
-  } catch (e) { camDenied = true; return null; }
+  } catch (e) { if (!soft) { camDenied = true; } return null; }
 }
 function camStopAll() {
   if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  // Detach the dead stream from its screens too — a stopped stream left
+  // attached would keep the last frame (and a live-looking srcObject)
+  // on the watch video after the setting flips off.
+  const wv = $('watchVideo'); if (wv) { wv.srcObject = null; }
+  const cv = $('camVideo'); if (cv) { cv.srcObject = null; }
   setCamPill(false);
 }
 // The watch stream follows the watch_frame setting (called from
 // loadSettings and the settings save): on -> a live stream waits in the
 // hidden watch video with the pill showing; off -> the stream stops,
 // unless the capture view is holding it right now.
+// AUTO-ON is the owner's ruling (Oct 28): setting ON means the camera is
+// simply ON — the stream starts at register boot with no click. A boot
+// attempt can still meet a camera permission the browser has not granted
+// yet; that failure is SOFT (it never latches camDenied) and arms a
+// one-time retry on the first touch or keypress anywhere on the
+// register, so by the time a person is actually at the till the stream
+// is live — still with zero camera-specific clicks.
+let watchRetryArmed = false;
+function armWatchRetry() {
+  if (watchRetryArmed) { return; }
+  watchRetryArmed = true;
+  const retry = async () => {
+    window.removeEventListener('pointerdown', retry, true);
+    window.removeEventListener('keydown', retry, true);
+    watchRetryArmed = false;
+    if (receiptSettings && receiptSettings.watch_frame === true && !camStream) {
+      camDenied = false; // the person's first touch is the fresh ask
+      await camStart($('watchVideo'));
+    }
+  };
+  window.addEventListener('pointerdown', retry, true);
+  window.addEventListener('keydown', retry, true);
+}
 async function syncWatchCam() {
   const want = !!(receiptSettings && receiptSettings.watch_frame === true);
-  if (want) { await camStart($('watchVideo')); return; }
+  if (want) {
+    if (!camStream) {
+      const s = await camStart($('watchVideo'), true);
+      if (!s) { armWatchRetry(); }
+    }
+    return;
+  }
   if (camStream && $('camModal').classList.contains('hidden')) { camStopAll(); }
 }
 function grabFrame(videoEl) {

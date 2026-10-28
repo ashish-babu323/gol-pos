@@ -714,10 +714,10 @@ function golpos_close_record(string $ymd): ?array {
 }
 
 // --- receipt print settings: ONE store, TWO doors ----------------------------
-// The Gol chat stages changes as cards (executed on "gol"); the owner panel
-// edits the same fields in a form. Both read and write THIS one settings
-// store, so the two doors can never disagree — there is no settings menu
-// anywhere else. The receipt view renders from these values.
+// The Gol chat stages changes as cards (executed on "gol") — the only
+// door that writes. The owner panel MIRRORS the same values read-only
+// (owner 85/15 rule, Oct 28: configuration lives in chat; the panel is a
+// light mirror, never a second settings desk). The receipt view renders from these values.
 function golpos_settings_defaults(): array {
     return [
         'store_name'   => 'Sunrise Mart (demo)',

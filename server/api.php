@@ -20,12 +20,16 @@
 // GET  ?inbox&session=      -> scan-by-phone results waiting for this
 //                              register session (read-and-clear)
 // GET  ?settings            -> receipt print settings (one store, two doors)
-// POST {settings:{...}}     -> owner panel form save, same store
+// POST {settings:{...}}     -> settings save, same store; an admin
+//                              write (sheet PIN gate) except a save of
+//                              only the counter flips (auto_open,
+//                              watch_frame), which stay ungated
+// POST {seal_batch:true}    -> seal the unbatched card segment (admin)
 // POST {stock_add:{sku,qty}, session} -> the tile's "+ Stock" receive:
 //   golpos_receive_stock (the chat stock_receive path), admin-gated by
 //   the device session exactly as the chat gates its execution
 // GET  ?report&date= | ?report&week -> Reports card data (+ close record)
-// POST {close_day:true}     -> manual close, same path as the chat
+// POST {close_day:true}     -> manual close, same path as the chat (admin)
 // POST {product_create:{…}, session, pin?} -> Add Product sheet save:
 //        admin-gated by the sheet PIN gate (store.php), created by the
 //        one product constructor the chat's new-item path also builds
@@ -219,7 +223,22 @@ if ($method === 'POST') {
         exit;
     }
     if (isset($in['settings']) && is_array($in['settings'])) {
-        // Owner panel form save — same store the Gol chat stages into.
+        // A settings save — same store the Gol chat stages into.
+        // Configuration writes are ADMIN executions (owner standing
+        // rule, Oct 28: admin-domain actions demand the admin PIN from
+        // anyone not in admin mode), so the sheet PIN gate —
+        // golpos_sheet_pin, the Add Product gate on the chat's own
+        // session store — runs first and a gate step returns as-is for
+        // the PIN sheet. The cashier exceptions are the Settings
+        // dropdown's two instant flips, Printer (auto_open) and Camera
+        // frame (watch_frame): a save touching ONLY those keys is a
+        // counter switch and stays ungated; a save touching anything
+        // else (the Store toggle's register_open included) is gated.
+        $gateKeys = array_diff(array_keys($in['settings']), ['auto_open', 'watch_frame']);
+        if ($gateKeys) {
+            $gate = golpos_sheet_pin($in);
+            if (empty($gate['ok'])) { echo json_encode($gate, JSON_UNESCAPED_UNICODE); exit; }
+        }
         echo json_encode(golpos_save_settings($in['settings']), JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -280,8 +299,35 @@ if ($method === 'POST') {
     }
     if (!empty($in['close_day'])) {
         // The panel's manual Close-the-day button — the exact close path
-        // the Gol chat's close branch runs (the panel confirms by tap first).
+        // the Gol chat's close branch runs (the panel confirms by tap
+        // first). Closing the day is an admin execution: the sheet PIN
+        // gate runs first, so an unelevated session is challenged and
+        // nothing closes until the PIN lands (owner rule, Oct 28).
+        $gate = golpos_sheet_pin($in);
+        if (empty($gate['ok'])) { echo json_encode($gate, JSON_UNESCAPED_UNICODE); exit; }
         echo json_encode(golpos_close_day(date('Y-m-d')), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if (!empty($in['seal_batch'])) {
+        // The Settings dropdown's Seal batch button — the direct door to
+        // the ONE seal: golpos_seal_batch over the still-unbatched card
+        // segment, the same set the Gol chat's batch_close card seals.
+        // Sealing is an admin execution: the sheet PIN gate runs first,
+        // and on success the session is in admin mode. A batch_close
+        // card staged in chat for this segment is spent by the seal —
+        // the segment it named no longer exists unbatched.
+        $gate = golpos_sheet_pin($in);
+        if (empty($gate['ok'])) { echo json_encode($gate, JSON_UNESCAPED_UNICODE); exit; }
+        $seg = golpos_unbatched_card_sales();
+        if (!$seg) {
+            echo json_encode(['ok' => true, 'sealed' => false, 'count' => 0, 'total' => 0],
+                             JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $b = golpos_seal_batch($seg, 'manual');
+        $pend = golpos_pending();
+        if ($pend !== null && ($pend['type'] ?? '') === 'batch_close') { golpos_clear_pending(); }
+        echo json_encode(['ok' => true, 'sealed' => true, 'batch' => $b], JSON_UNESCAPED_UNICODE);
         exit;
     }
     if (isset($in['product_create']) && is_array($in['product_create'])) {

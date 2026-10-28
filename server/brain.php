@@ -45,14 +45,27 @@ function golpos_claims_staging(string $reply): bool {
         . '|स्टेज\s*गर(ेको|ियो)/iu', $reply) === 1;
 }
 // The sales form of the same bluff (owner law, Oct 28): a claim that a
-// sale was added or recorded. Chat can NEVER satisfy this claim — a sale
-// exists only by being rung and tendered at the register — so the claim
-// is always false from this endpoint, whatever rides along with it.
+// sale was added or recorded BY THE SPEAKER. Chat can NEVER satisfy this
+// claim — a sale exists only by being rung and tendered at the register
+// — so the claim is always false from this endpoint. But the register
+// also REPORTS its log in the same verbs ("No sales recorded yet today",
+// "sales recorded so far: …"), and status phrasing is the truth, never
+// a bluff: the matcher below takes accomplishment shapes only —
+// first-person completion, verb-first done claims, bare done-assertions
+// — and reads "sales recorded …" as a claim only when no status
+// continuation (so far / yet / today / at <time> / in the last …)
+// follows it.
 function golpos_claims_sale(string $reply): bool {
-    return preg_match('/\bsales?\s+(was\s+)?(added|recorded)\b'
-        . '|\b(added|recorded)\s+(the\s+|a\s+)?sales?\b'
-        . '|\bbikri\s+hal'
-        . '|बिक्री\s*हाल/iu', $reply) === 1;
+    if (preg_match('/\bbikri\s+hal|बिक्री\s*हाल/iu', $reply)) { return true; }
+    if (preg_match('/\bI(?:\'|\x{2019}| ha)ve\s+(just\s+)?(added|recorded|entered)\b/iu', $reply)) { return true; }
+    if (preg_match('/\b(added|recorded|entered)\s+(the\s+|a\s+|your\s+)?sales?\b/iu', $reply)) { return true; }
+    if (preg_match('/\bsales?\s+(was\s+|were\s+)?(added|entered)\b/iu', $reply)) { return true; }
+    if (preg_match('/\bsales?\s+has\s+been\s+(added|recorded|entered)\b/iu', $reply)) { return true; }
+    if (preg_match('/\bno\s+sales?\s+recorded\b/iu', $reply)) { return false; }
+    if (preg_match('/\bsales?\s+(?:was\s+|were\s+)?recorded\b(.{0,20})/iu', $reply, $m)) {
+        return !preg_match('/^\s*(at|on|so\s+far|yet|today|this|in\s+the|for\s+the)/iu', $m[1]);
+    }
+    return false;
 }
 function out(array $r): void {
     // ANTI-BLUFF GUARD (owner-caught, Oct 28): a reply may only say a card
@@ -295,6 +308,21 @@ $S = [
     'np' => 'Copy 1, 2 wa 3 matra milchha — kati ota print garne?',
     'hi' => 'Copies 1, 2 ya 3 hi ho sakti hain — kitni print karoon?',
     'dev' => 'प्रति १, २ वा ३ मात्र मिल्छ — कति वटा छाप्ने?'],
+  'setting_ask_surcharge' => [
+    'en' => 'What percent should the card surcharge be? Say a percent — "card surcharge 3%" — or 0 to turn it off.',
+    'np' => 'Card surcharge kati percent rakhne? Percent bhannus — "card surcharge 3%" — wa banda garna 0.',
+    'hi' => 'Card surcharge kitna percent rakhoon? Percent bataiye — "card surcharge 3%" — ya band karne ke liye 0.',
+    'dev' => 'कार्ड सरचार्ज कति प्रतिशत राख्ने? प्रतिशत भन्नुस् — "card surcharge 3%" — वा बन्द गर्न ०।'],
+  'setting_surcharge_range' => [
+    'en' => 'The card surcharge can be 0 to 10 percent — that number is outside it, so nothing was staged.',
+    'np' => 'Card surcharge 0 dekhi 10 percent samma matra huncha — tyo number bahira paryo, kehi stage bhaena.',
+    'hi' => 'Card surcharge 0 se 10 percent tak hi ho sakta hai — woh number bahar hai, kuchh stage nahi hua.',
+    'dev' => 'कार्ड सरचार्ज ० देखि १० प्रतिशत सम्म मात्र हुन्छ — त्यो नम्बर बाहिर पर्यो, केही स्टेज भएन।'],
+  'setting_ask_watch' => [
+    'en' => 'Should the camera frame on cash sales be on or off? On saves one counter photo with each cash sale.',
+    'np' => 'Cash sale ma camera frame on garne ki off? On gare harek cash sale sanga counter ko photo save huncha.',
+    'hi' => 'Cash sale par camera frame on rakhoon ya off? On karne se har cash sale ke saath counter ki photo save hoti hai.',
+    'dev' => 'नगद बिक्रीमा क्यामेरा फ्रेम अन गर्ने कि अफ? अन गरे हरेक नगद बिक्रीसँग काउन्टरको फोटो सेभ हुन्छ।'],
   'stock_one' => [
     'en' => '%s — %s on hand (MR.STORE live stock).',
     'np' => '%s — %s ota chha (MR.STORE live stock).',
@@ -737,6 +765,8 @@ function golpos_setting_label(string $key): string {
       'store_open'   => ['en' => 'Store opens', 'np' => 'Pasal khulne samaya', 'hi' => 'Dukaan khulne ka samay', 'dev' => 'पसल खुल्ने समय'],
       'store_close'  => ['en' => 'Store closes', 'np' => 'Pasal banda hune samaya', 'hi' => 'Dukaan band hone ka samay', 'dev' => 'पसल बन्द हुने समय'],
       'batch_mode'   => ['en' => 'Batch close mode', 'np' => 'Batch close mode', 'hi' => 'Batch close mode', 'dev' => 'ब्याच क्लोज मोड'],
+      'card_surcharge_pct' => ['en' => 'Card surcharge', 'np' => 'Card surcharge', 'hi' => 'Card surcharge', 'dev' => 'कार्ड सरचार्ज'],
+      'watch_frame'  => ['en' => 'Camera frame on cash sales', 'np' => 'Cash sale ma camera frame', 'hi' => 'Cash sale par camera frame', 'dev' => 'नगद बिक्रीमा क्यामेरा फ्रेम'],
     ];
     return $map[$key][$L] ?? $map[$key]['en'] ?? $key;
 }
@@ -747,7 +777,8 @@ function golpos_time12(string $hhmm): string {
 }
 function golpos_setting_display(string $key, $v): string {
     if (in_array($key, ['show_address', 'show_phone', 'show_tax'], true)) { return golpos_shown((bool)$v); }
-    if (in_array($key, ['logo', 'auto_open'], true)) { return golpos_onoff((bool)$v); }
+    if (in_array($key, ['logo', 'auto_open', 'watch_frame'], true)) { return golpos_onoff((bool)$v); }
+    if ($key === 'card_surcharge_pct') { return rtrim(rtrim(number_format((float)$v, 1, '.', ''), '0'), '.') . '%'; }
     if ($key === 'copies') { return (string)(int)$v; }
     if ($key === 'store_open' || $key === 'store_close') { return golpos_time12((string)$v); }
     return (string)$v;
@@ -768,6 +799,9 @@ function golpos_settings_read_reply(): string {
     $lines[] = '• ' . golpos_setting_label('store_close') . ': ' . golpos_time12((string)$s['store_close']);
     $lines[] = '• ' . golpos_setting_label('batch_mode') . ': ' . $s['batch_mode']
         . ($s['batch_mode'] === 'auto' ? ' (seals at ' . golpos_time12((string)$s['store_close']) . ')' : '');
+    $lines[] = '• ' . golpos_setting_label('card_surcharge_pct') . ': '
+        . golpos_setting_display('card_surcharge_pct', $s['card_surcharge_pct']);
+    $lines[] = '• ' . golpos_setting_label('watch_frame') . ': ' . golpos_onoff((bool)$s['watch_frame']);
     return implode("\n", $lines);
 }
 // Stage one settings change as a card (old -> new). A value that already
@@ -1194,6 +1228,21 @@ function golpos_is_sale_add_ask(string $msg): bool {
     if (!preg_match('/(\bsales?\b|bikri|बिक्री)/iu', $msg)) { return false; }
     if (preg_match('/(report|kati|kitna|how|total|hisab|hisaab|हिसाब|कति)/iu', $msg)) { return false; }
     return preg_match('/(\badd\b|\brecord\b|\bentry\b|\bhal|\bhaal|\bthap|राख|हाल|थप)/iu', $msg) === 1;
+}
+// Small talk (owner catch, Oct 28): a greeting carrying a how-are-you
+// tail — "Hi how are you today", "namaste, kasto cha" — is a GREETING,
+// never a hisab ask. The day-total lane matches any message containing
+// "today", so without this shape a friendly hello got a sales lecture.
+// The match is anchored to the WHOLE message: a greeting followed by a
+// real ask ("hi, what's today's total?") is not small talk and falls
+// through to the lanes as always. A BARE greeting does not match either
+// (no tail) — it keeps its own path (the rep-day morning card, then the
+// friendly fallback).
+function golpos_is_smalltalk(string $msg): bool {
+    $greet = '(?:good\s+(?:morning|afternoon|evening)|namaste|namaskar|hello|hi|hey|suprabhat|नमस्ते|नमस्कार|शुभ\s*प्रभात)';
+    $tail = '(?:how\s+(?:are\s+(?:you|u)|\'re\s+you)|how\'?s\s+(?:it\s+going|your\s+day|everything)|how\s+is\s+(?:it\s+going|your\s+day)|how\s+are\s+things'
+          . '|kasto\s+(?:cha|chha|hunuhuncha)|sanchai\s+(?:cha|chha)|k\s+cha|ke\s+cha|कस्तो\s*छ|सन्चै\s*छ|ठिक\s*छ)';
+    return preg_match('/^\s*(?:' . $greet . '\s*[,!.]?\s*)?' . $tail . '(?:\s+(?:today|aaja|आज))?\s*[!.?।]?\s*$/iu', $msg) === 1;
 }
 // One line naming a staged card truthfully — used when the owner says
 // "stage it" about the card already on the till.
@@ -2077,6 +2126,16 @@ if (golpos_is_sale_add_ask($msg)) {
     out(['reply' => t('sale_route')]);
 }
 
+// --- small talk: a greeting is a greeting -------------------------------------
+// "Hi how are you today" is small talk, not a hisab ask — it takes the
+// same friendly path a bare greeting takes (the fallback's own words),
+// before the day-total lane can hear the word "today" in it. The shape
+// is whole-message (see golpos_is_smalltalk): a greeting followed by a
+// real question is untouched by this lane.
+if (golpos_is_smalltalk($msg)) {
+    out(['reply' => t('fallback')]);
+}
+
 // --- offer posters: MR.STORE Gol's desk, not the till (owner ruling) --------
 // Making offer posters is marketing work and lives in MR.STORE's Gol; the
 // POS keeps only its selling screen. A poster ask here gets the truthful
@@ -2109,7 +2168,7 @@ if (preg_match('/\bstage\b|स्टेज/iu', $msg) && !preg_match('/\d|\$/u',
 
 // --- receipt print settings: read + staged changes ---------------------------
 // The POS keeps only its selling screen — print settings are run from this
-// chat (and from the owner panel's form, the manual door to the same store).
+// chat; the Owner panel only mirrors their values, it never edits them.
 // "print settings" / "receipt settings ke chha?" reads them back; a change
 // is staged as an old -> new card and executes only on "gol".
 if (preg_match('/(receipt|print|bill|paper).{0,30}settings|settings.{0,30}(receipt|print|bill)|settings\s+(ke|kasto)/iu', $msg)) {
@@ -2130,6 +2189,36 @@ if (golpos_is_hours_set($msg)) {
     $t24 = golpos_parse_time($msg, $isClose ? 'pm' : 'am');
     if ($t24 !== null) { golpos_stage_setting($isClose ? 'store_close' : 'store_open', $t24); }
     out(['reply' => t('hours_ask')]);
+}
+
+// --- card surcharge + camera frame: staged like any other setting ------------
+// Parity lanes (owner 85/15 rule, Oct 28): the Owner panel only MIRRORS
+// these values — chat is the door that changes them, through the same
+// setting_change card as every other print setting. The surcharge takes
+// a percent ("card surcharge 3%"), a bare number with a set verb, or an
+// off word (0); the settings store itself refuses anything past 10, and
+// the lane says so instead of staging a card that could never land.
+if (preg_match('/surcharge/iu', $msg)) {
+    $n = golpos_norm_digits($msg);
+    $pct = null;
+    if (preg_match('/(\d+(?:\.\d+)?)\s*(?:%|percent)/iu', $n, $sm)) { $pct = round((float)$sm[1], 1); }
+    elseif (preg_match('/(off|hata|bandha|zero|हटाउ|बन्द)/iu', $msg)) { $pct = 0.0; }
+    elseif (preg_match('/\b(\d+(?:\.\d+)?)\b/', $n, $sm)) { $pct = round((float)$sm[1], 1); }
+    if ($pct !== null) {
+        if ($pct < 0 || $pct > 10) { out(['reply' => t('setting_surcharge_range')]); }
+        golpos_stage_setting('card_surcharge_pct', $pct);
+    }
+    if (preg_match('/(kati|how much|what|कति)/iu', $msg)) {
+        $s = golpos_settings();
+        out(['reply' => golpos_setting_label('card_surcharge_pct') . ': '
+                      . golpos_setting_display('card_surcharge_pct', $s['card_surcharge_pct'])]);
+    }
+    out(['reply' => t('setting_ask_surcharge')]);
+}
+if (preg_match('/(watch\s*frame|camera\s*frame|counter\s*frame)/iu', $msg)) {
+    $off = golpos_wants_off($msg);
+    if ($off !== null) { golpos_stage_setting('watch_frame', !$off); }
+    out(['reply' => t('setting_ask_watch')]);
 }
 
 // --- batch close: stage the unbatched card segment (execution on "gol") -----
@@ -2777,6 +2866,10 @@ function golpos_needs_admin(string $msg, array $in): bool {
         ], true);
     }
     if (preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', $msg)) { return true; }
+    // Small talk is never an admin ask — "how is your day" greets, it
+    // does not request a report (the shared matcher rules the dispatch
+    // with the same shape).
+    if (golpos_is_smalltalk($msg)) { return false; }
     if (preg_match('/(receipt|print|bill|paper).{0,30}settings|settings.{0,30}(receipt|print|bill)|settings\s+(ke|kasto)/iu', $msg)) { return false; }
     // Day aggregates over the till's own log (best sellers, day compare)
     // are the running day total's family — cashier-domain reads, never

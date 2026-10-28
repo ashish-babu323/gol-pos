@@ -1334,3 +1334,69 @@ One entry per day; the git history carries the same dates.
   gol-pos-dev + gol-pos-sim with FICTIONAL sim vendor packs seeded as
   data/vendors.json on both stages (Sunrise pack on dev, QA-flavoured
   pack on sim — no real Lucky/123 vendors, bills or figures anywhere).
+
+## Day 3 (Oct 28) — PIN gate on register actions, mirror-only Owner panel, demo month, greeting/guard fix
+- PIN GATE (owner live catch, Oct 28 12:12): the chat gate worked but
+  the register UI's admin actions ran UNGATED — api.php close_day called
+  golpos_close_day directly. Now Seal batch (new api.php seal_batch door
+  to the ONE golpos_seal_batch over the unbatched segment), Close day
+  (dropdown + Owner panel) and the Store open/close toggle run through
+  golpos_sheet_pin (the Add Product gate: create in two entries when no
+  PIN exists, verify otherwise, shared 3-strike 10-minute lockout). The
+  client drives ONE shared PIN sheet (gatedApiPost): the request that
+  unlocks is the request that completes the action; cancelling the
+  sheet cancels the action. Once the session is in admin mode nothing
+  re-asks. Ungated, as counter rows should be: Reprint last,
+  Transactions, Scan link, Tax exempt, and the two instant flips —
+  Printer (auto_open) and Camera frame (watch_frame) — a settings save
+  touching only those keys passes; any other key is gated.
+- OWNER PANEL = LIGHT MIRROR (owner: "tala arko mrstore aaeraxa" +
+  85/15 rule): the Receipt Print Settings FORM is gone — no typed-in
+  form exists anywhere in the panel. The card renders the same values
+  as read-only lines with the note that Gol chat changes them. Panel
+  keeps Today tiles + staged-card line, Close the day, rep visits,
+  Demo feed, Receipt Loyalty, Reports. The Camera frame flip moved
+  into the Settings dropdown beside Printer.
+- CHAT PARITY for everything that left the panel — store name, address
+  and phone already had setting_change lanes; two were missing and are
+  added through the SAME card type: card_surcharge_pct ("card
+  surcharge 3%", 0–10, out-of-range refused in words, never staged)
+  and watch_frame ("camera frame on/off"). Both join the settings read
+  reply; execution stays PIN-gated at "gol" like every setting card.
+- WATCH AUTO-ON (owner, 12:24): setting ON means the camera is simply
+  ON — the stream starts at register boot (loadSettings ->
+  syncWatchCam) with the pill showing, no click. A boot attempt that
+  meets an ungranted permission now fails SOFT (never latches
+  camDenied) and arms a one-time retry on the first touch/keypress;
+  toggling OFF also detaches the dead stream from the watch video
+  (camStopAll). The header camera button stays the capture door.
+- DEMO MONTH (Fix B scope-up: "pos ma simulated data hunu paro"):
+  scripts/seed-demo-history.php seeds a standalone demo stage with 29
+  past days ending yesterday — baskets from the tree's OWN catalog,
+  the register's exact tax/total math, cash tendered/change, one
+  sealed batch + one close per day, every sale marked demo-seed.
+  Today is never seeded ($0/0 for filming) and catalog onHand is
+  untouched. Dev body: 887 sales, $9,178.79 gross (Sep 29–Oct 27).
+- GREETING / GUARD (owner voice catch, 12:25): "Hi how are you today"
+  got the sale-route lecture. Two causes, both fixed. (1) The
+  day-total lane matches any "today" — a new whole-message small-talk
+  shape (golpos_is_smalltalk: greeting + how-are-you tail, EN + Nepali)
+  routes to the friendly fallback BEFORE the day lanes, and the access
+  gate exempts the same shape ("how is your day" was arming the PIN
+  gate as a report ask). A greeting followed by a real ask is NOT
+  small talk and falls through untouched. (2) golpos_claims_sale
+  matched status phrasing — the day lane's own zero line "No sales
+  recorded yet today" was replaced by the lecture it was meant to
+  prevent. The matcher now takes accomplishment shapes only
+  (first-person completion, verb-first done claims, bare
+  done-assertions, has-been claims) and reads "sales recorded …" as a
+  claim only with no status continuation (so far / yet / today / at
+  <time> / in the last …). The fabricated-completion shapes from the
+  truth pass still trip it (17/17 harness).
+- Verified on throwaways over real HTTP + rendered Chrome (CDP):
+  battery A (gate matrix + parity) 45/45, battery B (greeting/guard
+  routing) 13/13, claims harness 17/17, seed validation 16/16,
+  rendered click paths: Transactions month -> expand -> reprint 6/6,
+  PIN sheet (challenge -> wrong refused -> correct completes ->
+  elevated silent) + panel mirror (zero form controls) 9/9, watch
+  auto-on/toggle 8/8. php -l clean; app.js node-checked.
