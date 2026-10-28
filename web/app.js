@@ -832,7 +832,7 @@ $('ownerBtn').addEventListener('click', async () => {
   const feedHtml = Array.isArray(feed) && feed.length
     ? `<h3 class="ocard-title">Demo feed <span class="ocard-count">${feed.length}</span></h3>` + feed.slice().reverse().map(f =>
         `<p class="feed-line">🖼️ ${f.caption || (f.name + ' — ' + money(f.price))}</p>`).join('')
-    : '<h3 class="ocard-title">Demo feed</h3><p class="owner-muted">Demo feed is empty — ask Gol to "make an offer poster".</p>';
+    : '<h3 class="ocard-title">Demo feed</h3><p class="owner-muted">Demo feed is empty — offer posters are made in MR.STORE\'s Gol.</p>';
   $('ownerFeed').innerHTML = feedHtml;
   $('ownerBody').innerHTML =
     `<div class="stat-tiles">` +

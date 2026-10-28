@@ -34,7 +34,43 @@ $catalog = golpos_catalog();
 $products = $catalog['products'] ?? [];
 $shop = (string)($catalog['store']['name'] ?? 'Sunrise Mart');
 
+// Does this text CLAIM a card was staged? Past-tense claims only — the
+// deterministic templates promise in the future tense ("card stage
+// garchhu" = I WILL stage it) and must never trip this.
+function golpos_claims_staging(string $reply): bool {
+    return preg_match('/\bI(?:\'|\x{2019}| ha)ve staged\b'
+        . '|\bstaged\s+(a|an|the)\b'
+        . '|\bstage\s+(gareko|gare|gariyo|bhayo)\b'
+        . '|\bcard\s+stage\s+(gareko|gare|gariyo|bhayo)\b'
+        . '|स्टेज\s*गर(ेको|ियो)/iu', $reply) === 1;
+}
+// The sales form of the same bluff (owner law, Oct 28): a claim that a
+// sale was added or recorded. Chat can NEVER satisfy this claim — a sale
+// exists only by being rung and tendered at the register — so the claim
+// is always false from this endpoint, whatever rides along with it.
+function golpos_claims_sale(string $reply): bool {
+    return preg_match('/\bsales?\s+(was\s+)?(added|recorded)\b'
+        . '|\b(added|recorded)\s+(the\s+|a\s+)?sales?\b'
+        . '|\bbikri\s+hal'
+        . '|बिक्री\s*हाल/iu', $reply) === 1;
+}
 function out(array $r): void {
+    // ANTI-BLUFF GUARD (owner-caught, Oct 28): a reply may only say a card
+    // was staged when a card is actually in this response or still pending
+    // on the till. The free-form composer once answered "I've staged a
+    // card" three times with nothing staged — the deterministic lanes had
+    // never fired and the claim was pure invention. When a staging claim
+    // shows up with no card behind it, the claim is replaced by the
+    // truthful line: nothing is staged, and exactly what to say instead.
+    if (isset($r['reply']) && is_string($r['reply'])
+        && empty($r['card']) && empty($r['done'])
+        && golpos_pending() === null) {
+        if (golpos_claims_sale($r['reply'])) {
+            $r['reply'] = t('sale_route');
+        } elseif (golpos_claims_staging($r['reply'])) {
+            $r['reply'] = t('bluff_guard');
+        }
+    }
     // Provider marker: which brain actually answered this turn. It rides in the
     // response's meta field for the team (and the hackathon judges) to verify;
     // the register UI ignores it.
@@ -476,6 +512,36 @@ $S = [
     'np' => 'Loyalty leaderboard khali chha — kunai customer le ahile samma receipt photo pathaeko chhaina.',
     'hi' => 'Loyalty leaderboard khaali hai — kisi customer ne abhi tak receipt photo nahi bheja.',
     'dev' => 'लोयाल्टी लिडरबोर्ड खाली छ — कुनै ग्राहकले अहिलेसम्म रसिद फोटो पठाएको छैन।'],
+  'poster_route' => [
+    'en' => 'Offer posters are made in MR.STORE\'s Gol — marketing lives there; this till only sells. Right here I can quote a price, add items to the cart, or stage a price change.',
+    'np' => 'Offer poster MR.STORE ko Gol ma banchha — marketing uta chha, yo till le bechne matra ho. Yaha ma mulya bhanna, saman cart ma thapna, wa mulya badalne card stage garna sakchhu.',
+    'hi' => 'Offer poster MR.STORE ke Gol mein banta hai — marketing wahin hai, yeh till sirf bechta hai. Yahan main daam bata sakta hoon, saaman cart mein jod sakta hoon, ya daam badalne ka card stage kar sakta hoon.',
+    'dev' => 'अफर पोस्टर MR.STORE को Gol मा बन्छ — मार्केटिङ उतै छ, यो टिलले बेच्ने मात्र हो। यहाँ म मूल्य भन्न, सामान कार्टमा थप्न, वा मूल्य बदल्ने कार्ड स्टेज गर्न सक्छु।'],
+  'sale_route' => [
+    'en' => 'A sale is never added from chat — a sale exists only when it is rung at the register and tendered. I can put items in the cart by name right here; the sale records when the register takes the payment.',
+    'np' => 'Sale chat bata kahile thapinna — sale register ma ring garera tender garepachi matra banchha. Ma yaha naam liyera saman cart ma halna sakchhu; bikri register le bhuktani liepachi record hunchha.',
+    'hi' => 'Sale chat se kabhi nahi jodta — sale sirf register par ring karke tender karne par banta hai. Main yahan naam lekar saaman cart mein daal sakta hoon; bikri register par payment lene par record hoti hai.',
+    'dev' => 'सेल च्याटबाट कहिल्यै थपिन्न — सेल रजिस्टरमा रिङ गरेर टेन्डर गरेपछि मात्र बन्छ। म यहाँ नाम लिएर सामान कार्टमा हाल्न सक्छु; बिक्री रजिस्टरले भुक्तानी लिएपछि रेकर्ड हुन्छ।'],
+  'bluff_guard' => [
+    'en' => 'I haven\'t staged anything — no card is waiting. Tell me the item and the exact new price (like "change Coke to $3") and I\'ll stage the real card here.',
+    'np' => 'Maile kunai card banaeko chhaina — kehi parkhi rako chhaina. Saman ra naya mulya spashta bhannus (jastai "Coke to $3") — asal card yahi stage garchhu.',
+    'hi' => 'Maine koi card nahi banaya hai — kuchh intezaar nahi kar raha. Saaman aur naya daam saaf bataiye (jaise "Coke to $3") — asal card yahin stage karunga.',
+    'dev' => 'मैले कुनै कार्ड बनाएको छैन — केही पर्खिरहेको छैन। सामान र नयाँ मूल्य स्पष्ट भन्नुस् (जस्तै "Coke to $3") — असली कार्ड यहीँ स्टेज गर्छु।'],
+  'already_staged' => [
+    'en' => 'That card is already staged: %s — say "gol" to run it.',
+    'np' => 'Tyo card pahile nai stage chha: %s — chalauna "gol" bhannus.',
+    'hi' => 'Woh card pehle se stage hai: %s — chalane ke liye "gol" kahiye.',
+    'dev' => 'त्यो कार्ड पहिल्यै स्टेज छ: %s — चलाउन "गोल" भन्नुस्।'],
+  'stage_what' => [
+    'en' => 'Stage what? Nothing is waiting right now — tell me the item and the new price (like "change Coke to $3") and I\'ll stage the card.',
+    'np' => 'Ke stage garne? Ahile kehi parkhi rako chhaina — saman ra naya mulya bhannus (jastai "Coke to $3"), card stage garchhu.',
+    'hi' => 'Kya stage karoon? Abhi kuchh intezaar nahi kar raha — saaman aur naya daam bataiye (jaise "Coke to $3"), card stage karunga.',
+    'dev' => 'के स्टेज गर्ने? अहिले केही पर्खिरहेको छैन — सामान र नयाँ मूल्य भन्नुस् (जस्तै "Coke to $3"), कार्ड स्टेज गर्छु।'],
+  'ask_cancelled' => [
+    'en' => 'Okay — dropped that. Nothing is staged.',
+    'np' => 'Huss — tyo chhodiye. Kehi stage chhaina.',
+    'hi' => 'Theek hai — woh chhod diya. Kuchh stage nahi hai.',
+    'dev' => 'हुन्छ — त्यो छोडियो। केही स्टेज छैन।'],
   'board_head' => [
     'en' => 'Receipt Loyalty — leaderboard:',
     'np' => 'Receipt Loyalty — leaderboard:',
@@ -832,11 +898,15 @@ function golpos_mask_sizes(string $work, ?array $product): string {
 // Every number token left standing: value, byte span, and whether it wore a $.
 function golpos_num_spans(string $work): array {
     $out = [];
-    if (preg_match_all('/\$\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)/', $work, $m, PREG_OFFSET_CAPTURE)) {
+    if (preg_match_all('/\$\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)(\s*\$)?/', $work, $m, PREG_OFFSET_CAPTURE)) {
         foreach ($m[0] as $i => $full) {
-            $dollar = ($m[1][$i][1] ?? -1) >= 0;
-            $out[] = ['value' => (float)($dollar ? $m[1][$i][0] : $m[2][$i][0]),
-                      'start' => $full[1], 'len' => strlen($full[0]), 'dollar' => $dollar];
+            $pre = ($m[1][$i][1] ?? -1) >= 0;
+            $post = ($m[3][$i][1] ?? -1) >= 0;
+            // "$" wears either side of the amount in the owner's typing —
+            // "$3", "3$" and "3 $" are the same money, and the span covers
+            // the sign so the word AFTER the money is read past it.
+            $out[] = ['value' => (float)($pre ? $m[1][$i][0] : $m[2][$i][0]),
+                      'start' => $full[1], 'len' => strlen($full[0]), 'dollar' => $pre || $post];
         }
     }
     return $out;
@@ -890,7 +960,7 @@ function golpos_extract_price(string $msg, ?array $product): array {
 // count; an unbound tie returns null rather than a guess.
 function golpos_extract_count(string $msg, ?array $product): ?float {
     $work = golpos_mask_sizes(golpos_norm_digits($msg), $product);
-    if (preg_match_all('/\$\s*\d+(?:\.\d+)?/', $work, $dm, PREG_OFFSET_CAPTURE)) {
+    if (preg_match_all('/\$\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*\$/', $work, $dm, PREG_OFFSET_CAPTURE)) {
         $spans = [];
         foreach ($dm[0] as $d) { $spans[] = ['start' => $d[1], 'len' => strlen($d[0])]; }
         $work = golpos_blank($work, $spans);
@@ -963,6 +1033,91 @@ function golpos_extract_barcode(string $msg, array $products): array {
         }
     }
     return ['barcode' => $found, 'work' => golpos_blank($work, $spans), 'holder' => $holder];
+}
+// An "add a sale" ask (owner law, Oct 28): sale words crossed with a
+// record verb, in any of the shop's languages — and NOT a figure question
+// (those are the day total / report lanes). Chat never writes a sale;
+// the dispatch routes these to the register truth.
+function golpos_is_sale_add_ask(string $msg): bool {
+    if (!preg_match('/(\bsales?\b|bikri|बिक्री)/iu', $msg)) { return false; }
+    if (preg_match('/(report|kati|kitna|how|total|hisab|hisaab|हिसाब|कति)/iu', $msg)) { return false; }
+    return preg_match('/(\badd\b|\brecord\b|\bentry\b|\bhal|\bhaal|\bthap|राख|हाल|थप)/iu', $msg) === 1;
+}
+// One line naming a staged card truthfully — used when the owner says
+// "stage it" about the card already on the till.
+function golpos_card_summary(array $card): string {
+    $qty = static fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
+    switch ($card['type'] ?? '') {
+        case 'price_change':
+            return ($card['name'] ?? '') . ': ' . money((float)($card['old_price'] ?? 0))
+                . ' → ' . money((float)($card['new_price'] ?? 0));
+        case 'new_item':
+            return 'new item ' . ($card['name'] ?? '') . ' — ' . money((float)($card['price'] ?? 0));
+        case 'setting_change':
+            return ($card['label'] ?? ($card['setting'] ?? 'setting')) . ': '
+                . golpos_setting_display((string)($card['setting'] ?? ''), $card['old'] ?? null)
+                . ' → ' . golpos_setting_display((string)($card['setting'] ?? ''), $card['new'] ?? null);
+        case 'stock_receive':
+            return 'stock receive — ' . ($card['name'] ?? '') . ' × ' . $qty($card['qty'] ?? 0);
+        case 'batch_close':
+            return 'batch close — ' . (int)($card['count'] ?? 0) . ' card sales, ' . money((float)($card['total'] ?? 0));
+        case 'bill':
+            return 'bill — ' . money((float)($card['total'] ?? 0));
+        case 'employee_remove':
+            return 'remove employee — ' . ($card['email'] ?? '');
+        case 'poster':
+            return 'poster — ' . ($card['name'] ?? '') . ' — ' . money((float)($card['price'] ?? 0));
+        default:
+            return (string)($card['type'] ?? 'card');
+    }
+}
+// --- the price question Gol just asked, remembered ---------------------------
+// When the price-change lane resolves the item but not the price (or the
+// price but not the item), the ask it makes rides the session like a
+// bill's price wait does: the owner's next words carry the missing piece
+// and the staging completes. Gol never asks twice for what it was told.
+function golpos_price_await_set(?array $await): void {
+    $id = (string)($GLOBALS['golpos_session_id'] ?? '');
+    if ($id === '') { return; }
+    $s = golpos_session($id);
+    $s['price_await'] = $await;
+    golpos_save_session($id, $s);
+}
+
+// The bare form rides the same meaning with no price word and no verb at
+// all: an item that resolves, plus a price SAID as money ($ on either
+// side) or bound to the change word "to". Asking, wanting and receiving
+// are other lanes' verbs and never open this one.
+function golpos_bare_price_change(string $msg, array $products): bool {
+    if (preg_match('/(kati|kitna|kitne|how much|how many|ke chha|k ho|what|why|कति|कितना)/iu', $msg)) { return false; }
+    if (preg_match('/(\badd\b|\bthap|\bjodo\b|\blagao\b|\bgive\b|\bchahiyo\b|\bchahinchha\b|\bdeu\b|\bdinus\b|\bayo\b|\baayo\b|\breceive\b|\breceived\b|\brestock\b|\bdelivery\b|थप|चाहियो|आयो)/iu', $msg)) { return false; }
+    $verb = preg_match('/(\bchange\b|\bset\b|badha|badal|badlo|rakha|gara|गर|बढा|बदल|राख)/iu', $msg) === 1;
+    // A price SAID as money: $-marked (either side) or bound to "to"/"=".
+    $moneyBound = static function (?array $product) use ($msg, $products): ?array {
+        $ex = golpos_extract_price($msg, $product);
+        if ($ex['status'] !== 'ok') { return null; }
+        $work = golpos_mask_sizes(golpos_norm_digits($msg), $product);
+        foreach (golpos_num_spans($work) as $n) {
+            if (abs($n['value'] - $ex['value']) > 0.004) { continue; }
+            if ($n['dollar']) { return $ex; }
+            $before = golpos_word_before($work, $n['start']);
+            if ($before === 'to' || $before === '=') { return $ex; }
+        }
+        return null;
+    };
+    $r = resolve_item($products, $msg);
+    if (!empty($r['one'])) {
+        if ($moneyBound($r['one']) !== null) { return true; }
+        // A change verb with the item named but the price missing (or
+        // two live candidates): the lane owns the follow-up — it asks
+        // for the price instead of letting the composer improvise one.
+        return $verb;
+    }
+    if (!empty($r['many'])) {
+        if ($moneyBound(null) !== null) { return true; }
+        return $verb;
+    }
+    return false;
 }
 // --- the bill price wait: margins and per-item answers -----------------------
 // A read bill whose new lines lack shelf prices waits in the session
@@ -1253,6 +1408,36 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
 }
 
 if ($msg === '') { out(['reply' => t('empty')]); }
+
+// --- add-a-sale asks: routed to the register, never written (owner law) ------
+// "add sales" / "sale add gara" / "bikri hal" — a sale exists ONLY by being
+// rung at the register (cart -> tender through the sale endpoint). Chat
+// puts items in the CART by name; the sale records when the register
+// tenders it. This lane owns the ask before any other lane can improvise.
+if (golpos_is_sale_add_ask($msg)) {
+    out(['reply' => t('sale_route')]);
+}
+
+// --- offer posters: MR.STORE Gol's desk, not the till (owner ruling) --------
+// Making offer posters is marketing work and lives in MR.STORE's Gol; the
+// POS keeps only its selling screen. A poster ask here gets the truthful
+// route in one line — never a staged poster card, never a "can't" dead
+// end. This runs before every other content lane so a deal's price inside
+// a poster ask ("2 for 5 $") is never mistaken for a price change.
+if (preg_match('/(poster|banner)/iu', $msg) ||
+    preg_match('/\boffer\s+posts?\b/iu', $msg) ||
+    preg_match('/(make|create|bana|banau|बना).{0,24}\bpost\b/iu', $msg)) {
+    out(['reply' => t('poster_route')]);
+}
+
+// --- "stage it": speak only the truth about the card on the till -------------
+if (preg_match('/\bstage\b|स्टेज/iu', $msg) && !preg_match('/\d|\$/u', $msg)) {
+    $pendingCard = golpos_pending();
+    if ($pendingCard !== null) {
+        out(['reply' => t('already_staged', golpos_card_summary($pendingCard)), 'card' => $pendingCard]);
+    }
+    out(['reply' => t('stage_what')]);
+}
 
 // --- receipt print settings: read + staged changes ---------------------------
 // The POS keeps only its selling screen — print settings are run from this
@@ -1569,19 +1754,26 @@ if (preg_match('/(new\s+(item|product)|naya\s+(saman|item)|नयाँ|नय�
 
 // --- price change (staged) ---------------------------------------------------
 if (preg_match('/(mulya|price|dam|daam|मूल्य|दाम).*(gara|set|badha|badal|rakha|change|badlo|karo|गर|राख|बनाउ|बदल)|(gara|set|change|badlo|गर|बनाउ).*(mulya|price|dam|daam|मूल्य|दाम)/iu', $msg) ||
-    preg_match('/(price|mulya|dam|daam|मूल्य|दाम).*\bto\s*(?:\$\s*\d|\d+\.\d{1,2})/iu', golpos_norm_digits($msg))) {
+    preg_match('/(price|mulya|dam|daam|मूल्य|दाम).*\bto\s*(?:\$\s*\d|\d+\.\d{1,2})/iu', golpos_norm_digits($msg)) ||
+    golpos_bare_price_change($msg, $products)) {
     $r = resolve_item($products, $msg);
     if (!empty($r['one'])) {
         $p = $r['one'];
         // The price the owner SAID, by the meaning rules — the product is
         // matched first, its size is never money, and an explicit $ amount
         // always wins. No readable price, or two live candidates: Gol asks
-        // and stages nothing.
+        // and stages nothing — and the ask rides the session, so the
+        // owner's answer completes the staging instead of starting over.
         $ex = golpos_extract_price($msg, $p);
         if ($ex['status'] === 'ambiguous') {
+            golpos_price_await_set(['sku' => (string)$p['sku'], 'price_candidates' => $ex['candidates']]);
             out(['reply' => t('price_ask_which', $p['name'], money($ex['candidates'][0]), money($ex['candidates'][1]))]);
         }
-        if ($ex['status'] !== 'ok') { out(['reply' => t('price_ask', $p['name'])]); }
+        if ($ex['status'] !== 'ok') {
+            golpos_price_await_set(['sku' => (string)$p['sku']]);
+            out(['reply' => t('price_ask', $p['name'])]);
+        }
+        golpos_price_await_set(null);
         $new = $ex['value'];
         if ($new === (float)$p['price']) { out(['reply' => t('price_same', $p['name'], money($new))]); }
         $card = golpos_stage(['type' => 'price_change', 'sku' => $p['sku'], 'name' => $p['name'],
@@ -1589,9 +1781,17 @@ if (preg_match('/(mulya|price|dam|daam|मूल्य|दाम).*(gara|set|bad
         out(['reply' => t('card_staged'), 'card' => $card]);
     }
     if (!empty($r['many'])) {
+        // The price was said but the item is a tie: remember the price, so
+        // the owner's one-word pick completes the staging.
+        $ex = golpos_extract_price($msg, null);
+        if ($ex['status'] === 'ok') {
+            golpos_price_await_set(['price' => $ex['value'],
+                'item_skus' => array_map(static fn($c) => (string)$c['sku'], $r['many'])]);
+        } else { golpos_price_await_set(null); }
         $list = implode(', ', array_map(fn($p) => $p['name'] . ' (' . money((float)$p['price']) . ')', $r['many']));
         out(['reply' => t('which_price', $list)]);
     }
+    golpos_price_await_set(null);
     out(['reply' => t('not_found_price')]);
 }
 
@@ -1684,35 +1884,6 @@ if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप|चा�
     out(['reply' => t('not_found_add')]);
 }
 
-// --- offer poster: the CREATE lane (Muse Image) -------------------------------
-// "Make an offer poster for Coke" — Muse Image generates it, the chat shows
-// the preview, and the poster stages as a card. Nothing publishes until the
-// owner says "gol"; then it lands in the DEMO store's feed only — fictional
-// Sunrise Mart branding, never a real store's data or pages.
-if (preg_match('/(poster|banner)/iu', $msg) ||
-    preg_match('/(make|bana|banau|generate|बना).*(image|photo|picture)/iu', $msg)) {
-    $r = resolve_item($products, $msg);
-    if (empty($r['one'])) { out(['reply' => t('poster_which')]); }
-    $p = $r['one'];
-    $price = (float)$p['price'];
-    if (preg_match('/\$\s*(\d+(?:\.\d{1,2})?)/', $msg, $pm)) { $price = (float)$pm[1]; }
-    $imgPrompt = "Retail offer poster for {$shop}, a small convenience store (fictional demo store). "
-        . "Feature one product prominently: {$p['name']}. Big clear readable text: \"OFFER\", "
-        . "\"{$p['name']}\" and the price \"" . money($price) . "\". Bright blue accents (#3F80F5), "
-        . "clean modern design, appetising product photography style, portrait poster.";
-    @set_time_limit(240);
-    $png = golpos_meta_image($imgPrompt);
-    if ($png === null) { out(['reply' => t('poster_fail')]); }
-    $dir = dirname(__DIR__) . '/web/uploads/posters';
-    if (!is_dir($dir)) { mkdir($dir, 0775, true); }
-    $file = 'poster-' . date('Ymd-His') . '-' . substr(sha1(uniqid('', true)), 0, 6) . '.png';
-    file_put_contents($dir . '/' . $file, $png);
-    $card = golpos_stage(['type' => 'poster', 'image' => 'uploads/posters/' . $file,
-                          'name' => $p['name'], 'price' => $price,
-                          'caption' => '🔥 OFFER at ' . $shop . ': ' . $p['name'] . ' — ' . money($price) . '! Grab yours today 🎉']);
-    out(['reply' => t('poster_ready', $shop), 'card' => $card]);
-}
-
 // --- free-form: Muse composes from the shop's own live pack ------------------
 // The deterministic intents above own every write; anything else is a
 // conversation, and the conversation belongs to Muse — grounded in the live
@@ -1779,6 +1950,7 @@ golpos_batch_auto_sweep();
 
 $sessionId = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($in['session'] ?? ''));
 if ($sessionId === '') { $sessionId = 'anon'; }
+$GLOBALS['golpos_session_id'] = $sessionId;
 $session = golpos_session($sessionId);
 
 // An identified employee device (invite flow) marks the session as that
@@ -1795,6 +1967,7 @@ if (golpos_is_lock_intent($msg)) {
     $session['pin_stage'] = null;
     $session['pin_tmp'] = null;
     $session['pending'] = null;
+    $session['price_await'] = null;
     golpos_save_session($sessionId, $session);
     out(['reply' => t('admin_off')]);
 }
@@ -1916,6 +2089,71 @@ if (!empty($session['bill_await']) && golpos_pending() === null) {
         out(['reply' => t('bill_reask', golpos_bill_missing_list($updated))]);
     }
     out(['reply' => t('bill_reask', golpos_bill_missing_list($await))]);
+}
+
+// A price question Gol just asked owns the follow-up the same way a bill
+// does: the owner's next words carry the missing piece (the price, or the
+// item pick when the price was already said) and the staging completes —
+// Gol never asks again for what it was already told. A follow-up with no
+// number and no candidate item in it is a topic change: the wait drops
+// and the message runs its normal course through the gate and dispatch.
+if (!empty($session['price_await']) && golpos_pending() === null) {
+    $await = $session['price_await'];
+    if (golpos_is_cancel_intent($msg)) {
+        $session['price_await'] = null;
+        golpos_save_session($sessionId, $session);
+        out(['reply' => t('ask_cancelled')]);
+    }
+    $isConfirm = in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true) || !empty($in['confirm']);
+    $target = null; $newPrice = null; $reask = null; $topicChange = false;
+    if (!empty($await['sku'])) {
+        foreach ($products as $p) {
+            if ((string)$p['sku'] === (string)$await['sku']) { $target = $p; break; }
+        }
+        if ($target === null) { $topicChange = true; }
+        elseif ($isConfirm) { $reask = t('price_ask', (string)$target['name']); }
+        else {
+            $ex = golpos_extract_price($msg, $target);
+            if ($ex['status'] === 'ambiguous') {
+                $reask = t('price_ask_which', (string)$target['name'], money($ex['candidates'][0]), money($ex['candidates'][1]));
+            } elseif ($ex['status'] === 'ok') {
+                $cands = array_map(static fn($v) => round((float)$v, 2), (array)($await['price_candidates'] ?? []));
+                if ($cands !== [] && !in_array(round((float)$ex['value'], 2), $cands, true)) {
+                    $reask = t('price_ask_which', (string)$target['name'], money($cands[0]), money($cands[1] ?? $cands[0]));
+                } else { $newPrice = (float)$ex['value']; }
+            } elseif (!preg_match('/\d|\$/u', $msg)) { $topicChange = true; $target = null; }
+            else { $reask = t('price_ask', (string)$target['name']); }
+        }
+    } elseif (!empty($await['item_skus']) && isset($await['price'])) {
+        $cands = array_values(array_filter($products,
+            static fn($p) => in_array((string)$p['sku'], (array)$await['item_skus'], true)));
+        $list = implode(', ', array_map(static fn($p) => $p['name'] . ' (' . money((float)$p['price']) . ')', $cands));
+        if ($isConfirm) { $reask = t('which_price', $list); }
+        else {
+            $r = resolve_item($cands, $msg);
+            if (!empty($r['one'])) { $target = $r['one']; $newPrice = (float)$await['price']; }
+            elseif (!empty($r['many'])) { $reask = t('which_price', $list); }
+            elseif (!preg_match('/\d|\$/u', $msg)) { $topicChange = true; }
+            else { $reask = t('which_price', $list); }
+        }
+    } else { $topicChange = true; }
+
+    if ($target !== null && $newPrice !== null) {
+        $session['price_await'] = null;
+        golpos_save_session($sessionId, $session);
+        if ($newPrice === (float)$target['price']) {
+            out(['reply' => t('price_same', (string)$target['name'], money($newPrice))]);
+        }
+        $card = golpos_stage(['type' => 'price_change', 'sku' => $target['sku'], 'name' => $target['name'],
+                              'old_price' => $target['price'], 'new_price' => $newPrice]);
+        out(['reply' => t('card_staged'), 'card' => $card]);
+    }
+    if ($reask !== null) { out(['reply' => $reask]); }
+    if ($topicChange) {
+        $session['price_await'] = null;
+        golpos_save_session($sessionId, $session);
+        // fall through: the gate and dispatch see the message fresh
+    }
 }
 
 // The gate itself: an admin-domain message from an unelevated session gets
