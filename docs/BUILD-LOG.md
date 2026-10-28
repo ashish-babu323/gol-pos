@@ -1400,3 +1400,61 @@ One entry per day; the git history carries the same dates.
   PIN sheet (challenge -> wrong refused -> correct completes ->
   elevated silent) + panel mirror (zero form controls) 9/9, watch
   auto-on/toggle 8/8. php -l clean; app.js node-checked.
+
+## Refunds + store-credit redeem (Oct 28, 2026) — commit 6564556, stamps 08c3d5b
+
+Refunds attach to a recorded sale, never a free-typed amount. One quote
+function (golpos_refund_quote) prices both doors — the Transactions
+sheet and the Gol chat refund card — off refunds.json as the one record
+of truth (per-line remaining = sold - already refunded; beyond-qty and
+double refunds are refused in plain words). Execution is PIN-gated per
+the store's refund_pin setting, money returns to the ORIGINAL tenders
+proportionally with the exact remainder on the completing refund, and
+returned catalog goods restock through the one receive discipline
+(standalone catalog increment; link mode rides mrstore_adjust_stock —
+proven live on the QA sim: Ice Bag onHand 1114 -> 1115). Batch truth:
+an unsealed sale's refund nets inside its segment; a sealed-batch
+sale's refund rides the current segment as a negative entry; a sealed
+batch record is never edited (battery proves byte-stability across a
+refund AND the next seal). Settings ride the chat staged-card lane
+(refunds_allowed on / refund_pin on / refund_window_days 30); the
+panel mirrors them read-only. Chat finder takes the hints a person
+gives (day, amount, tender, item); ambiguity lists candidates and the
+pick stages from the session await — never a guess.
+
+Store credit is a TENDER, never a discount. The till's Credit button
+looks the customer up by phone (the loyalty master key) against the
+Receipt Loyalty points ledger inside loyalty.json (1 point per $20 of
+counted receipt spend, 1 point = $1) — the same balance the customer
+page shows. Everything is validated before anything records; the spend
+is keyed by sale id in the ledger, so a double-tap or retry cannot
+double-spend; the remainder splits to cash/card with change on the
+cash part; tax math never sees tenders (battery: identical tax with
+and without credit). Refunding a credit-paid sale restores the credit
+portion, keyed by refund id.
+
+Link mode, named plainly: MR.STORE Festival points are derived display
+values with no spendable ledger the register may write, so a linked
+register hides the Credit button, refuses a credit tender with an
+honest 422, and answers credit asks in chat the same way — the
+link-mode spend is a NAMED FOLLOW-UP, as is an MR.STORE journal refund
+ticket (store-api/card-report.php has no refund ticket type; the
+register's own sales/refunds/batches records are complete in both
+modes).
+
+Battery: 78/78 over real HTTP on a throwaway instance — refund groups
+(full cash, full card, line partial, beyond-qty refusal, double-refund
+refusal, sealed-batch negative + byte-stability, window refusal then
+chat widening, refunds-off refusal, PIN required/wrong/right/off
+paths, settings staged via chat, ambiguous chat refund pick,
+single-match + cancel), credit groups (fixture lookup, unknown phone,
+full tender, split remainder + change, tax identity, over-balance,
+double-spend blocked, refund-restores-credit, credit_redeem off/on via
+chat), and the employee-lane smoke regression (lock -> employee PIN
+unlock -> stamped sale -> close demands admin PIN -> close lands ->
+locked again). Live proofs on both stages with throwaway data, then
+both stages restored byte-for-byte from the pre-build snapshot (dev
+887 / $9,178.79 / 29+29, owner people/sessions/settings md5-identical,
+plus the fictional credit fixture Ava $12.00 / Ben $25.50 as the
+spec-ordered end state; sim 3,000 / $57,301.04 / 30 closes, virgin
+roster, QA stock netted out).
