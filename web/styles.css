@@ -373,6 +373,41 @@ button { font: inherit; cursor: pointer; }
 .rep-closed { color: #34d399; font-style: normal; font-weight: 700; }
 #reportBody #repClose { margin-top: 10px; }
 
+/* ---------- Receipt Loyalty customer page (web/loyalty.html) ---------- */
+/* A standalone mobile page in the one Gol identity: blue header, white
+   cards, the same message bubbles the register chat uses. */
+body.loyalty { background: linear-gradient(180deg, #f7faff 0%, #eff5fe 100%); background-color: #eff5fe; }
+.loy-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; color: #fff;
+  background: linear-gradient(120deg, #2e6be6, #1d4ed8 70%, #173f9e); box-shadow: 0 8px 22px rgba(29,78,216,.3);
+  position: sticky; top: 0; z-index: 5; }
+.loy-head .gol-mark { width: 40px; height: 40px; background: rgba(255,255,255,.14); border: 2.5px solid rgba(255,255,255,.9); }
+.loy-brand { font-size: 20px; font-weight: 800; letter-spacing: .2px; }
+.loy-brand small { display: block; font-size: 11px; font-weight: 600; letter-spacing: 1.6px; text-transform: uppercase; color: #bdd4ff; }
+.loy-main { max-width: 560px; margin: 0 auto; padding: 16px 14px 30px; display: flex; flex-direction: column; gap: 14px; }
+.loy-card { background: #fff; border: 1px solid #dfeaf9; border-radius: 20px; padding: 18px;
+  box-shadow: 0 2px 6px rgba(31,78,160,.05), 0 14px 30px rgba(31,78,160,.07); }
+.loy-card h2 { font-size: 17px; margin-bottom: 8px; color: #16283f; }
+.loy-sub { font-size: 14px; line-height: 1.5; color: #5a6f8c; margin-bottom: 12px; }
+.loy-form { display: flex; flex-direction: column; gap: 11px; }
+.loy-form label { display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; font-weight: 700; color: #33507c; }
+.loy-form input { padding: 13px 14px; border-radius: 12px; border: 1px solid #d5e4f8; background: #fbfdff;
+  color: #16283f; font: inherit; font-size: 15.5px; }
+.loy-form input:focus { outline: none; border-color: #3f80f5; box-shadow: 0 0 0 3px rgba(63,128,245,.16); }
+.loy-primary { border: none; border-radius: 12px; padding: 14px; font-weight: 800; font-size: 16px; color: #fff;
+  background: linear-gradient(135deg, #5b93ff, #2563eb); box-shadow: 0 8px 18px rgba(37,99,235,.3); }
+.loy-standing { display: flex; gap: 10px; margin-bottom: 12px; }
+.loy-standing > div { flex: 1; text-align: center; background: #f0f6ff; border: 1px solid #dfeaf9; border-radius: 14px; padding: 10px 4px; }
+.loy-stat-num { display: block; font-family: var(--num); font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 800; color: #1d4ed8; }
+.loy-stat-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #5a6f8c; margin-top: 2px; }
+.loy-chat { display: flex; flex-direction: column; gap: 9px; max-height: 46vh; overflow-y: auto; padding: 4px 2px 10px; }
+.loy-chat .msg.gol { background: #eaf2ff; color: #22385a; border: none; }
+.loy-send { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 54px;
+  border: none; border-radius: 12px; font-weight: 800; font-size: 16px; color: #fff; cursor: pointer;
+  background: linear-gradient(135deg, #5b93ff, #2563eb); box-shadow: 0 8px 18px rgba(37,99,235,.3); }
+.loy-ghost { display: block; margin: 10px auto 0; background: transparent; border: none; color: #5a6f8c; font-size: 13.5px; font-weight: 600; }
+.loy-me { background: #eaf2ff; border-radius: 8px; font-weight: 700; }
+.loy-foot { text-align: center; font-size: 12.5px; color: #8fa3bc; }
+
 /* Printing a receipt: only the receipt card reaches the paper. */
 @media print {
   body * { visibility: hidden; }

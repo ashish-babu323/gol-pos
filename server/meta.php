@@ -156,3 +156,85 @@ function golpos_meta_image(string $prompt, string $size = '1024x1792'): ?string 
     }
     return null;
 }
+
+// Vision read — Muse Spark looks at one photo and answers as JSON (receipt
+// fields, a shelf count, any structured read a lane asks for). The chat
+// completions multimodal shape goes first; the Responses shape (the one SAM
+// rides) is the fallback. Returns the decoded array, or null when the API
+// did not answer or did not answer in JSON — callers degrade honestly and
+// never invent the values the read was supposed to supply.
+function golpos_meta_vision_json(string $dataUrl, string $prompt, int $timeout = 60): ?array {
+    [$code, $j] = golpos_meta_http('/chat/completions', [
+        'model' => 'muse-spark-1.3',
+        'messages' => [[
+            'role' => 'user',
+            'content' => [
+                ['type' => 'text', 'text' => $prompt],
+                ['type' => 'image_url', 'image_url' => ['url' => $dataUrl]],
+            ],
+        ]],
+        'max_tokens' => 1500,
+        'reasoning_effort' => 'minimal',
+    ], $timeout);
+    $text = '';
+    if ($code === 200 && $j !== null) {
+        $text = trim((string)($j['choices'][0]['message']['content'] ?? ''));
+    }
+    if ($text === '') {
+        [$code2, $j2] = golpos_meta_http('/responses', [
+            'model' => 'muse-spark-1.3',
+            'input' => [[
+                'role' => 'user',
+                'content' => [
+                    ['type' => 'input_text', 'text' => $prompt],
+                    ['type' => 'input_image', 'image_url' => $dataUrl],
+                ],
+            ]],
+        ], $timeout);
+        if ($code2 === 200 && $j2 !== null) {
+            foreach (($j2['output'] ?? []) as $item) {
+                foreach (($item['content'] ?? []) as $c) {
+                    if (isset($c['text'])) { $text .= (string)$c['text']; }
+                }
+            }
+            if ($text === '' && isset($j2['choices'][0]['message']['content'])) {
+                $text = (string)$j2['choices'][0]['message']['content'];
+            }
+            $text = trim($text);
+        }
+    }
+    if ($text === '') { return null; }
+    $GLOBALS['golpos_meta'] = ['provider' => 'meta-model-api', 'model' => 'muse-spark-1.3'];
+    // The model is asked for pure JSON; tolerate a fenced or chatty reply.
+    if (preg_match('/\{.*\}/s', $text, $m)) { $text = $m[0]; }
+    $out = json_decode($text, true);
+    return is_array($out) ? $out : null;
+}
+
+// Receipt read for the loyalty lane: store name, date, grand total and the
+// receipt number, exactly as printed. Any field the photo does not show
+// comes back null — the loyalty endpoint decides what a partial read means,
+// and nothing is ever reconstructed here.
+function golpos_meta_read_receipt(string $dataUrl): ?array {
+    $prompt = 'Read this store receipt photo. Reply with ONLY a JSON object and no other text: '
+        . '{"store": "<store name exactly as printed>", "date": "<the receipt date as YYYY-MM-DD>", '
+        . '"total": <the grand TOTAL amount due as a plain number, no currency sign or commas>, '
+        . '"receipt_no": "<the receipt number / transaction number exactly as printed>"}. '
+        . 'The total is the final TOTAL, never the subtotal or the cash tendered. '
+        . 'Use null for any field you cannot read clearly.';
+    $r = golpos_meta_vision_json($dataUrl, $prompt);
+    if ($r === null) { return null; }
+    $clean = static function ($v): ?string {
+        if (!is_string($v)) { return null; }
+        $v = trim($v);
+        return $v === '' ? null : $v;
+    };
+    $total = $r['total'] ?? null;
+    if (is_string($total)) { $total = preg_replace('/[^0-9.]/', '', $total); }
+    return [
+        'store' => $clean($r['store'] ?? null),
+        'date' => $clean($r['date'] ?? null),
+        'total' => is_numeric($total) ? round((float)$total, 2) : null,
+        'receipt_no' => $clean($r['receipt_no'] ?? null),
+    ];
+}

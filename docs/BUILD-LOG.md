@@ -136,3 +136,36 @@ One entry per day; the git history carries the same dates.
   recorded; invalid-SKU-only sale -> 422; card sale + summary split verified
   ($9.57 gross = $7.20 cash + $2.37 card, 2 txns). JS node --check clean,
   PHP -l clean, every DOM id the new panel uses is present in index.html.
+
+## Day 3 — Wed Oct 28, 2026
+- **Receipt Loyalty built (owner addition, Oct 26 — rides the Oct 30 photo gate).**
+  The Festival concept as a Gol POS feature, on the fictional Sunrise Mart data:
+  - Customer page (`web/loyalty.html` + `web/loyalty.js`, mobile-first, the blue
+    Gol identity): join ONCE with name / phone / email — the phone is the master
+    key and is kept on the customer's own device — then send a PHOTO of each
+    receipt in a simple chat-style flow.
+  - Server (`server/loyalty.php`): Muse Spark vision-reads the receipt photo
+    (store, date, grand total, receipt number) through a new vision helper in
+    `server/meta.php` (chat-completions multimodal first, the Responses shape as
+    fallback; the same server-side key home — nothing client-side ever holds a
+    key). The receipt saves under the customer in loyalty's OWN store file
+    (`data/loyalty.json`, seeded empty; the catalog seed and sales formats are
+    untouched) and Gol replies with the running total + rank. Dedupe is by
+    receipt number per store — the same receipt counts once, whoever sends the
+    photo. A photo the vision lane cannot read counts NOTHING and earns an
+    honest retake ask — no figure is ever invented.
+  - Owner view: the leaderboard (name, total spent, receipt count, rank) is
+    computed from the saved receipts on every read, so it can never drift from
+    what customers were told — a new section in the register's Owner panel, and
+    the customer page shows the same board with the customer's own row lit.
+  - Verified end-to-end on a throwaway copy (PHP built-in server; the repo's
+    and the live preview's data untouched — repo `data/` still holds only the
+    seed): two rendered Sunrise Mart receipts read back EXACTLY (SM-10482 →
+    $12.92, SM-10497 → $9.36, both dated 2026-10-28, provider marker
+    meta-model-api / muse-spark-1.3 on every read); the same receipt re-sent →
+    "already counted", totals unchanged; the same receipt sent by a second
+    customer → deduped too; a non-receipt image → nothing counted; an
+    unregistered phone → join-first reply; leaderboard Maya Sharma #1 $12.92
+    (1 receipt) / Dev Patel #2 $9.36 (1 receipt); brain smoke test ("How much
+    is a Coke?" → "A Coca-Cola 20oz costs $2.19.") unchanged. PHP -l clean on
+    every server file, node --check clean on both JS files.

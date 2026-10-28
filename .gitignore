@@ -8,3 +8,6 @@ web/uploads/photos/*
 !web/uploads/*/.gitkeep
 data/feed.json
 data/photos.json
+data/loyalty.json
+web/uploads/receipts/*
+!web/uploads/receipts/.gitkeep

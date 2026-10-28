@@ -196,3 +196,115 @@ function golpos_save_settings(array $in): array {
     golpos_write('settings.json', $cur);
     return $cur;
 }
+
+// --- Receipt Loyalty (owner addition, Oct 26) -------------------------------
+// The customer joins once (name / phone / email), then sends PHOTOS of their
+// receipts; Gol vision-reads each one, saves it under the customer (phone =
+// master key), dedupes by receipt number per store, and the owner sees a
+// live leaderboard built from the saved receipts — loyalty with no app, no
+// card, no counter sheet. Loyalty lives in its OWN store file, seeded empty,
+// and never touches the catalog seed or the sales data formats.
+function golpos_loyalty(): array {
+    $d = golpos_read('loyalty.json', null);
+    if (!is_array($d) || !isset($d['customers'], $d['receipts'])
+        || !is_array($d['customers']) || !is_array($d['receipts'])) {
+        return ['customers' => [], 'receipts' => []];
+    }
+    return $d;
+}
+
+// Phone is the master key: digits only, and a leading US country code folds
+// away so "+1 (216) 555-0142" and "2165550142" are the same customer.
+function golpos_loyalty_phone_key(string $phone): string {
+    $d = preg_replace('/\D+/', '', $phone) ?? '';
+    if (strlen($d) === 11 && $d[0] === '1') { $d = substr($d, 1); }
+    return $d;
+}
+
+function golpos_loyalty_customer(string $phone): ?array {
+    $key = golpos_loyalty_phone_key($phone);
+    if ($key === '') { return null; }
+    foreach (golpos_loyalty()['customers'] as $c) {
+        if (($c['phone'] ?? '') === $key) { return $c; }
+    }
+    return null;
+}
+
+// Join once; joining again with the same phone refreshes name/email and
+// keeps every receipt already counted.
+function golpos_loyalty_register(string $name, string $phone, string $email): array {
+    $key = golpos_loyalty_phone_key($phone);
+    $d = golpos_loyalty();
+    foreach ($d['customers'] as $i => $c) {
+        if (($c['phone'] ?? '') === $key) {
+            $d['customers'][$i]['name'] = $name;
+            $d['customers'][$i]['email'] = $email;
+            golpos_write('loyalty.json', $d);
+            return $d['customers'][$i];
+        }
+    }
+    $c = ['name' => $name, 'phone' => $key, 'email' => $email, 'joined' => date('c')];
+    $d['customers'][] = $c;
+    golpos_write('loyalty.json', $d);
+    return $c;
+}
+
+// A receipt counts once: the same receipt number at the same store is the
+// same receipt, whoever sends the photo. Numbers compare without spacing
+// or punctuation ("SM-10482" and "SM 10482" are one receipt).
+function golpos_loyalty_receipt_key(string $store, string $receiptNo): string {
+    $norm = static fn(string $s): string => preg_replace('/[^a-z0-9]+/', '', mb_strtolower($s)) ?? '';
+    return $norm($store) . '|' . $norm($receiptNo);
+}
+
+function golpos_loyalty_receipt_seen(string $store, string $receiptNo): ?array {
+    $k = golpos_loyalty_receipt_key($store, $receiptNo);
+    foreach (golpos_loyalty()['receipts'] as $r) {
+        if (golpos_loyalty_receipt_key((string)($r['store'] ?? ''), (string)($r['receipt_no'] ?? '')) === $k) {
+            return $r;
+        }
+    }
+    return null;
+}
+
+function golpos_loyalty_add_receipt(string $phone, array $receipt): array {
+    $d = golpos_loyalty();
+    $receipt['id'] = 'rcpt_' . substr(sha1(uniqid('', true)), 0, 10);
+    $receipt['phone'] = golpos_loyalty_phone_key($phone);
+    $receipt['at'] = date('c');
+    $d['receipts'][] = $receipt;
+    golpos_write('loyalty.json', $d);
+    return $receipt;
+}
+
+// The leaderboard is COMPUTED from the saved receipts on every read, so the
+// owner view can never drift from what customers were told.
+function golpos_loyalty_board(): array {
+    $d = golpos_loyalty();
+    $rows = [];
+    foreach ($d['customers'] as $c) {
+        $total = 0.0; $count = 0;
+        foreach ($d['receipts'] as $r) {
+            if (($r['phone'] ?? '') === ($c['phone'] ?? '')) {
+                $total += (float)($r['total'] ?? 0);
+                $count++;
+            }
+        }
+        $rows[] = ['name' => (string)($c['name'] ?? ''), 'phone' => (string)($c['phone'] ?? ''),
+                   'total' => round($total, 2), 'receipts' => $count];
+    }
+    usort($rows, static fn($a, $b) => ($b['total'] <=> $a['total']) ?: ($b['receipts'] <=> $a['receipts']));
+    foreach ($rows as $i => &$row) { $row['rank'] = $i + 1; }
+    unset($row);
+    return $rows;
+}
+
+// One customer's standing: running total, receipt count, rank, field size.
+function golpos_loyalty_standing(string $phone): ?array {
+    $key = golpos_loyalty_phone_key($phone);
+    $board = golpos_loyalty_board();
+    foreach ($board as $row) {
+        if ($row['phone'] === $key) { $row['of'] = count($board); return $row; }
+    }
+    return null;
+}

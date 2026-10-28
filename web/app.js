@@ -2,6 +2,7 @@
 'use strict';
 const API = '../server/api.php';
 const BRAIN = '../server/brain.php';
+const LOYALTY = '../server/loyalty.php';
 const $ = (id) => document.getElementById(id);
 const money = (n) => '$' + Number(n).toFixed(2);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -324,6 +325,18 @@ $('ownerBtn').addEventListener('click', async () => {
     `<p>Gross ${money(s.gross)} · Cash ${money(s.cash)} · Card ${money(s.card)} · Sales ${s.txns}</p>` +
     (p && p.type ? `<p>Staged card waiting: ${p.type} — ${p.name || ''}</p>` : '<p>No staged cards waiting.</p>') +
     feedHtml;
+  // Receipt Loyalty — the live leaderboard, computed by the server from the
+  // receipt photos customers sent; it can never drift from what they were told.
+  try {
+    const lb = await (await fetch(LOYALTY + '?leaderboard')).json();
+    const board = Array.isArray(lb.board) ? lb.board : [];
+    $('ownerLoyalty').innerHTML =
+      `<h3>Receipt Loyalty — leaderboard <small>— send customers to web/loyalty.html</small></h3>` +
+      (board.length ? board.map(r =>
+        `<div class="rep-row"><span>#${r.rank} ${esc(r.name)}</span><b>${money(r.total)}</b>` +
+        `<span>${r.receipts} receipt${r.receipts === 1 ? '' : 's'}</span></div>`).join('')
+        : '<p>No loyalty receipts yet.</p>');
+  } catch (e) { $('ownerLoyalty').innerHTML = ''; }
   await loadSettings(); renderSettingsForm();
   showReport('today');
 });

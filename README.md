@@ -15,7 +15,8 @@ Built from scratch during the **Meta Global AI Developer Hackathon**
 ## Layout
 
 - `web/` — the register (product grid, cart, tender, receipt) + Gol chat drawer + owner view
-- `server/` — a small PHP API: catalog, sales, day summary, and the Gol brain endpoint
+- `web/loyalty.html` — Receipt Loyalty customer page: join once (name / phone / email), then send receipt photos — Gol reads each receipt, dedupes by receipt number, and keeps the running total + rank
+- `server/` — a small PHP API: catalog, sales, day summary, the Gol brain endpoint, and the loyalty endpoint (`server/loyalty.php`, leaderboard included)
 - `data/catalog.seed.json` — the fictional demo catalog (copied to a live store file on first run)
 - `docs/` — build spec and build log
 

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="clean">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Receipt Loyalty — Sunrise Mart · Gol</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="loyalty">
+<header class="loy-head">
+  <span class="gol-mark gol-mark-lg"><img class="gol-mark-img" src="assets/gol-ring-white.png" alt="Gol"><i class="gol-mark-dot"></i></span>
+  <div class="loy-brand">Sunrise Mart<small>Receipt Loyalty · powered by Gol</small></div>
+</header>
+
+<main class="loy-main">
+  <section id="joinCard" class="loy-card">
+    <h2>Join once — then just send receipt photos</h2>
+    <p class="loy-sub">No app, no loyalty card, no counter sheet. Your phone number
+      is your account: send a photo of each receipt and watch your total climb.</p>
+    <form id="joinForm" class="loy-form">
+      <label>Your name
+        <input id="jName" type="text" autocomplete="name" placeholder="e.g. Maya Sharma" required>
+      </label>
+      <label>Phone
+        <input id="jPhone" type="tel" autocomplete="tel" placeholder="e.g. (216) 555-0142" required>
+      </label>
+      <label>Email
+        <input id="jEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
+      </label>
+      <button type="submit" class="loy-primary">Join loyalty</button>
+    </form>
+  </section>
+
+  <section id="memberCard" class="loy-card hidden">
+    <div class="loy-standing">
+      <div><span class="loy-stat-num" id="stTotal">$0.00</span><span class="loy-stat-label">your total</span></div>
+      <div><span class="loy-stat-num" id="stCount">0</span><span class="loy-stat-label">receipts</span></div>
+      <div><span class="loy-stat-num" id="stRank">—</span><span class="loy-stat-label">your rank</span></div>
+    </div>
+    <div class="loy-chat" id="loyChat"></div>
+    <label class="loy-send">📷 Send a receipt photo
+      <input id="receiptInput" type="file" accept="image/*" hidden>
+    </label>
+    <button id="switchBtn" type="button" class="loy-ghost">Not you? Switch phone number</button>
+  </section>
+
+  <section class="loy-card">
+    <h2>🏆 Leaderboard</h2>
+    <div id="loyBoard"><p class="empty">No receipts yet — be the first on the board.</p></div>
+  </section>
+  <p class="loy-foot">Demo store — Sunrise Mart is fictional; no real receipts or people.</p>
+</main>
+
+<script src="loyalty.js"></script>
+</body>
+</html>
