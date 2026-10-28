@@ -1195,3 +1195,51 @@ One entry per day; the git history carries the same dates.
   browsers, the watch-stream frame actually attaching at a live
   cash tender, and the phone page end-to-end on a real phone.
   Nothing deployed.
+
+## Day 3 (Oct 28) — Brain truth pass: the chat may not bluff (4254d1a)
+- Owner live-caught the till chat bluffing (11:00 ET): a poster ask
+  refused with "I can't make offer posts", two "I've staged a card"
+  claims with NO card in the response, and "okay stage it" answered by
+  asking for the item and price it had just been given. Parent
+  reproduced all four over real HTTP before the fix.
+- Root causes (dispatch-level, not wording): the price-change gate
+  demanded a price WORD beside the verb, so "change coca cola 20oz to
+  3$" and the bare "coca cola 20oz to 3$" fell through to the free-form
+  composer, which improvised the staging claims; "$" after the amount
+  ("3$") was not money to the span layer; the poster lane knew the word
+  "poster" but not "offer post".
+- Fixes: number spans read "$" on either side of an amount (and counts
+  blank both shapes); a bare price-change gate at the meaning layer
+  (item resolves + price said as money or bound to "to", or a change
+  verb with the price missing/tied — questions/want/receive verbs
+  excluded); an anti-bluff guard in out() that replaces ANY staging or
+  sale claim made with no card/done/pending behind it (past-tense claim
+  patterns only; the templates' future-tense promises never trip it);
+  and a session price wait (price_await, mirroring bill_await) so the
+  owner's follow-up carrying the missing piece completes the staging,
+  while "stage it" about a pending card answers with that card's real
+  summary and returns the card.
+- Owner rulings folded in the same pass: offer posters belong to
+  MR.STORE's Gol — the POS poster dispatch is REMOVED, poster asks get
+  the one-line route before any lane can read a deal's price as a price
+  change, and the "Make an offer poster" chip leaves the chat UI; and
+  the add-a-sale law — "add sales" / "sale add gara" / "bikri hal"
+  route to the register truth (a sale exists only when rung and
+  tendered; chat fills the CART by name), with sale claims ("sale
+  added", "recorded the sale", "bikri hal") under the same guard.
+- Verified on throwaway copies only, per the owner's simulation law
+  (nothing deployed, no live state touched): php -S + python battery
+  over real HTTP with fresh sessions, 138/138 — the four owner
+  sentences verbatim (route reply + real price_change cards, sku 1001,
+  2.19 -> 3.00, in both verb and bare forms; "okay stage it" returns the
+  same card id with its summary); context completions (price follow-up,
+  item pick); sale-add asks leave sales.json byte-unchanged; the guard
+  proven at the composer seam with a bluffing stub (staging claim and
+  sale claim both replaced, honest fallback untouched); trap battery
+  21/21; gate2 repo battery 60 cases structural (7 reply_lang notes =
+  the documented language-neutral price line, byte-identical on
+  pristine HEAD); access 12 incl. the Beat-3 PIN execute -> 2.50 ->
+  restore 2.19 choreography and unelevated "gol" refused; auto-batch
+  manual-seals-nothing / auto-seals-once; Nepali gate 4/4; api money
+  seams (Beat-1 7.20/2.80, 3% card surcharge 7.42). php -l (all server
+  files) and node --check clean.
