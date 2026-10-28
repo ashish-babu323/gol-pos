@@ -531,6 +531,55 @@ function mrstore_sync_catalog(array $posCatalog): void {
     } catch (Throwable $e) { /* the register never stops for the link */ }
 }
 
+// --- creating a product lands in MR.STORE's catalog ---------------------------
+// mrstore_sync_catalog (above) appends a chat-born item with cost and
+// stock null — a chat card carries neither. The register's Add Product
+// sheet carries both, so creation gets its own write through the same
+// load -> edit -> save machinery (mrstore_load_catalog /
+// mrstore_save_catalog, the gol_catalog_load / gol_catalog_save mirror),
+// with the same record shape the sync path writes, the opening stock
+// patched into stock_overrides the way every stock move here is, and the
+// same QA fence as every bridge write. Returns the product in the
+// register's payload shape (the mrstore_catalog_with_stock projection),
+// or null when the fence or the link refuses.
+function mrstore_create_product(array $f): ?array {
+    if (!mrstore_write_allowed()) { return null; }
+    $pdo = mrstore_pdo();
+    if (!$pdo) { return null; }
+    $sid = golpos_link_config()['store_id'];
+    try {
+        $cat = mrstore_load_catalog($pdo, $sid);
+        $idx = count($cat['products']);
+        $name = (string)($f['name'] ?? '');
+        $price = (float)($f['price'] ?? 0);
+        $barcode = (string)($f['barcode'] ?? '');
+        $cost = (isset($f['cost']) && is_numeric($f['cost'])) ? (float)$f['cost'] : null;
+        $stock = isset($f['stock']) && is_numeric($f['stock']) ? (float)$f['stock'] : null;
+        $rec = ['name' => $name, 'vendor' => '', 'barcode' => $barcode,
+                'cost' => $cost, 'caseCost' => null, 'packSize' => '',
+                'retail' => $price, 'price' => $price,
+                'onHand' => $stock, 'qty' => $stock, 'storeId' => $sid,
+                'category' => (string)($f['category'] ?? 'Counter')];
+        $cat['products'][] = $rec;
+        mrstore_save_catalog($pdo, $sid, $cat);
+        if ($stock !== null) {
+            $ov = mrstore_load_overrides($pdo, $sid);
+            mrstore_override_patch($ov, $rec, mrstore_nk($name), $stock);
+            mrstore_save_overrides($pdo, $sid, $ov);
+        }
+        golpos_link_log(['kind' => 'product_create', 'name' => $name, 'barcode' => $barcode,
+                         'price' => $price, 'cost' => $cost, 'stock' => $stock]);
+        $out = ['sku' => $barcode !== '' ? 'bc-' . $barcode : 'mr-' . $idx,
+                'barcode' => $barcode, 'name' => $name, 'mr_name' => $name,
+                'category' => 'MR.STORE', 'price' => $price, 'price_source' => 'mrstore',
+                'aliases' => [], 'onHand' => $stock];
+        if ($cost !== null) { $out['cost'] = $cost; }
+        return $out;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
 // Append-only evidence trail on the POS side: every stock movement the
 // bridge makes, so a simulation can be cross-checked line by line.
 function golpos_link_log(array $entry): void {

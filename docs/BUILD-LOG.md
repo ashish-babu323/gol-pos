@@ -707,3 +707,74 @@ One entry per day; the git history carries the same dates.
   smoke-proven on the same throwaway (SKU 1063 created, catalog 63).
   node --check / php -l clean. Asset stamps read ff6a208 (bumped in
   2f69505 — the commit's client assets are the ones the stamps name).
+
+## Day 3 (Oct 28) — Add Product on the register: the full catalog form (ff6a208 + bridge commit)
+- Owner: "mathi add products button pani haldeu — category haru
+  dherai, price margin dherai option huncha, jun MR.STORE ko catalog
+  le ni khulcha." A "＋ Add Product" button now sits at the top of
+  the Products pane (right end of the Products | Keypad tab row, all
+  themes) and opens a sheet in register dress: Name · Category (the
+  full live list from the catalog payload, plus "＋ New category…"
+  free text that creates it) · Price · Cost (optional) · Margin,
+  live both ways · Barcode (optional) · Opening stock + Par ·
+  Taxable (default on) · Image (optional; blank = the shelf's
+  letter-tile fallback).
+- Margin is one number seen two ways: typing price + cost fills the
+  margin % ((price − cost) / price); typing a margin % with a cost
+  re-prices to the cent (cost / (1 − m)). The record stores cost when
+  given; margin stays derived, the shape MR.STORE's catalog reads.
+- ONE constructor: golpos_create_product (server/store.php) builds
+  the record exactly as the brain's new-item executor builds it —
+  same field order, same SKU scheme (1000 + count + 1, stepped past
+  collisions; a blank barcode becomes the generated SKU) — then the
+  shelf fields ride along (stock always, par when > 0, taxable:false
+  only when off, img only when set). Duplicate barcode (against any
+  sku or barcode) refuses by name; bad name/price/cost refuses
+  plainly and writes nothing. Brain.php was off-limits to this
+  build, so the shared construction is mirrored in store.php, not
+  extracted from the brain.
+- Link mode creates through the bridge's own machinery:
+  mrstore_create_product (server/mrstore.php, this commit) appends
+  via mrstore_load_catalog / mrstore_save_catalog in the sync's
+  new-item shape and patches the new product's stock override —
+  behind the same QA-store fence as every bridge write; a refused
+  or failed bridge create writes nothing locally and the sheet says
+  so plainly.
+- Creation is admin-domain, gated in the sheet: golpos_sheet_pin
+  shares the chat's session record — same elevation, same attempt
+  counter, same 3-strike / 10-minute lockout. Unelevated, the sheet
+  swaps to an inline PIN step (create-then-confirm when no PIN
+  exists, staged under sheet-private keys so a half-finished sheet
+  flow never hijacks a chat message; verify when one does); already
+  elevated, no ask. (The Add Stock sheet drives the brain itself;
+  the two gates present identically to the owner.)
+- Verified on a throwaway copy only (nothing deployed): Phase A —
+  the real app.js under a stub DOM against the real PHP API, 26/26:
+  margin 39.8% from $3.99/$2.40 and $4.00 re-priced from $2.00 at
+  50%; the PIN create dance writes nothing until the second entry;
+  "Sunrise Trail Mix 4oz" lands as SKU/barcode 1063 with cost 2.40,
+  stock 12, par 12; an elevated margin-driven create saves $4.00; a
+  new "Seasonal" category appears in the chips and the grid lands
+  on its tile; scanning 1063 rings the product at $3.99. Phase B+C
+  — server flows, 29/29: verify flow with the tries countdown, the
+  lockout holding even the right PIN out, the invalid set (empty
+  name, price 0, negative price, negative cost, duplicate barcodes
+  naming Coca-Cola 20oz and the trail mix) writing nothing, a
+  taxable-off product selling at $0 tax, the trail mix's stock
+  12 → 11 through a rung sale, the chat answering its price by its
+  full name ($3.99), Beat-1 exact ($6.67/$0.53/$7.20/$2.80), keypad
+  totals ($10 → $10.80 taxable / $10.00 non-tax), the shelf payload
+  intact, and the link fence: link ON for a non-QA store refuses
+  the create and writes nothing. One observation for the resolver's
+  owners: the short form "trail mix" resolves to the seed's Trail
+  Mix 2oz — its alias "trail mix" duplicates its name tokens and
+  resolve_item counts each occurrence (4 vs the created product's
+  3); the full name resolves correctly. Pre-existing scoring,
+  untouched here.
+- Landed inside ff6a208: this build ran concurrently with the Add
+  Stock and Keypad-list builds in the same web files, and its
+  app.js / index.html / styles.css / store.php / api.php hunks were
+  committed in ff6a208 (its tree is what the stamps name — index.html
+  already reads ?v=ff6a208, no bump needed). This commit adds only
+  the bridge create function and this entry. php -l / node --check
+  clean. Nothing deployed.
