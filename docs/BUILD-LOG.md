@@ -1522,3 +1522,79 @@ defaults, month 887 / $9,178.79, today 0/0, 29 closes, watch_frame
 OFF, owner people/sessions/settings md5-identical — his PIN never
 touched. NOT claimed: real microphone audio inside a real clip — no
 device exists on this machine; the Oct 30 hardware pass owns it.
+
+## Customer Identity Lane — one customer, one record, every surface (Oct 28)
+
+Owner directives 14:03–14:15 ET: a customer known on the website is
+known at the register (phone = master key); redeem is NAME-FIRST at
+the till with a human pick on collision; and the register carries a
+visible REDEEM BUTTON — tap, number, credit into the current sale.
+
+Truth map (before): storefront chat-gate contacts landed in
+customer_chat_<store>.jsonl (a chat log) and chat_leads.jsonl; Festival
+points lived in festival_customers.json as a DERIVED display balance
+(points_balance = lifetime-spend math + points_adjust; the counter
+redemption was an owner hand-edit of points_adjust — no spendable
+ledger existed, which is why the refunds lane honestly refused link
+mode); the register kept its own standalone loyalty.json ledger.
+
+Shipped: store-api/customer-ledger.php + customer-identity.php — one
+record per store in data/customers_<storeId>.json, keyed by normalized
+phone (Festival's own fest_phone rules), with an append-only POINTS
+LEDGER: earn keyed by receipt number (store-wide first-claimer lock),
+redeem keyed by sale id, refund-restore keyed by refund id; balance is
+always the ledger sum. Festival earn math mirrored (cumulative
+floor(spend/20) deltas, 72h window, expired receipts lock their number
+at 0). The HTTP endpoint's writes are fenced to the QA store; the POS
+bridge (mrstore_customer_*) calls the same lib in-process — one write
+path per surface family, one record underneath. gol-pos facade
+(golpos_credit_account/balance/add) routes by mode, so the till
+tender, the chat lane and the refunds executor all spend/restore the
+same ledger on both sides of the link; the two link-mode refusals
+(GET ?credit, sale credit) are gone.
+
+Three redeem doors, one write path (the api.php sale tender):
+1) the visible Credit BUTTON + number entry (its GET door was the
+   refusal — now live against the real ledger);
+2) NAME-FIRST in the Credit sheet: matches with phone tails, the
+   human taps the pick, the pick re-enters as a phone lookup;
+3) the employee chat door: "Ram le redeem garna khojchha" / "Ram
+   wants to redeem" stages a credit_attach card (cashier domain —
+   deliberately absent from the admin gate list); confirm hands the
+   till an action that sets creditApplied — chat never writes the
+   ledger itself. Chat balance reads accept a name or a number;
+   collisions list matches and ask.
+
+Battery: 45/45 over real HTTP (endpoint/QA 12, sim link 28, dev
+standalone 5) — gate register/merge, receipt earn + both duplicate
+locks + expired-window lock, cross-surface spend (website-earned
+balance redeemed at the till), button flow (check → apply → tenders
+split credit $5 + cash $4.71 on a $9.71 sale, balance 8 → 3),
+once-per-sale retry refused, over-balance 422 clean, refund restores
+via refund-id entry (+ duplicate restore refused), chat-door stage →
+confirm → tender spend, NP + EN doors, zero-balance honesty, employee
++ refunds smoke. Two battery-caught defects fixed in ada842e: the
+chat-door shape names no credit word, so the lane gate now keys on
+the attach shape itself; the name read stripped filler but kept the
+trailing "?", which matched nothing.
+
+Restorations byte-verified: dev 887 / $9,178.79, today 0/0, owner
+admin PIN untouched (dev refund EXECUTE was never attempted — it is
+his PIN's gate; quote proven instead); sim 3,000 / $57,301.04, no
+people.json (the battery's throwaway PIN died with the restore); QA
+customers file + lock removed (the machinery stays, battery data
+gone), QA journal restored to its 99-line pre-battery snapshot, QA
+stock Coke 2130 / Pepsi 1795 identical (every battery sale refunded);
+Lucky festival files md5-identical — read-only throughout, and in
+fact still empty ([]).
+
+NOT done / unproven: Lucky go-live — festival-api.php's writer is a
+different file/format, so switching Lucky over stays a one-line
+owner-word follow-up: point festival-api's register/earn writes at
+cust_register/cust_earn_receipt for the Lucky store id and lift the
+endpoint + bridge write fences for that id (the record file format is
+already the one this lane ships; live Festival data is empty, so
+there is nothing to migrate). The button flow was batteried over its
+exact HTTP contract plus served-asset checks (stamp ?v=4d84a9a,
+node-checked on both stages) — a physical finger tap-through is the
+Oct 30 hardware pass, same as the camera/mic proofs.
