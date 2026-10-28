@@ -22,6 +22,11 @@ if ($method === 'GET' && isset($_GET['products'])) {
     echo json_encode(golpos_catalog(), JSON_UNESCAPED_UNICODE);
     exit;
 }
+if ($method === 'GET' && isset($_GET['bind'])) {
+    // Launch binding state — see POST {bind} below.
+    echo json_encode(golpos_bind_state(), JSON_UNESCAPED_UNICODE);
+    exit;
+}
 if ($method === 'GET' && isset($_GET['summary'])) {
     echo json_encode(golpos_day_summary(date('Y-m-d')), JSON_UNESCAPED_UNICODE);
     exit;
@@ -75,6 +80,17 @@ if ($method === 'GET' && isset($_GET['report'])) {
 }
 if ($method === 'POST') {
     $in = json_decode(file_get_contents('php://input') ?: '{}', true) ?: [];
+    if (isset($in['bind']) && is_array($in['bind'])) {
+        // Launch contract, identical to MR.STORE's settings link for its
+        // own register: ?store=<id>&name=<name>&unlock=1. The register
+        // records the launch context; the link engages only when the
+        // store it names is the configured (fenced) store.
+        golpos_bind_save(['store' => trim((string)($in['bind']['store'] ?? '')),
+                          'name' => trim((string)($in['bind']['name'] ?? '')),
+                          'unlock' => !empty($in['bind']['unlock'])]);
+        echo json_encode(golpos_bind_state(), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if (isset($in['settings']) && is_array($in['settings'])) {
         // Owner panel form save — same store the Gol chat stages into.
         echo json_encode(golpos_save_settings($in['settings']), JSON_UNESCAPED_UNICODE);
@@ -138,6 +154,12 @@ if ($method === 'POST') {
                                  'total' => $record['total'], 'tender' => $record['tender'],
                                  'stock' => $notes]);
             }
+            // The same sale also lands in MR.STORE's register journal —
+            // the ticket its card reports and batches are built from.
+            $dayEt = (new DateTime((string)$record['at']))
+                ->setTimezone(new DateTimeZone('America/New_York'))->format('Y-m-d');
+            $ticket = mrstore_append_ticket($record, (string)($catalog['store']['name'] ?? ''), $dayEt);
+            if ($ticket !== null) { $record['mrstore_ticket'] = $ticket['receiptId']; }
         }
         echo json_encode($record, JSON_UNESCAPED_UNICODE);
         exit;

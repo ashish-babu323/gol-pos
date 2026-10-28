@@ -69,7 +69,53 @@ function golpos_link_config(): array {
 
 function golpos_link_on(): bool {
     $cfg = golpos_link_config();
-    return $cfg['on'] && $cfg['store_id'] !== '' && is_dir($cfg['api_dir']);
+    if (!$cfg['on'] || $cfg['store_id'] === '' || !is_dir($cfg['api_dir'])) { return false; }
+    // Launch binding (the MR.STORE settings link opens the POS with
+    // ?store=<id>&name=<name>&unlock=1): when a bind request exists, the
+    // link is live only for the store it names. A bind naming any other
+    // store refuses link mode — the register falls back to standalone.
+    $bind = golpos_bind();
+    if ($bind !== null) { return $bind['store'] === $cfg['store_id']; }
+    return true;
+}
+
+// The launch context recorded by the register when MR.STORE's settings
+// link opens it (same params MR.STORE's own pos.html boot() reads).
+function golpos_bind(): ?array {
+    $path = __DIR__ . '/../data/bind.json';
+    if (!is_file($path)) { return null; }
+    $j = json_decode((string)@file_get_contents($path), true);
+    if (!is_array($j) || trim((string)($j['store'] ?? '')) === '') { return null; }
+    return ['store' => (string)$j['store'], 'name' => (string)($j['name'] ?? ''),
+            'unlock' => !empty($j['unlock']), 'at' => (string)($j['at'] ?? '')];
+}
+
+function golpos_bind_save(array $bind): void {
+    $path = __DIR__ . '/../data/bind.json';
+    $bind['at'] = date('c');
+    @file_put_contents($path, json_encode($bind, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX);
+}
+
+// What the register shows about its binding: bound to the linked store, or
+// refused with a plain note (this sim build is fenced to the QA store).
+function golpos_bind_state(): array {
+    $cfg = golpos_link_config();
+    $bind = golpos_bind();
+    $state = ['link_configured' => $cfg['on'], 'bound' => false,
+              'requested_store' => $bind['store'] ?? null,
+              'requested_name' => $bind['name'] ?? null, 'note' => ''];
+    if ($bind === null) {
+        $state['bound'] = $cfg['on'] && $cfg['store_id'] !== '';
+        return $state;
+    }
+    if ($cfg['on'] && $bind['store'] === $cfg['store_id']) {
+        $state['bound'] = true;
+        return $state;
+    }
+    $state['note'] = 'This demo build is fenced to the Muse QA Test Store — the launch for "'
+        . ($bind['name'] !== '' ? $bind['name'] : $bind['store'])
+        . '" was refused; showing the standalone register.';
+    return $state;
 }
 
 // The fence: writes happen only when the configured store IS the QA store.
@@ -318,6 +364,40 @@ function mrstore_record_sale(array $lines): ?array {
         mrstore_save_catalog($pdo, $sid, $cat);
         mrstore_save_overrides($pdo, $sid, $ov);
         return $notes;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+// --- the register journal: MR.STORE's own record of a sale --------------------
+// MR.STORE's register posts every sale to /store-api/?route=pos_sale,
+// which appends a ticket to data/pos/sales-<store>-<day>.jsonl via
+// lm_pos_append_ticket() — the journal its card reports and card batches
+// are built from. The bridge appends the same ticket, by calling the same
+// function, so a Gol POS sale is indistinguishable in the journal from a
+// sale rung on MR.STORE's own pos.html. (Stock moves separately, through
+// mrstore_record_sale above — exactly as MR.STORE splits the two.)
+function mrstore_append_ticket(array $sale, string $storeName, string $day, ?string $atIso = null): ?array {
+    if (!mrstore_write_allowed()) { return null; }
+    $dir = golpos_link_config()['api_dir'];
+    try {
+        if (!function_exists('lm_pos_append_ticket')) { require_once $dir . '/card-report.php'; }
+        $tender = (string)($sale['tender'] ?? 'cash');
+        $total = (float)($sale['total'] ?? 0);
+        $lines = [];
+        foreach (($sale['lines'] ?? []) as $l) {
+            if (!is_array($l)) { continue; }
+            $lines[] = ['name' => (string)($l['name'] ?? ''), 'qty' => (float)($l['qty'] ?? 0),
+                        'price' => (float)($l['price'] ?? 0), 'line_total' => (float)($l['line_total'] ?? 0)];
+        }
+        $row = ['storeId' => golpos_link_config()['store_id'], 'storeName' => $storeName,
+                'day' => $day, 'at' => $atIso ?? (string)($sale['at'] ?? date('c')),
+                'type' => 'sale', 'receiptId' => (string)($sale['id'] ?? ''),
+                'pay' => $tender, 'total' => $total,
+                'cash' => $tender === 'cash' ? $total : 0.0,
+                'card' => $tender === 'card' ? $total : 0.0,
+                'tax' => (float)($sale['tax'] ?? 0), 'lines' => $lines];
+        return lm_pos_append_ticket($row);
     } catch (Throwable $e) {
         return null;
     }

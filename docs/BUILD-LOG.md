@@ -195,3 +195,17 @@ One entry per day; the git history carries the same dates.
   golpos_append_sale + bridge functions in a loop (100 txns/day × 30
   days), c-store-weighted baskets, twice-weekly + guard receives, a day
   close per day, every simulated sale labelled source=sim-month.
+- Adjustment (owner pointer, same day): MR.STORE already ships its own
+  POS — pos.html launched from the desk/settings paint JS as
+  pos.html?store=<id>&name=<name>&unlock=1; its sales post to
+  /store-api/?route=pos_sale, which appends a ticket to the register
+  journal (store-api/data/pos/sales-<store>-<day>.jsonl via
+  lm_pos_append_ticket in card-report.php); stock moves separately via
+  gol_pos_apply_stock. The bridge now mirrors BOTH halves: every Gol POS
+  sale also appends its journal ticket by calling lm_pos_append_ticket
+  itself. The Gol POS register accepts the same launch params: app.js
+  records ?store=&name=&unlock= via POST {bind}, the link engages only
+  when the named store is the configured one, and any other store is
+  refused with a plain note + standalone fallback. MR.STORE's card batch
+  (pos-batch.html, lm_batch_* over the journal) is a settlement batch —
+  a different record from this POS's day-close; the parity map says so.

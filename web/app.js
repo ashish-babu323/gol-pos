@@ -434,4 +434,23 @@ document.querySelectorAll('[data-report]').forEach(b =>
 $('reportDate').addEventListener('change', (e) => { if (e.target.value) { showReport('custom', e.target.value); } });
 $('receiptPrint').addEventListener('click', () => window.print());
 
-loadCatalog(); loadSettings();
+// --- launch binding: MR.STORE's settings link opens this register with
+// ?store=<id>&name=<name>&unlock=1 — the same contract MR.STORE's own
+// pos.html boot() reads. The launch context is recorded server-side; the
+// MR.STORE link engages only for the store the link names (this demo
+// build is fenced to one store — any other gets a plain note and the
+// standalone register).
+async function bindLaunch() {
+  let sp;
+  try { sp = new URLSearchParams(location.search); } catch (e) { return; }
+  const store = sp.get('store');
+  if (!store) { return; }
+  try {
+    const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bind: { store, name: sp.get('name') || '', unlock: sp.get('unlock') === '1' } }) });
+    const st = await r.json();
+    if (st && st.note) { showToast(st.note); }
+  } catch (e) { /* the register never stops for the link */ }
+}
+
+bindLaunch().then(() => { loadCatalog(); loadSettings(); });

@@ -182,6 +182,7 @@ if ($mode === 'run') {
             if ($tender === 'cash') { $rec['tendered'] = $total; $rec['change_due'] = 0.0; }
             $saved = golpos_append_sale($rec, $atIso);
             $notes = mrstore_record_sale($lines);
+            mrstore_append_ticket($saved, (string)($cat['store']['name'] ?? ''), $ymd, $atIso);
             golpos_link_log(['kind' => 'sale', 'txn' => $saved['id'], 'total' => $total,
                              'tender' => $tender, 'stock' => $notes, 'via' => 'sim-month', 'at_sim' => $atIso]);
             $dayGross += $total;
