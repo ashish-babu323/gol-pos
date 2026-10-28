@@ -1202,6 +1202,9 @@ function golpos_is_refund_ask(string $msg): bool {
 // Bare "credit card" talk is tender talk, not this lane — and the card
 // surcharge lane never says "credit", so the two cannot collide.
 function golpos_is_credit_ask(string $msg): bool {
+    // The employee chat door names no credit word at all ("Ram le
+    // redeem garna khojchha") — it is a credit ask by shape.
+    if (golpos_parse_credit_attach($msg) !== null) { return true; }
     if (!preg_match('/(credit|points?|क्रेडिट|पोइन्ट)/iu', $msg)) { return false; }
     $hasPhone = preg_match('/\d{7,}/', golpos_norm_digits($msg)) === 1;
     if (preg_match('/\bcard\b/iu', $msg) && !$hasPhone) { return false; }
@@ -2996,6 +2999,7 @@ function golpos_credit_lane(string $msg): void {
     $q = trim((string)preg_replace(
         '/\b(credit|points?|kati|how much|balance|check|chha|cha|ko|ka|ki|mero|his|her|their)\b|(क्रेडिट|पोइन्ट|कति|छ)/iu',
         ' ', $msg));
+    $q = trim((string)preg_replace('/[^\p{L}\p{N} ]+/u', ' ', $q));
     $q = trim((string)preg_replace('/\s+/', ' ', $q));
     if (mb_strlen($q) >= 2) {
         $hits = golpos_credit_find_by_name($q);
