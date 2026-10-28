@@ -748,6 +748,25 @@ async function sendChat(text) {
 
 // --- wiring -------------------------------------------------------------------
 $('searchInput').addEventListener('input', renderGrid);
+// Autofill guard: Chrome fills the till's text boxes with the store's
+// saved email despite autocomplete="off", and a filled search box hides
+// the whole shelf ("No products match"). The boxes open READONLY —
+// autofill skips readonly fields — and wake on the first human touch;
+// the boot also clears any fill that still lands, so the register
+// always opens on the full shelf.
+['searchInput', 'scanInput'].forEach((id) => {
+  const el = $(id);
+  if (!el) { return; }
+  const wake = () => el.removeAttribute('readonly');
+  el.addEventListener('pointerdown', wake);
+  el.addEventListener('focus', wake);
+});
+function clearTillSearch() {
+  const s = $('searchInput'); const b = $('scanInput');
+  if (s && s.value) { s.value = ''; renderGrid(); }
+  if (b && b.value) { b.value = ''; }
+}
+window.addEventListener('pageshow', clearTillSearch);
 $('scanInput').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') { return; }
   const code = $('scanInput').value.trim();
@@ -1850,4 +1869,4 @@ async function bindLaunch() {
   } catch (e) { /* the register never stops for the link */ }
 }
 
-bindLaunch().then(() => { loadCatalog(); loadSettings(); });
+bindLaunch().then(() => { loadCatalog(); loadSettings(); clearTillSearch(); setTimeout(clearTillSearch, 600); });
