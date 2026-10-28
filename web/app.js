@@ -1786,17 +1786,29 @@ async function sendSensePhoto(file) {
 }
 
 // --- scan-by-phone: the register side ---------------------------------------------
+let scanPairUrl = '';
 async function openScanModal() {
   $('scanModal').classList.remove('hidden');
   $('scanCode').textContent = '······';
   $('scanUrl').textContent = 'Making a fresh link…';
+  $('scanQr').innerHTML = '';
   try {
     const r = await fetch('../server/pair.php', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mint: true, session: SESSION_ID }) });
     const j = await r.json();
     if (!j.token) { $('scanNote').textContent = j.error || 'The link could not be made just now.'; return; }
     $('scanCode').textContent = j.code;
-    $('scanUrl').textContent = new URL('scan.html?t=' + j.token, location.href).href;
+    scanPairUrl = new URL('scan.html?t=' + j.token, location.href).href;
+    $('scanUrl').textContent = scanPairUrl;
+    try {
+      const qr = qrcode(0, 'M'); qr.addData(scanPairUrl); qr.make();
+      $('scanQr').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 8, scalable: true });
+    } catch (e) { $('scanQr').innerHTML = ''; }
+    const enc = encodeURIComponent(scanPairUrl);
+    $('scanWa').href = 'https://wa.me/?text=' + enc;
+    $('scanSms').href = 'sms:?&body=' + enc;
+    $('scanMail').href = 'mailto:?subject=' + encodeURIComponent('Gol POS — scan link') + '&body=' + enc;
+    $('scanShare').classList.add('hidden');
     $('scanNote').textContent = 'The link lives for about ' + Math.max(1, Math.round((j.expires_in || 600) / 60))
       + ' minutes. Photos the phone takes land in this register\'s Gol chat.';
   } catch (e) { $('scanNote').textContent = 'The link could not be made just now.'; }
@@ -1849,6 +1861,23 @@ $('frameClose').addEventListener('click', () => $('frameModal').classList.add('h
 $('smScanBtn').addEventListener('click', () => { closeSettingsMenu(); openScanModal(); });
 $('scanClose').addEventListener('click', () => $('scanModal').classList.add('hidden'));
 $('scanNew').addEventListener('click', openScanModal);
+$('scanCopy').addEventListener('click', async () => {
+  if (!scanPairUrl) { showToast('The link is still being made — one moment.'); return; }
+  try { await navigator.clipboard.writeText(scanPairUrl); showToast('Link copied ✓'); return; } catch (e) { /* fall through */ }
+  const ta = document.createElement('textarea');
+  ta.value = scanPairUrl; document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); showToast('Link copied ✓'); }
+  catch (e) { showToast('Copy did not work here — the link is written above.'); }
+  ta.remove();
+});
+$('scanSend').addEventListener('click', async () => {
+  if (!scanPairUrl) { showToast('The link is still being made — one moment.'); return; }
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Gol POS — scan link', url: scanPairUrl }); return; }
+    catch (e) { if (e && e.name === 'AbortError') { return; } }
+  }
+  $('scanShare').classList.toggle('hidden');
+});
 
 // --- launch binding: MR.STORE's settings link opens this register with
 // ?store=<id>&name=<name>&unlock=1 — the same contract MR.STORE's own

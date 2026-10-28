@@ -348,14 +348,23 @@
   <p class="cam-note">Open this link on a phone — or type the code there — and its camera becomes this register's camera. Bills and photos land in this register's Gol chat.</p>
   <div class="scan-code" id="scanCode">······</div>
   <p class="scan-url" id="scanUrl">…</p>
+  <div class="scan-qr" id="scanQr"></div>
   <p class="cam-note" id="scanNote">The link lives for about 10 minutes.</p>
   <div class="cash-actions">
+    <button type="button" id="scanCopy">📋 Copy link</button>
+    <button type="button" id="scanSend">📤 Send to phone</button>
     <button type="button" id="scanNew">New link</button>
+  </div>
+  <div class="cash-actions hidden" id="scanShare">
+    <a id="scanWa" href="#" target="_blank" rel="noopener">WhatsApp</a>
+    <a id="scanSms" href="#">Text message</a>
+    <a id="scanMail" href="#">Email</a>
   </div>
 </div></div>
 
 <video id="watchVideo" muted playsinline class="watch-video" aria-hidden="true"></video>
 
-<script src="app.js?v=5c4e1c0"></script>
+<script src="qrcode.min.js"></script>
+  <script src="app.js?v=5c4e1c0"></script>
 </body>
 </html>
