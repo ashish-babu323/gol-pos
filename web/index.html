@@ -61,6 +61,7 @@
     <div class="panel-tabs" role="tablist" aria-label="Register entry mode">
       <button type="button" id="tabProducts" class="ptab on" role="tab" aria-selected="true">Products</button>
       <button type="button" id="tabKeypad" class="ptab" role="tab" aria-selected="false">Keypad</button>
+      <button type="button" id="addProductBtn" class="ptab ptab-add">＋ Add Product</button>
     </div>
     <div id="productsPane">
       <div class="scan-row">
@@ -71,29 +72,35 @@
       <div class="grid" id="grid"></div>
     </div>
     <div id="keypadPane" class="keypad hidden">
-      <div class="kp-display">
-        <span class="kp-label">Manual amount</span>
-        <b class="kp-amount" id="kpAmount">$0.00</b>
-        <button type="button" class="kp-clear" id="kpClearBtn" aria-label="Clear amount">C</button>
+      <div class="kp-main">
+        <div class="kp-display">
+          <span class="kp-label">Manual amount</span>
+          <b class="kp-amount" id="kpAmount">$0.00</b>
+          <button type="button" class="kp-clear" id="kpClearBtn" aria-label="Clear amount">C</button>
+        </div>
+        <p class="kp-error hidden" id="kpError" role="alert"></p>
+        <div class="kp-keys">
+          <button type="button" data-kp="1">1</button>
+          <button type="button" data-kp="2">2</button>
+          <button type="button" data-kp="3">3</button>
+          <button type="button" data-kp="4">4</button>
+          <button type="button" data-kp="5">5</button>
+          <button type="button" data-kp="6">6</button>
+          <button type="button" data-kp="7">7</button>
+          <button type="button" data-kp="8">8</button>
+          <button type="button" data-kp="9">9</button>
+          <button type="button" data-kp=".">.</button>
+          <button type="button" data-kp="0">0</button>
+          <button type="button" data-kp="B" class="kp-fn" aria-label="Backspace">⌫</button>
+        </div>
+        <div class="kp-actions">
+          <button type="button" id="kpTaxableBtn">Add · TAXABLE</button>
+          <button type="button" id="kpNonTaxBtn">Add · NON-TAX</button>
+        </div>
       </div>
-      <p class="kp-error hidden" id="kpError" role="alert"></p>
-      <div class="kp-keys">
-        <button type="button" data-kp="1">1</button>
-        <button type="button" data-kp="2">2</button>
-        <button type="button" data-kp="3">3</button>
-        <button type="button" data-kp="4">4</button>
-        <button type="button" data-kp="5">5</button>
-        <button type="button" data-kp="6">6</button>
-        <button type="button" data-kp="7">7</button>
-        <button type="button" data-kp="8">8</button>
-        <button type="button" data-kp="9">9</button>
-        <button type="button" data-kp=".">.</button>
-        <button type="button" data-kp="0">0</button>
-        <button type="button" data-kp="B" class="kp-fn" aria-label="Backspace">⌫</button>
-      </div>
-      <div class="kp-actions">
-        <button type="button" id="kpTaxableBtn">Add · TAXABLE</button>
-        <button type="button" id="kpNonTaxBtn">Add · NON-TAX</button>
+      <div class="kp-side">
+        <div class="cats kp-cats" id="kpCatRow"></div>
+        <div class="kp-list" id="kpList"></div>
       </div>
     </div>
   </section>
@@ -175,6 +182,78 @@
   <div class="cash-actions">
     <button type="button" id="cashBack" class="ghost">Back</button>
     <button type="button" id="cashComplete">Complete cash sale</button>
+  </div>
+</div></div>
+
+<div class="prod-add hidden" id="productModal"><div class="prod-card">
+  <h3>Add product</h3>
+  <div id="npFormStep">
+    <div class="np-grid">
+      <label class="np-wide">Name <input id="npName" type="text" placeholder="e.g. Sunrise Trail Mix 4oz" autocomplete="off"></label>
+      <label>Category
+        <select id="npCategory"></select>
+      </label>
+      <label id="npCategoryNewWrap" class="hidden">New category <input id="npCategoryNew" type="text" placeholder="Category name" autocomplete="off"></label>
+      <label>Price $ <input id="npPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
+      <label>Cost $ <input id="npCost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional"></label>
+      <label>Margin % <input id="npMargin" type="number" min="0" step="0.1" inputmode="decimal" placeholder="—"></label>
+      <label>Barcode <input id="npBarcode" type="text" placeholder="Blank = auto" autocomplete="off"></label>
+      <label>Opening stock <input id="npStock" type="number" min="0" step="1" inputmode="numeric" value="0"></label>
+      <label>Par (shelf) <input id="npPar" type="number" min="0" step="1" inputmode="numeric"></label>
+      <label>Image URL <input id="npImg" type="text" placeholder="Optional" autocomplete="off"></label>
+      <label class="os-chk np-wide"><input id="npTaxable" type="checkbox" checked> Taxable</label>
+    </div>
+    <p class="np-error hidden" id="npError" role="alert"></p>
+    <div class="cash-actions">
+      <button type="button" id="npCancel" class="ghost">Cancel</button>
+      <button type="button" id="npSave">Add product</button>
+    </div>
+  </div>
+  <div id="npPinStep" class="hidden">
+    <p class="np-pin-note" id="npPinNote">That's an admin action — enter the admin PIN.</p>
+    <label class="cash-label">Admin PIN
+      <input id="npPin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••">
+    </label>
+    <p class="np-error hidden" id="npPinError" role="alert"></p>
+    <div class="cash-actions">
+      <button type="button" id="npPinCancel" class="ghost">Cancel</button>
+      <button type="button" id="npPinBtn">Unlock &amp; add</button>
+    </div>
+  </div>
+</div></div>
+
+<div class="stock-add hidden" id="stockModal"><div class="stock-card">
+  <div class="stock-head">
+    <span class="stock-media"><span class="tile-art" id="stockArt">G</span><img class="tile-img hidden" id="stockImg" alt=""></span>
+    <div class="stock-title"><h3 id="stockName">Add stock</h3><span class="stock-now" id="stockNow"></span></div>
+  </div>
+  <div id="stockQtyStep">
+    <div class="stock-stepper">
+      <button type="button" id="stockMinus" aria-label="One less">−</button>
+      <input id="stockQty" type="number" min="1" max="9999" step="1" inputmode="numeric" value="12" aria-label="Quantity received">
+      <button type="button" id="stockPlus" aria-label="One more">+</button>
+    </div>
+    <div class="stock-quick" aria-label="Quick quantities">
+      <button type="button" data-stock-qty="6">+6</button>
+      <button type="button" data-stock-qty="12">+12</button>
+      <button type="button" data-stock-qty="24">+24</button>
+    </div>
+    <p class="stock-note hidden" id="stockNote" role="alert"></p>
+    <div class="cash-actions">
+      <button type="button" id="stockCancel" class="ghost">Cancel</button>
+      <button type="button" id="stockAddBtn">Add to stock</button>
+    </div>
+  </div>
+  <div id="stockPinStep" class="hidden">
+    <p class="stock-pin-note" id="stockPinNote">That's an admin action — enter the admin PIN.</p>
+    <label class="cash-label" id="stockPinLabel">Admin PIN
+      <input id="stockPin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••">
+    </label>
+    <p class="stock-note hidden" id="stockPinError" role="alert"></p>
+    <div class="cash-actions">
+      <button type="button" id="stockPinCancel" class="ghost">Cancel</button>
+      <button type="button" id="stockPinBtn">Unlock &amp; add</button>
+    </div>
   </div>
 </div></div>
 

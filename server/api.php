@@ -15,8 +15,14 @@
 // GET  ?pending             -> the staged card, if any
 // GET  ?settings            -> receipt print settings (one store, two doors)
 // POST {settings:{...}}     -> owner panel form save, same store
+// POST {stock_add:{sku,qty}, session} -> the tile's "+ Stock" receive:
+//   golpos_receive_stock (the chat stock_receive path), admin-gated by
+//   the device session exactly as the chat gates its execution
 // GET  ?report&date= | ?report&week -> Reports card data (+ close record)
 // POST {close_day:true}     -> manual close, same path as the chat
+// POST {product_create:{…}, session, pin?} -> Add Product sheet save:
+//        admin-gated by the sheet PIN gate (store.php), created by the
+//        one product constructor the chat's new-item path also builds
 
 declare(strict_types=1);
 require __DIR__ . '/store.php';
@@ -134,10 +140,76 @@ if ($method === 'POST') {
         echo json_encode(golpos_save_settings($in['settings']), JSON_UNESCAPED_UNICODE);
         exit;
     }
+    if (isset($in['stock_add']) && is_array($in['stock_add'])) {
+        // The tile's "+ Stock" sheet — the screen door to the ONE receive
+        // path (golpos_receive_stock: the live catalog increment standing
+        // alone, the MR.STORE bridge receive when linked — the same
+        // function the Gol chat's stock_receive card executes).
+        // Receiving is an ADMIN-domain execution, one rule everywhere:
+        // an unelevated device session writes nothing and hears which
+        // PIN step stands in the way. The register then runs the PIN
+        // through brain.php itself — the same door the chat uses — so
+        // the create flow, attempts and the 3-strike lockout stay the
+        // brain's own; this endpoint only reads the shared session.
+        $qtyRaw = $in['stock_add']['qty'] ?? null;
+        $qtyF = is_numeric($qtyRaw) ? (float)$qtyRaw : NAN;
+        $qty = (is_finite($qtyF) && floor($qtyF) === $qtyF) ? (int)$qtyF : 0;
+        if ($qty < 1 || $qty > 9999) {
+            http_response_code(422);
+            echo json_encode(['error' => 'quantity must be a whole number from 1 to 9999']);
+            exit;
+        }
+        $sid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($in['session'] ?? ''));
+        if ($sid === '') { $sid = 'anon'; }
+        $sess = golpos_session($sid);
+        if (empty($sess['admin'])) {
+            $mode = 'verify';
+            if (golpos_admin_pin_hash() === null) { $mode = 'create'; }
+            elseif ((int)($sess['locked_until'] ?? 0) > time()) { $mode = 'locked'; }
+            $resp = ['error' => 'pin_required', 'pin' => $mode];
+            if ($mode === 'locked') {
+                $resp['locked_minutes'] = (int)ceil(((int)$sess['locked_until'] - time()) / 60);
+            }
+            http_response_code(403);
+            echo json_encode($resp, JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $sku = (string)($in['stock_add']['sku'] ?? '');
+        $known = false;
+        foreach (golpos_catalog()['products'] as $p) {
+            if ((string)($p['sku'] ?? '') === $sku) { $known = true; break; }
+        }
+        if (!$known) {
+            http_response_code(422);
+            echo json_encode(['error' => 'unknown product']);
+            exit;
+        }
+        $res = golpos_receive_stock($sku, $qty);
+        if ($res === null) {
+            http_response_code(422);
+            echo json_encode(['error' => 'the receive could not be written — stock is unchanged']);
+            exit;
+        }
+        echo json_encode(['ok' => true, 'sku' => $res['sku'], 'name' => $res['name'],
+                          'added' => $qty, 'stock' => $res['after'], 'before' => $res['before']],
+                         JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if (!empty($in['close_day'])) {
         // The panel's manual Close-the-day button — the exact close path
         // the Gol chat's close branch runs (the panel confirms by tap first).
         echo json_encode(golpos_close_day(date('Y-m-d')), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if (isset($in['product_create']) && is_array($in['product_create'])) {
+        // The Add Product sheet. Creation is an admin execution — the
+        // brain PIN-gates new-item confirms, and the sheet runs the same
+        // gate on the same session store before the constructor runs.
+        // A gate step (pin_required / error) returns as-is; the sheet
+        // keeps its form values and re-posts with the PIN.
+        $gate = golpos_sheet_pin($in);
+        if (empty($gate['ok'])) { echo json_encode($gate, JSON_UNESCAPED_UNICODE); exit; }
+        echo json_encode(golpos_create_product($in['product_create']), JSON_UNESCAPED_UNICODE);
         exit;
     }
     $sale = $in['sale'] ?? null;

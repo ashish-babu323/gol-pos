@@ -94,7 +94,7 @@ async function loadCatalog() {
   const res = await fetch(API + '?products');
   catalog = await res.json();
   $('storeName').textContent = catalog.store.name || 'Register';
-  renderCats(); renderGrid(); refreshToday();
+  renderCats(); renderGrid(); renderKpCats(); renderKpList(); refreshToday();
 }
 function renderCats() {
   const cats = ['All', ...new Set(catalog.products.map(p => p.category))];
@@ -156,24 +156,12 @@ function stockHtml(p) {
 }
 // The last fill each tile showed, by sku — a refresh starts the bar at
 // the level it last showed and lets the CSS transition pour/drain it to
-// the new one, instead of snapping.
+// the new one, instead of snapping. One tracker serves both shelf
+// presentations (grid tiles and Keypad-pane rows): whichever renders a
+// fill first after a change animates it, the other lands on the truth.
 let lastFill = {};
-function renderGrid() {
-  const q = $('searchInput').value.trim().toLowerCase();
-  const items = catalog.products.filter(p =>
-    (activeCat === 'All' || p.category === activeCat) &&
-    (!q || p.name.toLowerCase().includes(q) || p.barcode.includes(q)));
-  $('grid').innerHTML = items.map(p => {
-    const s = stockOf(p);
-    const out = s !== null && s <= 0;
-    return `<button type="button" class="tile${out ? ' is-out' : ''}" data-sku="${p.sku}">
-       <span class="tile-media"><span class="tile-art ${artClass(p)}">${(p.name || 'G').trim().charAt(0).toUpperCase()}</span>${p.img ? `<img class="tile-img" src="${esc(p.img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}${out ? '<span class="tile-out-tag">OUT</span>' : ''}</span>
-       <span class="tile-name">${p.name}</span>${stockHtml(p)}<span class="tile-price">${money(p.price)}</span>
-     </button>`;
-  }).join('') || '<p class="empty">No products match.</p>';
-  $('grid').querySelectorAll('.tile').forEach(t =>
-    t.addEventListener('click', () => addToCart(t.dataset.sku)));
-  $('grid').querySelectorAll('.stockfill').forEach(f => {
+function animateFills(scopeEl) {
+  scopeEl.querySelectorAll('.stockfill').forEach(f => {
     const pct = parseFloat(f.dataset.pct);
     const prev = lastFill[f.dataset.sku];
     if (prev !== undefined && Math.abs(prev - pct) > 0.01) {
@@ -182,6 +170,31 @@ function renderGrid() {
     }
     lastFill[f.dataset.sku] = pct;
   });
+}
+function renderGrid() {
+  const q = $('searchInput').value.trim().toLowerCase();
+  const items = catalog.products.filter(p =>
+    (activeCat === 'All' || p.category === activeCat) &&
+    (!q || p.name.toLowerCase().includes(q) || p.barcode.includes(q)));
+  $('grid').innerHTML = items.map(p => {
+    const s = stockOf(p);
+    const out = s !== null && s <= 0;
+    return `<div class="tile${out ? ' is-out' : ''}" data-sku="${p.sku}" role="button" tabindex="0" aria-label="${esc(p.name)} — tap to ring">
+       <span class="tile-media"><span class="tile-art ${artClass(p)}">${(p.name || 'G').trim().charAt(0).toUpperCase()}</span>${p.img ? `<img class="tile-img" src="${esc(p.img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}${out ? '<span class="tile-out-tag">OUT</span>' : ''}</span>
+       <span class="tile-name">${p.name}</span>${stockHtml(p)}<span class="tile-foot"><span class="tile-price">${money(p.price)}</span><button type="button" class="tile-stock-add${out ? ' rescue' : ''}" data-stock-sku="${p.sku}" aria-label="Add stock to ${esc(p.name)}">＋ Stock</button></span>
+     </div>`;
+  }).join('') || '<p class="empty">No products match.</p>';
+  $('grid').querySelectorAll('.tile').forEach(t => {
+    t.addEventListener('click', () => addToCart(t.dataset.sku));
+    t.addEventListener('keydown', (e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target === t) {
+        e.preventDefault(); addToCart(t.dataset.sku);
+      }
+    });
+  });
+  $('grid').querySelectorAll('[data-stock-sku]').forEach(b =>
+    b.addEventListener('click', (e) => { e.stopPropagation(); openStockSheet(b.dataset.stockSku); }));
+  animateFills($('grid'));
 }
 function addToCart(sku, opts) {
   if (!storeIsOpen()) { storeClosedNote(); return; }
@@ -195,6 +208,51 @@ function addToCart(sku, opts) {
   const n = (opts && opts.qty) ? Math.max(1, Math.floor(opts.qty)) : 1;
   cart.set(sku, (cart.get(sku) || 0) + n);
   renderCart();
+}
+// --- the living shelf, second presentation: Keypad-pane product rows -------
+// The Keypad pane pairs the pad with the same catalog as compact rows, so
+// a cashier mid-manual-entry can still tap products in (owner directive,
+// Oct 28: the pane's empty middle gets the products list). One catalog,
+// one stock model — the rows read the same helpers the tiles do
+// (stockOf / parOf / stockState / isLiquid) and a tap runs the very same
+// addToCart, OUT refusal and toast included. The pane's own category
+// chips filter the list only; the Products tab keeps its own filter.
+let kpCat = 'All';
+function renderKpCats() {
+  const cats = ['All', ...new Set(catalog.products.map(p => p.category))];
+  $('kpCatRow').innerHTML = cats.map(c =>
+    `<button type="button" class="${c === kpCat ? 'on' : ''}" data-kcat="${c}">${c}</button>`).join('');
+  $('kpCatRow').querySelectorAll('button').forEach(b =>
+    b.addEventListener('click', () => { kpCat = b.dataset.kcat; renderKpCats(); renderKpList(); }));
+}
+function rowStockHtml(p) {
+  const s = stockOf(p);
+  if (s === null) { return ''; }
+  const par = parOf(p);
+  const pct = Math.max(0, Math.min(100, par > 0 ? (s / par) * 100 : 0));
+  const state = stockState(s, par);
+  const count = s <= 0 ? 'Out of stock'
+    : (state === 'ok' ? fmtCount(s) + ' in stock' : 'Only ' + fmtCount(s) + ' left');
+  return `<span class="kp-row-signals">
+      <span class="kp-row-count"><span class="tile-dot st-${state}"></span><span class="tile-count st-${state}">${count}</span></span>
+      <span class="stockbar kp-bar"><span class="stockfill ${isLiquid(p) ? 'liquid' : 'solid'} st-${state}" data-sku="${p.sku}" data-pct="${pct}" style="width:${pct}%"></span></span>
+    </span>`;
+}
+function renderKpList() {
+  const items = catalog.products.filter(p => kpCat === 'All' || p.category === kpCat);
+  $('kpList').innerHTML = items.map(p => {
+    const s = stockOf(p);
+    const out = s !== null && s <= 0;
+    return `<button type="button" class="kp-row${out ? ' is-out' : ''}" data-sku="${p.sku}">
+       <span class="kp-thumb"><span class="tile-art ${artClass(p)}">${(p.name || 'G').trim().charAt(0).toUpperCase()}</span>${p.img ? `<img src="${esc(p.img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>
+       <span class="kp-row-main">
+         <span class="kp-row-top"><span class="kp-row-name">${p.name}</span><span class="kp-row-price">${money(p.price)}</span></span>${rowStockHtml(p)}
+       </span>
+     </button>`;
+  }).join('') || '<p class="empty">No products match.</p>';
+  $('kpList').querySelectorAll('.kp-row').forEach(r =>
+    r.addEventListener('click', () => addToCart(r.dataset.sku)));
+  animateFills($('kpList'));
 }
 function renderCart() {
   const roundMoney = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -358,6 +416,187 @@ async function refreshToday() {
   const s = await res.json();
   $('todayTotal').textContent = 'Today: ' + money(s.gross) + ' (' + s.txns + ')';
 }
+
+// --- add stock from the tile: the receive sheet ------------------------------
+// Every tile wears a quiet "+ Stock" button (on an OUT tile it is the
+// rescue). The sheet is a register step like the cash panel: pick the
+// quantity, tap Add — the receive runs the server's ONE receive path
+// (api.php stock_add → golpos_receive_stock, the same stock write the
+// Gol chat's stock_receive card makes). Receiving is admin work, one
+// rule everywhere: an unelevated session writes nothing, and the PIN
+// is asked INSIDE the sheet — but the PIN itself runs through
+// brain.php, driven with the same session messages the chat sends, so
+// the create flow, wrong-PIN attempts and the 3-strike lockout stay
+// the brain's own. Once the session is elevated, receives never ask
+// again on this device.
+let stockSheet = null; // { sku, pinStep, armed }
+function openStockSheet(sku) {
+  const p = catalog.products.find(x => x.sku === sku);
+  if (!p) { return; }
+  stockSheet = { sku, pinStep: null, armed: false };
+  const art = $('stockArt');
+  art.textContent = (p.name || 'G').trim().charAt(0).toUpperCase();
+  art.className = 'tile-art ' + artClass(p);
+  const img = $('stockImg');
+  if (p.img) { img.src = p.img; img.classList.remove('hidden'); img.onerror = () => img.classList.add('hidden'); }
+  else { img.classList.add('hidden'); img.removeAttribute('src'); }
+  $('stockName').textContent = p.name;
+  const s = stockOf(p);
+  $('stockNow').textContent = s === null ? 'Stock is not tracked yet'
+    : (s <= 0 ? 'Now: out of stock' : 'Now: ' + fmtCount(s) + ' in stock');
+  $('stockQty').value = '12';
+  updateStockAddLabel();
+  stockNoteShow('');
+  $('stockQtyStep').classList.remove('hidden');
+  $('stockPinStep').classList.add('hidden');
+  $('stockModal').classList.remove('hidden');
+  $('stockQty').focus(); $('stockQty').select();
+}
+function closeStockSheet() {
+  $('stockModal').classList.add('hidden');
+  stockSheet = null;
+}
+function stockQtyValue() { return Number($('stockQty').value); }
+function updateStockAddLabel() {
+  const q = stockQtyValue();
+  $('stockAddBtn').textContent = Number.isInteger(q) && q >= 1 ? 'Add ' + q + ' to stock' : 'Add to stock';
+}
+function stockNoteShow(text) {
+  const el = $('stockNote');
+  el.textContent = text || '';
+  el.classList.toggle('hidden', !text);
+}
+function stockPinNoteShow(text) {
+  const el = $('stockPinError');
+  el.textContent = text || '';
+  el.classList.toggle('hidden', !text);
+}
+async function stockAddRequest(qty, sku) {
+  const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stock_add: { sku: sku || (stockSheet && stockSheet.sku), qty }, session: SESSION_ID }) });
+  let body = {};
+  try { body = await res.json(); } catch (e) { /* handled by caller */ }
+  return body;
+}
+async function brainSay(text) {
+  const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(brainPayload({ message: text })) });
+  return res.json();
+}
+async function submitStockAdd() {
+  if (!stockSheet) { return; }
+  const q = stockQtyValue();
+  if (!Number.isInteger(q) || q < 1 || q > 9999) {
+    stockNoteShow('Enter a whole number from 1 to 9999.');
+    $('stockQty').focus();
+    return;
+  }
+  stockNoteShow('');
+  const body = await stockAddRequest(q);
+  if (!stockSheet) { return; } // the sheet was cancelled mid-flight
+  if (body && body.ok) { await finishStockReceive(body); return; }
+  if (body && body.pin) { await enterStockPinStep(body); return; }
+  stockNoteShow((body && body.error) || 'The receive could not be written — stock is unchanged.');
+}
+// The PIN step: arm the brain's own gate with the bare admin ask (the
+// gate sets the stage — create or verify — and the lockout state,
+// exactly as a chat ask would), then let the brain consume the digits.
+async function enterStockPinStep(info) {
+  if (info.pin === 'locked') {
+    setStockPinStep('locked', 'Admin entry is locked after too many wrong PINs — try again in '
+      + (info.locked_minutes || 10) + ' min.');
+    return;
+  }
+  const arm = await brainSay('admin');
+  stockSheet.armed = true;
+  setStockPinStep(info.pin === 'create' ? 'create1' : 'verify',
+                  (arm && arm.reply) || 'Enter the admin PIN.');
+}
+function setStockPinStep(step, note) {
+  if (!stockSheet) { return; }
+  stockSheet.pinStep = step;
+  $('stockQtyStep').classList.add('hidden');
+  $('stockPinStep').classList.remove('hidden');
+  $('stockPinNote').textContent = note || '';
+  stockPinNoteShow('');
+  const locked = step === 'locked';
+  $('stockPinLabel').classList.toggle('hidden', locked);
+  $('stockPinBtn').classList.toggle('hidden', locked);
+  $('stockPinCancel').textContent = locked ? 'Close' : 'Cancel';
+  $('stockPinBtn').textContent = step === 'create1' ? 'Create PIN & continue'
+    : (step === 'create2' ? 'Confirm & add' : 'Unlock & add');
+  if (!locked) { $('stockPin').value = ''; $('stockPin').focus(); }
+}
+// The PIN as the brain accepts it: Devanagari digits fold, 4–6 digits —
+// checked here first so a malformed entry never reaches the brain's
+// stage machine (its create flow advances on any well-formed entry).
+function stockPinShape(v) {
+  const d = String(v).trim().replace(/[०१२३४५६७८९]/g, c => '०१२३४५६७८९'.indexOf(c));
+  return /^\d{4,6}$/.test(d) ? d : null;
+}
+async function submitStockPin() {
+  if (!stockSheet || !stockSheet.pinStep || stockSheet.pinStep === 'locked') { return; }
+  const pin = stockPinShape($('stockPin').value);
+  if (pin === null) { stockPinNoteShow('PINs are 4 to 6 digits.'); return; }
+  const stepWas = stockSheet.pinStep;
+  const sku = stockSheet.sku;
+  const r = await brainSay(pin);
+  $('stockPin').value = '';
+  if (!stockSheet) { return; } // the sheet was cancelled mid-flight
+  // Elevation is the server's truth, not the reply's wording: retry the
+  // receive. If it lands, the PIN did its work.
+  const body = await stockAddRequest(stockQtyValue(), sku);
+  if (body && body.ok) { await finishStockReceive(body); return; }
+  if (body && body.pin === 'locked') {
+    setStockPinStep('locked', (r && r.reply) || 'Admin entry is locked — try again later.');
+    return;
+  }
+  if (stepWas === 'create1') {
+    // A well-formed first entry always advances the brain to confirm.
+    setStockPinStep('create2', (r && r.reply) || 'Once more — type the same PIN to confirm it.');
+    return;
+  }
+  if (stepWas === 'create2') {
+    // The two entries did not match — the brain reset to the start.
+    setStockPinStep('create1', '');
+    stockPinNoteShow((r && r.reply) || 'The PINs did not match — create it again.');
+    return;
+  }
+  stockPinNoteShow((r && r.reply) || 'That PIN did not work.');
+}
+async function finishStockReceive(body) {
+  const name = body.name || '';
+  const now = body.stock;
+  closeStockSheet();
+  await loadCatalog(); // the tile's truth — the bar pours up to the new level
+  showToast(name + ' — stock now ' + fmtCount(now) + '.');
+}
+$('stockMinus').addEventListener('click', () => {
+  const q = stockQtyValue();
+  $('stockQty').value = String(Math.max(1, (Number.isInteger(q) ? q : 12) - 1));
+  stockNoteShow(''); updateStockAddLabel();
+});
+$('stockPlus').addEventListener('click', () => {
+  const q = stockQtyValue();
+  $('stockQty').value = String(Math.min(9999, (Number.isInteger(q) ? q : 12) + 1));
+  stockNoteShow(''); updateStockAddLabel();
+});
+document.querySelectorAll('[data-stock-qty]').forEach(b =>
+  b.addEventListener('click', () => {
+    $('stockQty').value = b.dataset.stockQty;
+    stockNoteShow(''); updateStockAddLabel();
+  }));
+$('stockQty').addEventListener('input', updateStockAddLabel);
+$('stockAddBtn').addEventListener('click', submitStockAdd);
+$('stockCancel').addEventListener('click', closeStockSheet);
+$('stockPinBtn').addEventListener('click', submitStockPin);
+$('stockPin').addEventListener('keydown', (e) => { if (e.key === 'Enter') { submitStockPin(); } });
+$('stockPinCancel').addEventListener('click', () => {
+  // Disarm the brain's PIN wait we armed, so the next chat message is
+  // not mistaken for a PIN entry — the chat's own cancel word does it.
+  if (stockSheet && stockSheet.armed) { brainSay('cancel'); }
+  closeStockSheet();
+});
 
 // --- Gol chat ---------------------------------------------------------------
 function chatMsg(text, who) {
@@ -885,6 +1124,145 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Enter') { e.preventDefault(); kpAdd(true); }
 });
 kpShow();
+
+// --- Add Product sheet --------------------------------------------------------
+// The catalog's full richness from the register's own top row: name, the
+// live category list (or a brand-new category), price and cost with the
+// margin shown LIVE both ways — typing price + cost fills the margin %;
+// typing a margin % against a cost re-prices to the cent. Opening stock
+// and par ride the living shelf; a blank barcode takes the generated
+// internal code; no image means the tile keeps its letter fallback.
+// Creation itself is ONE path: api.php product_create -> the constructor
+// in store.php the Gol chat's new-item execution also builds with (in
+// link mode the same call lands the product in MR.STORE's catalog).
+// Creation is an admin execution, so when this session is not elevated
+// the sheet swaps to its PIN step and the same save re-posts with the
+// PIN; the gate's rules (no PIN yet -> set one in two entries, wrong
+// PINs, the 3-strike lockout) are the server's, on the chat's own
+// session store — the sheet never decides who is admin.
+let npParDirty = false;
+function npCats() { return [...new Set(catalog.products.map(p => p.category).filter(Boolean))]; }
+function npMarginOf(price, cost) {
+  if (!(price > 0) || !(cost > 0)) { return null; }
+  return (price - cost) / price * 100;
+}
+function npPriceOf(cost, marginPct) {
+  if (!(cost > 0) || !(marginPct >= 0) || marginPct >= 100) { return null; }
+  return Math.round((cost / (1 - marginPct / 100) + Number.EPSILON) * 100) / 100;
+}
+function npSyncMargin(from) {
+  if (from === 'margin') {
+    const p = npPriceOf(parseFloat($('npCost').value), parseFloat($('npMargin').value));
+    if (p !== null) { $('npPrice').value = p.toFixed(2); }
+    return;
+  }
+  const m = npMarginOf(parseFloat($('npPrice').value), parseFloat($('npCost').value));
+  $('npMargin').value = m === null ? '' : m.toFixed(1);
+}
+function npShowStep(step) {
+  $('npFormStep').classList.toggle('hidden', step !== 'form');
+  $('npPinStep').classList.toggle('hidden', step !== 'pin');
+}
+function npErrorShow(t) {
+  const el = $('npError'); el.textContent = t || ''; el.classList.toggle('hidden', !t);
+}
+function npPinErrorShow(t) {
+  const el = $('npPinError'); el.textContent = t || ''; el.classList.toggle('hidden', !t);
+}
+function openProductSheet() {
+  const cats = npCats();
+  $('npCategory').innerHTML = cats.map(c =>
+    `<option value="${esc(c)}">${esc(c)}</option>`).join('')
+    + '<option value="__new__">＋ New category…</option>';
+  $('npName').value = ''; $('npPrice').value = ''; $('npCost').value = ''; $('npMargin').value = '';
+  $('npBarcode').value = ''; $('npImg').value = ''; $('npCategoryNew').value = '';
+  $('npStock').value = 0; $('npTaxable').checked = true; $('npPin').value = '';
+  npParDirty = false;
+  $('npPar').value = PAR_BY_CAT[$('npCategory').value] || 24;
+  $('npCategoryNewWrap').classList.add('hidden');
+  npErrorShow(''); npPinErrorShow('');
+  npShowStep('form');
+  $('productModal').classList.remove('hidden');
+  $('npName').focus();
+}
+function npPayload() {
+  const price = parseFloat($('npPrice').value);
+  const costRaw = $('npCost').value.trim();
+  const par = parseInt($('npPar').value, 10);
+  const stock = parseInt($('npStock').value, 10);
+  const f = {
+    name: $('npName').value.trim(),
+    category: $('npCategory').value === '__new__' ? $('npCategoryNew').value.trim() : $('npCategory').value,
+    price: Number.isFinite(price) ? price : '',
+    barcode: $('npBarcode').value.trim(),
+    stock: Number.isFinite(stock) ? stock : 0,
+    taxable: $('npTaxable').checked,
+    img: $('npImg').value.trim(),
+  };
+  if (costRaw !== '' && Number.isFinite(parseFloat(costRaw))) { f.cost = parseFloat(costRaw); }
+  if (Number.isFinite(par) && par > 0) { f.par = par; }
+  return f;
+}
+async function npSubmit(withPin) {
+  const body = { product_create: npPayload(), session: SESSION_ID };
+  if (withPin) { body.pin = $('npPin').value.trim(); }
+  const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body) });
+  const r = await res.json();
+  if (r && r.product) {
+    const p = r.product;
+    $('productModal').classList.add('hidden');
+    $('npPin').value = '';
+    showToast('Added — ' + p.name + ' · ' + money(p.price));
+    await loadCatalog();
+    // Land the cashier on the new tile: its own category, grid showing.
+    setEntryMode('products');
+    activeCat = npCats().includes(p.category) ? p.category : 'All';
+    $('searchInput').value = '';
+    renderCats(); renderGrid();
+    return;
+  }
+  if (r && r.pin_required) {
+    // The gate wants a PIN (or another one): the form keeps its values
+    // and the PIN step takes over, carrying the gate's own words.
+    if (r.note) { $('npPinNote').textContent = r.note; }
+    else if (r.stage === 'create1') {
+      $('npPinNote').textContent = 'No admin PIN yet — choose one (4–6 digits) to continue.';
+    }
+    npShowStep('pin');
+    npPinErrorShow(r.error || '');
+    $('npPin').value = '';
+    $('npPin').focus();
+    return;
+  }
+  if (r && r.error) {
+    if (r.locked) { npShowStep('pin'); npPinErrorShow(r.error); return; }
+    // A plain validation refusal — back on the form, where it is fixed.
+    npShowStep('form'); npErrorShow(r.error);
+    return;
+  }
+  npErrorShow('The product could not be added.');
+}
+$('addProductBtn').addEventListener('click', openProductSheet);
+$('npCancel').addEventListener('click', () => $('productModal').classList.add('hidden'));
+$('npPinCancel').addEventListener('click', () => {
+  $('productModal').classList.add('hidden'); $('npPin').value = '';
+});
+$('npSave').addEventListener('click', () => npSubmit(false));
+$('npPinBtn').addEventListener('click', () => npSubmit(true));
+$('npPin').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); npSubmit(true); }
+});
+$('npCategory').addEventListener('change', () => {
+  const isNew = $('npCategory').value === '__new__';
+  $('npCategoryNewWrap').classList.toggle('hidden', !isNew);
+  if (isNew) { $('npCategoryNew').focus(); }
+  if (!npParDirty) { $('npPar').value = PAR_BY_CAT[$('npCategory').value] || 24; }
+});
+$('npPar').addEventListener('input', () => { npParDirty = true; });
+$('npPrice').addEventListener('input', () => npSyncMargin('price'));
+$('npCost').addEventListener('input', () => npSyncMargin('cost'));
+$('npMargin').addEventListener('input', () => npSyncMargin('margin'));
 
 // --- launch binding: MR.STORE's settings link opens this register with
 // ?store=<id>&name=<name>&unlock=1 — the same contract MR.STORE's own

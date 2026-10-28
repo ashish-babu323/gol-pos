@@ -92,6 +92,41 @@ function golpos_decrement_stock(array $lines): void {
     if ($moved) { golpos_write('catalog.live.json', $cat); }
 }
 
+// A delivery lands on the shelf: ONE receive path for every door. In
+// link mode it runs the MR.STORE bridge receive — mrstore_adjust_stock,
+// the exact function the Gol chat's stock_receive card executes — and
+// logs the movement beside the chat's own receives ('via' says which
+// door). Standing alone it increments the live catalog's stock, the
+// same store golpos_decrement_stock decrements, so screen receives and
+// rung sales compose on one number. An untracked product (no stock
+// field — e.g. one added in chat) starts tracking from zero: the
+// delivery is what puts it on the shelf. Returns the movement, or null
+// when the SKU is unknown or the bridge could not write.
+function golpos_receive_stock(string $sku, int $qty): ?array {
+    if ($qty < 1) { return null; }
+    $cat = golpos_catalog();
+    $found = null;
+    foreach ($cat['products'] as $i => $p) {
+        if ((string)($p['sku'] ?? '') === $sku) { $found = [$i, $p]; break; }
+    }
+    if ($found === null) { return null; }
+    [$i, $p] = $found;
+    if (golpos_link_on()) {
+        $res = mrstore_adjust_stock((string)($p['mr_name'] ?? $p['name']), (float)$qty);
+        if ($res === null) { return null; }
+        golpos_link_log(['kind' => 'receive', 'name' => $res['name'], 'qty' => $qty,
+                         'before' => $res['before'], 'after' => $res['after'], 'via' => 'screen']);
+        return ['sku' => $sku, 'name' => $res['name'],
+                'before' => $res['before'], 'after' => $res['after']];
+    }
+    $before = (isset($p['stock']) && is_numeric($p['stock'])) ? $p['stock'] + 0 : 0;
+    $after = $before + $qty;
+    $cat['products'][$i]['stock'] = $after;
+    golpos_write('catalog.live.json', $cat);
+    return ['sku' => $sku, 'name' => (string)($p['name'] ?? ''),
+            'before' => $before, 'after' => $after];
+}
+
 function golpos_save_catalog(array $catalog): void {
     if (golpos_link_on()) {
         // In link mode the catalog lives in MR.STORE: owner price changes
@@ -100,6 +135,168 @@ function golpos_save_catalog(array $catalog): void {
         return;
     }
     golpos_write('catalog.live.json', $catalog);
+}
+
+// --- product creation: ONE constructor for every door ------------------------
+// The Gol chat's new-item executor builds its record inline in brain.php
+// ({sku, barcode, name, category, price} with sku = 1000 + count + 1 and
+// category defaulting to Counter). This constructor builds the SAME record
+// the SAME way — the register's Add Product sheet adds the fields a form
+// can carry and a chat card cannot (cost, opening stock, par, a taxable
+// flag, an image), each stored exactly the way the living shelf and the
+// sale path already read them. One shape, never a second one: a product
+// made here is indistinguishable in kind from one made in chat, and in
+// link mode it lands in MR.STORE's catalog through the bridge's own
+// create (mrstore_create_product) instead of the local file.
+function golpos_create_product(array $f): array {
+    $name = trim((string)($f['name'] ?? ''));
+    if ($name === '') { return ['error' => 'Give the product a name.']; }
+    $name = mb_substr($name, 0, 80);
+    if (!isset($f['price']) || !is_numeric($f['price'])) {
+        return ['error' => 'Give the product a price above $0.00.'];
+    }
+    $price = round((float)$f['price'], 2);
+    if (!($price > 0) || $price > 9999.99) {
+        return ['error' => 'Price must be between $0.01 and $9,999.99.'];
+    }
+    $cost = null;
+    if (isset($f['cost']) && $f['cost'] !== '' && is_numeric($f['cost'])) {
+        $cost = round((float)$f['cost'], 2);
+        if ($cost < 0) { return ['error' => 'Cost cannot be negative.']; }
+    }
+    $category = trim((string)($f['category'] ?? ''));
+    if ($category === '') { $category = 'Counter'; }
+    $category = mb_substr($category, 0, 40);
+    $stock = isset($f['stock']) && is_numeric($f['stock']) ? (int)$f['stock'] : 0;
+    if ($stock < 0 || $stock > 99999) { return ['error' => 'Opening stock must be 0 or more.']; }
+    $par = isset($f['par']) && is_numeric($f['par']) ? (int)$f['par'] : 0;
+    if ($par < 0 || $par > 99999) { return ['error' => 'Par must be 0 or more.']; }
+    $barcode = trim((string)($f['barcode'] ?? ''));
+    $img = trim((string)($f['img'] ?? ''));
+    $taxableOff = isset($f['taxable']) && !$f['taxable'];
+
+    $catalog = golpos_catalog();
+    $products = $catalog['products'] ?? [];
+    if ($barcode !== '') {
+        foreach ($products as $p) {
+            if ((string)($p['barcode'] ?? '') === $barcode || (string)($p['sku'] ?? '') === $barcode) {
+                return ['error' => 'That barcode is already on ' . (string)($p['name'] ?? 'another product') . '.'];
+            }
+        }
+    }
+
+    if (golpos_link_on()) {
+        $created = mrstore_create_product([
+            'name' => $name, 'price' => $price, 'cost' => $cost, 'category' => $category,
+            'barcode' => $barcode, 'stock' => $stock,
+        ]);
+        if ($created === null) {
+            return ['error' => 'MR.STORE could not take the new product — nothing was added.'];
+        }
+        return ['product' => $created];
+    }
+
+    // The brain's SKU scheme — 1000 + count + 1 — stepped past any
+    // collision, so the generated code is always unique and scannable
+    // (the register's scan matches sku as well as barcode; a blank
+    // barcode takes the generated SKU as its barcode).
+    $taken = [];
+    foreach ($products as $p) {
+        $taken[(string)($p['sku'] ?? '')] = true;
+        $taken[(string)($p['barcode'] ?? '')] = true;
+    }
+    $sku = 1000 + count($products) + 1;
+    while (isset($taken[(string)$sku])) { $sku++; }
+    if ($barcode === '') { $barcode = (string)$sku; }
+    $rec = ['sku' => (string)$sku, 'barcode' => $barcode, 'name' => $name,
+            'category' => $category, 'price' => $price];
+    if ($cost !== null) { $rec['cost'] = $cost; }
+    $rec['stock'] = $stock;
+    if ($par > 0) { $rec['par'] = $par; }
+    if ($taxableOff) { $rec['taxable'] = false; }
+    if ($img !== '') { $rec['img'] = $img; }
+    $products[] = $rec;
+    $catalog['products'] = $products;
+    golpos_save_catalog($catalog);
+    return ['product' => $rec];
+}
+
+// --- the sheet PIN gate -------------------------------------------------------
+// Admin executions from a register sheet (Add Product today; the same
+// gate serves any sheet) run the chat gate's own rules on the chat's own
+// session store: an elevated session passes silently; with no admin PIN
+// set anywhere, the sheet walks the two-step create (type it, type it
+// again) before its first save; otherwise the PIN verifies against the
+// admin hash with the chat's shared attempt counter and 3-strike,
+// 10-minute lockout. The create dance stages under sheet-private keys
+// (pc_pin_stage / pc_pin_tmp) so a half-finished sheet flow never
+// hijacks a chat message, while elevation, attempts and lockout are the
+// one shared session state both doors read.
+function golpos_sheet_pin(array $in): array {
+    $sid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($in['session'] ?? ''));
+    if ($sid === '') { $sid = 'anon'; }
+    $s = golpos_session($sid);
+    if (!empty($s['admin'])) { return ['ok' => true]; }
+    $pinIn = null;
+    if (isset($in['pin']) && (string)$in['pin'] !== '') {
+        $pinIn = golpos_norm_pin((string)$in['pin']);
+        if ($pinIn === null) {
+            return ['error' => 'PIN must be 4–6 digits.', 'pin_required' => true,
+                    'stage' => golpos_admin_pin_hash() === null ? 'create1' : 'verify'];
+        }
+    }
+    $hash = golpos_admin_pin_hash();
+    if ($hash === null) {
+        // No admin PIN exists yet: this sheet sets it (two entries),
+        // exactly as the chat's first gated ask does.
+        if ($pinIn === null) {
+            return ['pin_required' => true, 'stage' => 'create1',
+                    'note' => 'No admin PIN yet — choose one (4–6 digits) to continue.'];
+        }
+        if (($s['pc_pin_stage'] ?? null) === 'create2' && !empty($s['pc_pin_tmp'])) {
+            if (!password_verify($pinIn, (string)$s['pc_pin_tmp'])) {
+                $s['pc_pin_tmp'] = null; $s['pc_pin_stage'] = 'create1';
+                golpos_save_session($sid, $s);
+                return ['error' => 'The two PINs did not match — choose it again.',
+                        'pin_required' => true, 'stage' => 'create1'];
+            }
+            golpos_set_admin_pin((string)$s['pc_pin_tmp']);
+            $s['admin'] = true; $s['pc_pin_tmp'] = null; $s['pc_pin_stage'] = null;
+            golpos_save_session($sid, $s);
+            return ['ok' => true];
+        }
+        $s['pc_pin_tmp'] = password_hash($pinIn, PASSWORD_DEFAULT);
+        $s['pc_pin_stage'] = 'create2';
+        golpos_save_session($sid, $s);
+        return ['pin_required' => true, 'stage' => 'create2',
+                'note' => 'Once more — type the same PIN again to set it.'];
+    }
+    // A PIN exists: verify, on the shared attempts / lockout state.
+    $now = time();
+    if ((int)($s['locked_until'] ?? 0) > $now) {
+        return ['error' => 'PIN entry is locked for '
+                . (int)ceil(((int)$s['locked_until'] - $now) / 60) . ' more minute(s).',
+                'locked' => true];
+    }
+    if ($pinIn === null) {
+        return ['pin_required' => true, 'stage' => 'verify',
+                'note' => 'That is an admin action — enter the admin PIN.'];
+    }
+    if (password_verify($pinIn, $hash)) {
+        $s['admin'] = true; $s['attempts'] = 0;
+        golpos_save_session($sid, $s);
+        return ['ok' => true];
+    }
+    $s['attempts'] = (int)($s['attempts'] ?? 0) + 1;
+    if ($s['attempts'] >= 3) {
+        $s['attempts'] = 0; $s['locked_until'] = $now + 600;
+        golpos_save_session($sid, $s);
+        return ['error' => 'Three wrong PINs — PIN entry is locked for 10 minutes.', 'locked' => true];
+    }
+    golpos_save_session($sid, $s);
+    $left = 3 - (int)$s['attempts'];
+    return ['error' => 'Wrong PIN — ' . $left . ' ' . ($left === 1 ? 'try' : 'tries') . ' left.',
+            'pin_required' => true, 'stage' => 'verify'];
 }
 
 function golpos_sales(): array {
