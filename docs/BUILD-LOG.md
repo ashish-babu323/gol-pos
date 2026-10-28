@@ -844,3 +844,57 @@ One entry per day; the git history carries the same dates.
   Enter is swallowed, focus lands on stock, no create fires; the
   staged card shows its barcode line and a barcode-less card
   doesn't. php -l / node --check clean. Nothing deployed.
+
+## Day 3 (Oct 28) — Transactions history: the reprint door grows a memory (511d287)
+
+- Owner's ask: the Settings dropdown's reprint must show the
+  transaction history with item names. Reprint Last remains as the
+  one-tap shortcut; beside it now sits **Transactions**, opening a
+  history sheet in register dress over the till's own sales log.
+- Data path (server/api.php): new **GET ?history** — read-only,
+  sales grouped by day (newest day first, newest sale first inside
+  the day), each day capped at the latest 100 with its true count
+  kept and a truncated flag when capped. Records ride back exactly
+  as recorded — lines with names, manual flags, tax_exempt,
+  tendered and change — because the panel renders and reprints
+  from this one read. Standalone and link mode read the same till
+  log; MR.STORE's journal is the platform mirror, not the source.
+- The sheet: each row is the sale at a glance (time, receipt no.,
+  tender, item count, total, EXEMPT marker where flagged); a tap
+  expands it inline to the line items — names × qty + line totals,
+  manual lines keeping their (TAX)/(NO-TAX) marking — plus
+  subtotal / tax / total, paid-by, and cash given + change. Each
+  expanded sale carries **Reprint this receipt**, which renders
+  THAT sale through the same showReceipt() the tender path and
+  Reprint Last use — no second receipt renderer — and reprinting
+  writes nothing back to the log. Empty and unavailable states
+  read plainly. Access posture unchanged: the panel lives behind
+  the same Settings dropdown as Reprint Last, which is ungated —
+  no new PIN gate for a read of receipts.
+- MR.STORE ticket finding (verify-only, no MR.STORE code touched):
+  on a link-mode throwaway with a stub bridge, mrstore_append_ticket
+  hands MR.STORE's lm_pos_append_ticket a row of storeId, storeName,
+  day, at, type, receiptId (the POS txn id), pay, total, cash, card,
+  tax and **lines — each line {name, qty, price, line_total}, so the
+  journal ticket DOES carry the item names**. Not on the ticket:
+  subtotal, the tax_exempt flag, tendered/change_due, line SKUs,
+  and a manual line's manual/taxable markers (it arrives as a plain
+  line named "Manual amount"). The on-screen journal display on
+  the real QA store is the parent's proof to run at deploy.
+- Verified on throwaway copies only (nothing deployed): PHP
+  battery over real HTTP, 18/18 — Beat-1 exact (6.67/0.53/7.20,
+  $2.80 change), manual NO-TAX and TAXABLE records faithful,
+  days grouped newest-first with counts 3/2/1, sales newest-first
+  inside the day, exempt record's flag intact, ?history read-only
+  (log md5 unchanged, a fresh log gains no file from the read),
+  the 100/day cap (105 → 100 returned + truncated), empty log →
+  {days: []}, ?last_sale / ?summary / shelf decrement (Coke
+  18 → 16) / both PIN gates unregressed. JS battery — the real
+  app.js under a stub DOM fed the real ?history payload, 29/29 —
+  Beat-1 + keypad cart totals exact, three day groups with the
+  right labels, six rows newest-first with tender + item counts,
+  expansions showing exact names/qty/line totals, the NO-TAX and
+  EXEMPT markings, tendered/change, collapse on second tap, the
+  reprint rendering the CHOSEN sale (not the last), Reprint Last
+  still rendering the newest, empty + failure states plain.
+  php -l / node --check clean. Nothing deployed.
