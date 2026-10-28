@@ -58,12 +58,44 @@
 
 <main class="layout">
   <section class="catalog">
-    <div class="scan-row">
-      <input id="scanInput" type="text" inputmode="numeric" placeholder="Scan or type barcode, then Enter" autocomplete="off">
-      <input id="searchInput" type="search" placeholder="Search products" autocomplete="off">
+    <div class="panel-tabs" role="tablist" aria-label="Register entry mode">
+      <button type="button" id="tabProducts" class="ptab on" role="tab" aria-selected="true">Products</button>
+      <button type="button" id="tabKeypad" class="ptab" role="tab" aria-selected="false">Keypad</button>
     </div>
-    <div class="cats" id="catRow"></div>
-    <div class="grid" id="grid"></div>
+    <div id="productsPane">
+      <div class="scan-row">
+        <input id="scanInput" type="text" inputmode="numeric" placeholder="Scan or type barcode, then Enter" autocomplete="off">
+        <input id="searchInput" type="search" placeholder="Search products" autocomplete="off">
+      </div>
+      <div class="cats" id="catRow"></div>
+      <div class="grid" id="grid"></div>
+    </div>
+    <div id="keypadPane" class="keypad hidden">
+      <div class="kp-display">
+        <span class="kp-label">Manual amount</span>
+        <b class="kp-amount" id="kpAmount">$0.00</b>
+        <button type="button" class="kp-clear" id="kpClearBtn" aria-label="Clear amount">C</button>
+      </div>
+      <p class="kp-error hidden" id="kpError" role="alert"></p>
+      <div class="kp-keys">
+        <button type="button" data-kp="1">1</button>
+        <button type="button" data-kp="2">2</button>
+        <button type="button" data-kp="3">3</button>
+        <button type="button" data-kp="4">4</button>
+        <button type="button" data-kp="5">5</button>
+        <button type="button" data-kp="6">6</button>
+        <button type="button" data-kp="7">7</button>
+        <button type="button" data-kp="8">8</button>
+        <button type="button" data-kp="9">9</button>
+        <button type="button" data-kp=".">.</button>
+        <button type="button" data-kp="0">0</button>
+        <button type="button" data-kp="B" class="kp-fn" aria-label="Backspace">⌫</button>
+      </div>
+      <div class="kp-actions">
+        <button type="button" id="kpTaxableBtn">Add · TAXABLE</button>
+        <button type="button" id="kpNonTaxBtn">Add · NON-TAX</button>
+      </div>
+    </div>
   </section>
 
   <aside class="cart">
@@ -77,6 +109,7 @@
     <div class="tender">
       <button id="cashBtn" type="button">Cash</button>
       <button id="cardBtn" type="button">Card</button>
+      <button id="manualBtn" type="button" class="ghost">Manual $</button>
       <button id="clearBtn" type="button" class="ghost">Clear</button>
     </div>
   </aside>

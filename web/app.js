@@ -84,6 +84,8 @@ tickClock(); setInterval(tickClock, 20000);
 
 let catalog = { store: {}, products: [] };
 let cart = new Map(); // sku -> qty
+let manualLines = []; // hand-typed amounts from the Keypad tab: {id, price, taxable}
+let manualSeq = 0;
 let cartTotals = { subtotal: 0, tax: 0, total: 0 };
 let activeCat = 'All';
 let taxExempt = false; // Settings menu, current sale only — never persisted
@@ -123,16 +125,24 @@ function addToCart(sku) {
   renderCart();
 }
 function renderCart() {
+  const roundMoney = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
   const lines = [...cart.entries()].map(([sku, qty]) => {
     const p = catalog.products.find(x => x.sku === sku);
     return { p, qty, total: p.price * qty };
   });
-  $('cartLines').innerHTML = lines.length ? lines.map(({ p, qty, total }) =>
+  const catHtml = lines.map(({ p, qty, total }) =>
     `<div class="line"><div class="line-info"><div class="line-name">${p.name}</div><div class="line-sub">${money(p.price)} each</div></div>
        <div class="stepper"><button type="button" data-dec="${p.sku}">−</button><b>${qty}</b><button type="button" data-inc="${p.sku}">+</button></div>
-       <div class="line-total">${money(total)}</div></div>`).join('')
+       <div class="line-total">${money(total)}</div></div>`).join('');
+  // Manual lines (Keypad tab): qty is always 1 — to change the amount the
+  // cashier removes the line and keys it again, as the line's tooltip says.
+  const manHtml = manualLines.map(m =>
+    `<div class="line" title="Manual amount — remove and re-add to change the amount"><div class="line-info"><div class="line-name">Manual amount<span class="line-tag ${m.taxable ? 'tax' : 'notax'}">${m.taxable ? 'TAX' : 'NO-TAX'}</span></div><div class="line-sub">${money(m.price)}</div></div>
+       <div class="stepper"><button type="button" data-mremove="${m.id}" aria-label="Remove manual amount">×</button></div>
+       <div class="line-total">${money(m.price)}</div></div>`).join('');
+  $('cartLines').innerHTML = (lines.length || manualLines.length) ? catHtml + manHtml
     : '<p class="empty">Cart is empty — tap a product or scan.</p>';
-  const count = lines.reduce((s, l) => s + l.qty, 0);
+  const count = lines.reduce((s, l) => s + l.qty, 0) + manualLines.length;
   $('cartCount').textContent = count ? count + (count === 1 ? ' item' : ' items') : '';
   $('cartLines').querySelectorAll('[data-inc]').forEach(b =>
     b.addEventListener('click', () => { cart.set(b.dataset.inc, cart.get(b.dataset.inc) + 1); renderCart(); }));
@@ -141,9 +151,21 @@ function renderCart() {
       const q = cart.get(b.dataset.dec) - 1;
       q <= 0 ? cart.delete(b.dataset.dec) : cart.set(b.dataset.dec, q); renderCart();
     }));
-  const roundMoney = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
-  const sub = roundMoney(lines.reduce((s, l) => s + l.total, 0));
-  const tax = taxExempt ? 0 : roundMoney(sub * (catalog.store.tax_rate || 0));
+  $('cartLines').querySelectorAll('[data-mremove]').forEach(b =>
+    b.addEventListener('click', () => {
+      manualLines = manualLines.filter(m => m.id !== b.dataset.mremove);
+      renderCart();
+    }));
+  const sub = roundMoney(lines.reduce((s, l) => s + l.total, 0)
+    + manualLines.reduce((s, m) => s + m.price, 0));
+  // Tax is per-line: the rate falls on taxable lines only. Catalog
+  // products are taxable unless the catalog flags one taxable:false;
+  // a manual line carries the choice the cashier made on the keypad.
+  // The whole-sale Tax Exempt still overrides everything to zero.
+  const taxableSub = roundMoney(
+    lines.reduce((s, l) => s + (l.p.taxable === false ? 0 : l.total), 0)
+    + manualLines.reduce((s, m) => s + (m.taxable ? m.price : 0), 0));
+  const tax = taxExempt ? 0 : roundMoney(taxableSub * (catalog.store.tax_rate || 0));
   cartTotals = { subtotal: sub, tax, total: roundMoney(sub + tax) };
   $('subTotal').textContent = money(sub);
   $('taxTotal').textContent = money(tax);
@@ -162,7 +184,7 @@ function receiptText(sale) {
   if (st.show_address && st.address) { rows.push(st.address); }
   if (st.show_phone && st.phone) { rows.push(st.phone); }
   if (rows.length) { rows.push(sep); }
-  rows.push(...sale.lines.map(l => `${l.name} x${l.qty}  ${money(l.line_total)}`));
+  rows.push(...sale.lines.map(l => `${l.name} x${l.qty}  ${money(l.line_total)}` + (l.manual ? (l.taxable ? ' (TAX)' : ' (NO-TAX)') : '')));
   rows.push(sep, `Subtotal  ${money(sale.subtotal)}`);
   if (st.show_tax !== false) { rows.push(`Tax       ${money(sale.tax)}`); }
   rows.push(`TOTAL     ${money(sale.total)}`, `Paid by ${sale.tender}`);
@@ -193,9 +215,10 @@ function showReceipt(sale) {
   $('receiptModal').classList.remove('hidden');
 }
 async function tender(kind, tendered) {
-  if (!cart.size) { return false; }
+  if (!cart.size && !manualLines.length) { return false; }
   if (!storeIsOpen()) { storeClosedNote(); return false; }
-  const lines = [...cart.entries()].map(([sku, qty]) => ({ sku, qty }));
+  const lines = [...cart.entries()].map(([sku, qty]) => ({ sku, qty }))
+    .concat(manualLines.map(m => ({ manual: true, name: 'Manual amount', price: m.price, qty: 1, taxable: m.taxable })));
   const salePayload = { lines, tender: kind };
   if (kind === 'cash') { salePayload.tendered = Number(Number(tendered || 0).toFixed(2)); }
   if (taxExempt) { salePayload.tax_exempt = true; }
@@ -210,7 +233,7 @@ async function tender(kind, tendered) {
   const st = receiptSettings || {};
   taxExempt = false; // the exemption dies with the sale it was set for
   setToggle($('smTaxBtn'), false);
-  cart.clear(); renderCart(); refreshToday();
+  cart.clear(); manualLines = []; renderCart(); refreshToday();
   if (st.auto_open === false) {
     showToast('Sale rung — receipt auto-open is off. Turn Printer on in Settings to bring it back.');
   } else {
@@ -238,7 +261,7 @@ function updateCashPanel() {
   }
 }
 function openCashPanel() {
-  if (!cart.size) { return; }
+  if (!cart.size && !manualLines.length) { return; }
   if (!storeIsOpen()) { storeClosedNote(); return; }
   $('cashReceived').value = cartTotals.total.toFixed(2);
   updateCashPanel();
@@ -353,7 +376,7 @@ document.querySelectorAll('[data-cash-add]').forEach(b =>
   }));
 $('cardBtn').addEventListener('click', () => tender('card'));
 $('clearBtn').addEventListener('click', () => {
-  cart.clear(); taxExempt = false; setToggle($('smTaxBtn'), false); renderCart();
+  cart.clear(); manualLines = []; taxExempt = false; setToggle($('smTaxBtn'), false); renderCart();
 });
 $('receiptClose').addEventListener('click', () => $('receiptModal').classList.add('hidden'));
 $('golBtn').addEventListener('click', () => { $('chatDrawer').classList.remove('hidden'); $('chatInput').focus(); });
@@ -705,6 +728,83 @@ $('smReprintBtn').addEventListener('click', smReprintAction);
 $('smPrinterBtn').addEventListener('click', smPrinterAction);
 $('smStoreBtn').addEventListener('click', smStoreAction);
 $('smTaxBtn').addEventListener('click', smTaxAction);
+
+// --- entry-mode tabs: Products grid ↔ register Keypad -----------------------
+// The left panel holds two entry modes. Products is the scanning surface;
+// Keypad is the manual-amount surface — a hand-typed amount, taxable or
+// not, lands in the same cart as a line the sale records for what it is.
+// The cart lives outside both panes, so flipping tabs never loses a sale,
+// and the category chips belong to Products mode only.
+let entryMode = 'products';
+function setEntryMode(mode) {
+  entryMode = mode === 'keypad' ? 'keypad' : 'products';
+  $('productsPane').classList.toggle('hidden', entryMode !== 'products');
+  $('keypadPane').classList.toggle('hidden', entryMode !== 'keypad');
+  $('tabProducts').classList.toggle('on', entryMode === 'products');
+  $('tabKeypad').classList.toggle('on', entryMode === 'keypad');
+  $('tabProducts').setAttribute('aria-selected', entryMode === 'products' ? 'true' : 'false');
+  $('tabKeypad').setAttribute('aria-selected', entryMode === 'keypad' ? 'true' : 'false');
+}
+// The keypad buffer is a decimal string the LCD readout formats as money;
+// the cap matches the server's manual-amount limit ($9,999.99).
+const MANUAL_CAP = 9999.99;
+let kpBuffer = '';
+function kpShow() {
+  const v = kpBuffer === '' ? 0 : parseFloat(kpBuffer);
+  $('kpAmount').textContent = money(Number.isFinite(v) ? v : 0);
+}
+function kpErrorShow(text) {
+  const el = $('kpError');
+  el.textContent = text; el.classList.remove('hidden');
+}
+function kpErrorHide() { $('kpError').classList.add('hidden'); }
+function kpPress(key) {
+  kpErrorHide();
+  if (key === 'B') { kpBuffer = kpBuffer.slice(0, -1); kpShow(); return; }
+  if (key === 'C') { kpBuffer = ''; kpShow(); return; }
+  if (key === '.') {
+    if (!kpBuffer.includes('.')) { kpBuffer = (kpBuffer === '' ? '0' : kpBuffer) + '.'; }
+    kpShow(); return;
+  }
+  if (!/^\d$/.test(key)) { return; }
+  const dot = kpBuffer.indexOf('.');
+  if (dot >= 0) { if (kpBuffer.length - dot > 2) { return; } } // two decimals max
+  else if (kpBuffer.replace(/^0+/, '').length >= 4) { return; } // ≤ $9,999 before the point
+  kpBuffer = kpBuffer === '0' ? key : kpBuffer + key;
+  kpShow();
+}
+function kpAdd(taxable) {
+  if (!storeIsOpen()) { storeClosedNote(); return; }
+  const v = kpBuffer === '' ? NaN : Math.round((parseFloat(kpBuffer) + Number.EPSILON) * 100) / 100;
+  if (!(v > 0)) { kpErrorShow('Key an amount above $0.00 first.'); return; }
+  if (v > MANUAL_CAP) { kpErrorShow('Manual amounts are capped at $9,999.99 — ring large items from the catalog.'); return; }
+  manualLines.push({ id: 'm' + (++manualSeq), price: v, taxable });
+  kpBuffer = ''; kpShow(); kpErrorHide();
+  renderCart();
+  showToast('Manual amount added — ' + (taxable ? 'TAXABLE ' : 'NON-TAX ') + money(v));
+}
+$('tabProducts').addEventListener('click', () => setEntryMode('products'));
+$('tabKeypad').addEventListener('click', () => setEntryMode('keypad'));
+$('manualBtn').addEventListener('click', () => {
+  if (!storeIsOpen()) { storeClosedNote(); return; }
+  setEntryMode('keypad');
+});
+document.querySelectorAll('[data-kp]').forEach(b =>
+  b.addEventListener('click', () => kpPress(b.dataset.kp)));
+$('kpClearBtn').addEventListener('click', () => kpPress('C'));
+$('kpTaxableBtn').addEventListener('click', () => kpAdd(true));
+$('kpNonTaxBtn').addEventListener('click', () => kpAdd(false));
+// A physical keyboard drives the same pad while the Keypad tab is up —
+// digits, ".", Backspace, and Enter for Add · TAXABLE — unless the
+// cashier is typing into a field (scan, search, chat).
+document.addEventListener('keydown', (e) => {
+  if (entryMode !== 'keypad') { return; }
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) { return; }
+  if (/^\d$/.test(e.key) || e.key === '.') { kpPress(e.key); }
+  else if (e.key === 'Backspace') { e.preventDefault(); kpPress('B'); }
+  else if (e.key === 'Enter') { e.preventDefault(); kpAdd(true); }
+});
+kpShow();
 
 // --- launch binding: MR.STORE's settings link opens this register with
 // ?store=<id>&name=<name>&unlock=1 — the same contract MR.STORE's own

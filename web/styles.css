@@ -167,6 +167,42 @@ button { font: inherit; cursor: pointer; }
 .cash-actions button.ghost { flex: .55; background: transparent; color: var(--dim); border: 1px solid var(--line); }
 .cash-actions button:disabled { opacity: .42; cursor: not-allowed; }
 
+/* ---------- manual amount entry: the Keypad tab ---------- */
+/* The left panel flips between the product grid and a full register
+   keypad (owner directive, Oct 28: "keypad jasto cool"). The keypad
+   wears the register's tile dress with an inset LCD readout; the cart
+   line a manual entry lands as carries a TAX / NO-TAX tag so the
+   choice stays visible until the sale is rung. */
+.panel-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.ptab { padding: 11px 24px; border-radius: 999px; font-size: 15px; font-weight: 800;
+  color: var(--cat-ink); background: var(--cat-bg); border: 1px solid var(--cat-line); }
+.ptab.on { color: #fff; border-color: transparent; background: linear-gradient(135deg, #5b93ff, #2563eb); box-shadow: var(--cat-on-shadow); }
+.keypad { display: flex; flex-direction: column; gap: 12px; max-width: 520px; }
+.kp-display { display: flex; align-items: center; gap: 12px; padding: 16px 18px;
+  background: var(--field-bg); border: 1px solid var(--field-line); border-radius: var(--panel-radius);
+  box-shadow: inset 0 2px 10px rgba(2,6,18,.18); }
+.kp-label { font-size: 11.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--dim); }
+.kp-amount { margin-left: auto; font-family: var(--num); font-variant-numeric: tabular-nums;
+  font-size: 42px; font-weight: 800; letter-spacing: -.5px; color: var(--price); }
+.kp-clear { flex: none; width: 46px; height: 46px; border-radius: 50%; font-size: 17px; font-weight: 800;
+  color: var(--stepper-ink); border: 1px solid var(--stepper-line); background: var(--stepper-bg); }
+.kp-error { color: #dc2626; font-size: 13.5px; font-weight: 600; }
+.kp-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.kp-keys button { padding: 21px 0; font-family: var(--num); font-variant-numeric: tabular-nums;
+  font-size: 26px; font-weight: 800; color: var(--ink);
+  background: var(--tile-bg); border: var(--tile-bw) solid var(--tile-line);
+  border-radius: 16px; box-shadow: var(--tile-shadow); }
+.kp-keys button:active { transform: translateY(2px); box-shadow: none; }
+.kp-keys button.kp-fn { color: var(--dim); }
+.kp-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.kp-actions button { padding: 18px 10px; font-size: 16.5px; font-weight: 800; border-radius: 14px; }
+#kpTaxableBtn { border: none; background: linear-gradient(135deg, #5b93ff, #2563eb); color: #fff; box-shadow: var(--cat-on-shadow); }
+#kpNonTaxBtn { background: var(--field-bg); color: var(--ink); border: 1px solid var(--field-line); }
+.line-tag { display: inline-block; font-size: 9.5px; font-weight: 800; letter-spacing: 1.1px;
+  padding: 2px 7px; border-radius: 999px; vertical-align: 2px; margin-left: 6px; }
+.line-tag.tax { background: #2563eb; color: #fff; }
+.line-tag.notax { background: transparent; color: var(--cart-faint); border: 1px solid var(--cart-line); }
+
 /* ---------- chat drawer (Gol panel) ---------- */
 .chat-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 100vw); z-index: 50; display: flex; flex-direction: column; background: var(--chat-bg); border-left: 1px solid var(--chat-line); box-shadow: -18px 0 44px rgba(2,6,18,.45); }
 .chat-head { display: flex; align-items: center; gap: 10px; padding: 13px 15px; color: #fff; background: linear-gradient(120deg, #2e6be6, #1d4ed8 70%, #173f9e); box-shadow: 0 8px 22px rgba(29,78,216,.3); }

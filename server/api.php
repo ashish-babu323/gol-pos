@@ -2,6 +2,11 @@
 // Gol POS — register API.
 // GET  ?products            -> catalog
 // POST {sale:{lines,tender,tendered?}} -> records the sale, returns totals
+// A line is a catalog line {sku,qty} or a manual line {manual:true,price,
+// qty:1,taxable} keyed on the register's Keypad tab. Tax is per-line: the
+// rate falls on taxable lines only (catalog lines are taxable unless the
+// catalog flags one taxable:false; the whole-sale tax_exempt flag from
+// the Settings menu still zeroes the sale's tax).
 // Cash sales may carry the amount tendered; the server calculates change
 // and refuses an under-tendered sale instead of recording a false total.
 // GET  ?summary             -> today's summary
@@ -147,13 +152,33 @@ if ($method === 'POST') {
         $catalog = golpos_catalog();
         $bySku = [];
         foreach ($catalog['products'] as $p) { $bySku[$p['sku']] = $p; }
-        $subtotal = 0.0; $lines = [];
+        $subtotal = 0.0; $taxableSubtotal = 0.0; $lines = [];
         foreach ($sale['lines'] as $l) {
+            if (!empty($l['manual'])) {
+                // A manual line has no SKU: the amount the cashier keyed
+                // IS the price, qty is fixed at 1, and the taxable choice
+                // made on the keypad rides along. An amount outside
+                // $0.01–$9,999.99 refuses the whole sale, plainly, and
+                // nothing records.
+                $price = round((float)($l['price'] ?? 0), 2);
+                if (!($price > 0) || $price > 9999.99) {
+                    http_response_code(422);
+                    echo json_encode(['error' => 'manual amount must be between $0.01 and $9,999.99']);
+                    exit;
+                }
+                $taxable = !isset($l['taxable']) || (bool)$l['taxable'];
+                $subtotal += $price;
+                if ($taxable) { $taxableSubtotal += $price; }
+                $lines[] = ['manual' => true, 'name' => 'Manual amount', 'price' => $price,
+                            'qty' => 1, 'taxable' => $taxable, 'line_total' => $price];
+                continue;
+            }
             $p = $bySku[$l['sku']] ?? null;
             if (!$p) { continue; }
             $qty = max(1, (int)($l['qty'] ?? 1));
             $lineTotal = round((float)$p['price'] * $qty, 2);
             $subtotal += $lineTotal;
+            if (($p['taxable'] ?? true) !== false) { $taxableSubtotal += $lineTotal; }
             $lines[] = ['sku' => $p['sku'], 'name' => $p['name'], 'price' => $p['price'], 'qty' => $qty, 'line_total' => $lineTotal];
         }
         if (!$lines) {
@@ -165,7 +190,7 @@ if ($method === 'POST') {
         // Tax exempt is a per-sale flag from the register's Settings menu:
         // this sale records no tax; nothing about it persists to the next.
         $taxExempt = !empty($sale['tax_exempt']);
-        $tax = $taxExempt ? 0.0 : round($subtotal * $taxRate, 2);
+        $tax = $taxExempt ? 0.0 : round($taxableSubtotal * $taxRate, 2);
         $total = round($subtotal + $tax, 2);
         $tender = ($sale['tender'] ?? 'cash') === 'card' ? 'card' : 'cash';
         $recordData = [
