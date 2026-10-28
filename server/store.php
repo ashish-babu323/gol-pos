@@ -999,6 +999,15 @@ function golpos_credit_entries(): array {
 }
 
 function golpos_credit_balance(string $phone): float {
+    // ONE record, every surface (Customer Identity Lane, Oct 28): in
+    // link mode the balance lives in MR.STORE's customer record and is
+    // read through the bridge; standalone it is this register's own
+    // loyalty ledger below. Every caller goes through these facades, so
+    // the till, the chat and the customer page can never drift apart.
+    if (golpos_link_on()) {
+        $b = mrstore_customer_balance($phone);
+        return $b === null ? 0.0 : $b;
+    }
     $key = golpos_loyalty_phone_key($phone);
     if ($key === '') { return 0.0; }
     $bal = 0.0;
@@ -1012,13 +1021,43 @@ function golpos_credit_balance(string $phone): float {
 // balance, or null when the number has no record at all (the till says
 // "no credit on this number" — it never guesses a balance).
 function golpos_credit_account(string $phone): ?array {
+    if (golpos_link_on()) { return mrstore_customer_account($phone); }
     $c = golpos_loyalty_customer($phone);
     if ($c === null) { return null; }
     return ['name' => (string)($c['name'] ?? ''), 'phone' => (string)$c['phone'],
             'balance' => golpos_credit_balance((string)$c['phone'])];
 }
 
+// Name-first lookup (owner directive, Oct 28): the customer says their
+// NAME, the till lists the matches with phone tails, and a HUMAN picks
+// — money never auto-picks. Both modes search their own record through
+// this one door and return the same shape.
+function golpos_credit_find_by_name(string $q): array {
+    if (golpos_link_on()) { return mrstore_customer_find_by_name($q); }
+    $q = trim($q);
+    if (mb_strlen($q) < 2) { return []; }
+    $out = [];
+    foreach ((array)(golpos_loyalty()['customers'] ?? []) as $c) {
+        if (!is_array($c)) { continue; }
+        if (mb_stripos((string)($c['name'] ?? ''), $q) === false) { continue; }
+        $p = (string)($c['phone'] ?? '');
+        $out[] = ['name' => (string)($c['name'] ?? ''), 'phone' => $p,
+                  'phone_tail' => substr($p, -4),
+                  'balance' => golpos_credit_balance($p)];
+        if (count($out) >= 8) { break; }
+    }
+    usort($out, static fn($a, $b) => strcmp((string)$a['name'], (string)$b['name']));
+    return $out;
+}
+
 function golpos_credit_add(string $phone, float $amount, string $kind, array $extra = []): ?array {
+    if (golpos_link_on()) {
+        // The spend/restore lands in MR.STORE's ledger through the
+        // bridge — keyed by sale id / refund id there exactly as here,
+        // so the idempotency law is the same on both sides of the link.
+        $res = mrstore_customer_add($phone, $amount, $kind, $extra);
+        return is_array($res) && !isset($res['error']) ? $res : null;
+    }
     $key = golpos_loyalty_phone_key($phone);
     if ($key === '' || $amount == 0.0) { return null; }
     $dedupeKey = null; $dedupeVal = null;

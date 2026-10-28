@@ -767,6 +767,36 @@ $S = [
     'np' => 'Yo register MR.STORE sanga jodieko chha — Festival balance MR.STORE tira chha, ra linked pasal ko lagi register bata credit kharcha garne lane ajhai baniraheko chha. Kehi kharcha bhaena.',
     'hi' => 'Yeh register MR.STORE se juda hai — Festival balance MR.STORE ki taraf hai, aur linked dukaan ke liye register se credit kharch ka lane abhi ban raha hai. Kuchh kharch nahi hua.',
     'dev' => 'यो register MR.STORE सँग जोडिएको छ — Festival balance MR.STORE तिर छ, र linked पसलका लागि register बाट credit खर्च गर्ने lane अझै बनिरहेको छ। केही खर्च भएन।'],
+  'credit_attach_staged' => [
+    'en' => '%s — store credit %s. Confirm ("gol") and the credit sits on this sale: it spends once, at the tender, for this sale only.',
+    'np' => '%s — store credit %s chha. Confirm ("gol") gara, credit yo sale ma baschha: tender ma ek choti matra kharcha hunchha, yahi sale ko lagi.',
+    'hi' => '%s — store credit %s hai. Confirm ("gol") karo, credit is sale par lag jayega: tender par ek hi baar kharch hoga, sirf is sale ke liye.',
+    'dev' => '%s — store credit %s छ। Confirm ("गोल") गर, credit यो sale मा बस्छ: tender मा एक चोटि मात्र खर्च हुन्छ, यही sale का लागि।'],
+  'credit_attach_done' => [
+    'en' => '%s\'s credit (%s) is on this sale now — ring the rest and tender as usual; the credit spends once for this sale.',
+    'np' => '%s ko credit (%s) yo sale ma lagyo — baki ring gara ra sadhai jasto tender gara; credit yo sale ko lagi ek choti kharcha hunchha.',
+    'hi' => '%s ka credit (%s) is sale par lag gaya — baaki ring karo aur hamesha ki tarah tender karo; credit is sale ke liye ek baar kharch hoga.',
+    'dev' => '%s को credit (%s) यो sale मा लाग्यो — बाँकी ring गर र सधैँ जस्तो tender गर; credit यो sale का लागि एक चोटि खर्च हुन्छ।'],
+  'credit_attach_none' => [
+    'en' => 'No customer record matches "%s" at this store — nothing was attached.',
+    'np' => '"%s" naam ko customer record yo pasal ma chhaina — kehi attach bhaena.',
+    'hi' => '"%s" naam ka customer record is dukaan mein nahi hai — kuchh attach nahi hua.',
+    'dev' => '"%s" नामको customer record यस पसलमा छैन — केही attach भएन।'],
+  'credit_attach_many' => [
+    'en' => 'More than one "%s" on record — say the full name or the phone number: ',
+    'np' => '"%s" naam ka ek bhanda badhi record chha — pura naam ki phone number bhana: ',
+    'hi' => '"%s" naam ke ek se zyada record hain — poora naam ya phone number batao: ',
+    'dev' => '"%s" नामका एकभन्दा बढी record छन् — पूरा नाम कि phone number भन: '],
+  'credit_attach_off' => [
+    'en' => 'Store credit redeem is off for this store — nothing was attached.',
+    'np' => 'Yo pasal ma store credit redeem bandha chha — kehi attach bhaena.',
+    'hi' => 'Is dukaan mein store credit redeem band hai — kuchh attach nahi hua.',
+    'dev' => 'यस पसलमा store credit redeem बन्द छ — केही attach भएन।'],
+  'credit_attach_gone' => [
+    'en' => '%s has no spendable credit left — nothing was attached.',
+    'np' => '%s sanga kharcha garna milne credit baki chhaina — kehi attach bhaena.',
+    'hi' => '%s ke paas kharch karne layak credit baaki nahi hai — kuchh attach nahi hua.',
+    'dev' => '%s सँग खर्च गर्न मिल्ने credit बाँकी छैन — केही attach भएन।'],
   'stock_one_local' => [
     'en' => '%s — %s on hand (this register\'s own shelf).',
     'np' => '%s — %s ota chha (yahi register ko shelf).',
@@ -2890,19 +2920,97 @@ function golpos_refund_lane(string $msg, array $products): void {
 
 // The credit lane: balance reads and the credit_redeem toggle. The
 // spend itself happens ONLY at the till tender (the Credit button) —
-// chat reads the store's records and says whose balance it is.
+// chat reads the store's records and says whose balance it is. Reads
+// go through the facade, so in link mode they read MR.STORE's ONE
+// customer record (Customer Identity Lane, Oct 28) — the balance the
+// website earned is the balance this lane reports.
+
+// Parse the employee chat door: "Ram le redeem garna khojchha" /
+// "Ram wants to redeem his points" — a customer AT the counter asking
+// to spend. Returns the customer's name as spoken, or null.
+function golpos_parse_credit_attach(string $msg): ?string {
+    $m = null;
+    if (preg_match('/^(.+?)\s+le\s+redeem\s+garna\s+khoj/iu', $msg, $mm)) { $m = $mm[1]; }
+    elseif (preg_match('/^(.+?)\s+wants\s+to\s+redeem/iu', $msg, $mm)) { $m = $mm[1]; }
+    elseif (preg_match('/^redeem\s+(?:for\s+)?(.+?)\s*$/iu', $msg, $mm)) { $m = $mm[1]; }
+    if ($m === null) { return null; }
+    $name = trim((string)preg_replace('/^(customer|the)\s+/iu', '', trim($m)));
+    $name = trim((string)preg_replace('/\s+(ko|ka|ki)\s*$/iu', '', $name));
+    return $name !== '' ? $name : null;
+}
+
+// Stage the attach card for one chosen account. The card carries the
+// balance read at staging; execution re-reads the account and hands
+// the client an action — the SPEND still happens at the tender through
+// api.php's sale path, the single redeem write path (idempotent per
+// sale id). Chat never writes the ledger itself.
+function golpos_stage_credit_attach(array $acct): void {
+    if (empty(golpos_settings()['credit_redeem'])) {
+        out(['reply' => t('credit_attach_off')]);
+    }
+    if ((float)$acct['balance'] <= 0) {
+        out(['reply' => t('credit_attach_gone', $acct['name'] !== '' ? $acct['name'] : $acct['phone'])]);
+    }
+    $card = golpos_stage(['type' => 'credit_attach', 'phone' => (string)$acct['phone'],
+        'name' => (string)$acct['name'], 'balance' => (float)$acct['balance']]);
+    out(['reply' => t('credit_attach_staged',
+        $acct['name'] !== '' ? $acct['name'] : $acct['phone'], money((float)$acct['balance'])),
+        'card' => $card]);
+}
+
 function golpos_credit_lane(string $msg): void {
     $off = golpos_wants_off($msg);
     if (preg_match('/(redeem|spend|chalaune|चलाउने)/iu', $msg) && $off !== null) {
         golpos_stage_setting('credit_redeem', !$off);
     }
     $digits = preg_replace('/\D+/', '', golpos_norm_digits($msg)) ?? '';
+    // The chat door first: a named customer wants to redeem. With a
+    // number in the same breath, the number IS the pick; with a name
+    // alone, one match stages the card and a collision ASKS — money
+    // never auto-picks.
+    $attachName = golpos_parse_credit_attach($msg);
+    if ($attachName !== null) {
+        if (strlen($digits) >= 7) {
+            $acct = golpos_credit_account($digits);
+            if ($acct === null) { out(['reply' => t('credit_none')]); }
+            golpos_stage_credit_attach($acct);
+        }
+        $hits = golpos_credit_find_by_name($attachName);
+        if (!$hits) { out(['reply' => t('credit_attach_none', $attachName)]); }
+        if (count($hits) > 1) {
+            $list = implode('; ', array_map(static fn($h) =>
+                ($h['name'] !== '' ? $h['name'] : $h['phone']) . ' (…' . $h['phone_tail'] . ') '
+                . money((float)$h['balance']), $hits));
+            out(['reply' => t('credit_attach_many', $attachName) . $list]);
+        }
+        golpos_stage_credit_attach($hits[0]);
+    }
     if (strlen($digits) >= 7) {
-        if (golpos_link_on()) { out(['reply' => t('credit_link')]); }
         $acct = golpos_credit_account($digits);
         if ($acct === null) { out(['reply' => t('credit_none')]); }
         out(['reply' => t('credit_balance',
             $acct['name'] !== '' ? $acct['name'] : $acct['phone'], money((float)$acct['balance']))]);
+    }
+    // Name-first balance read: "Ram ko credit kati chha?" — strip the
+    // ask's filler words and search the record by what remains.
+    $q = trim((string)preg_replace(
+        '/\b(credit|points?|kati|how much|balance|check|chha|cha|ko|ka|ki|mero|his|her|their)\b|(क्रेडिट|पोइन्ट|कति|छ)/iu',
+        ' ', $msg));
+    $q = trim((string)preg_replace('/\s+/', ' ', $q));
+    if (mb_strlen($q) >= 2) {
+        $hits = golpos_credit_find_by_name($q);
+        if (count($hits) === 1) {
+            $h = $hits[0];
+            out(['reply' => t('credit_balance',
+                ($h['name'] !== '' ? $h['name'] : $h['phone']) . ' (…' . $h['phone_tail'] . ')',
+                money((float)$h['balance']))]);
+        }
+        if (count($hits) > 1) {
+            $list = implode('; ', array_map(static fn($h) =>
+                ($h['name'] !== '' ? $h['name'] : $h['phone']) . ' (…' . $h['phone_tail'] . ') '
+                . money((float)$h['balance']), $hits));
+            out(['reply' => t('credit_attach_many', $q) . $list]);
+        }
     }
     out(['reply' => t('credit_ask_phone')]);
 }
@@ -3041,6 +3149,28 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
             $reply .= t('refund_credit_back', money((float)$rec['credit_restored']));
         }
         out(['reply' => $reply, 'done' => $card]);
+    }
+    // A credit-attach card (employee chat door): execution does NOT
+    // write the ledger — it re-reads the account and hands the till an
+    // action, and the credit rides the current sale into api.php's
+    // tender, the ONE redeem write path (keyed by the sale's id, so it
+    // can never spend twice). The card type is deliberately absent
+    // from golpos_needs_admin's list: attaching a customer's own credit
+    // in her presence is cashier-domain work.
+    if ($card['type'] === 'credit_attach') {
+        golpos_clear_pending();
+        if (empty(golpos_settings()['credit_redeem'])) {
+            out(['reply' => t('credit_attach_off')]);
+        }
+        $acct = golpos_credit_account((string)($card['phone'] ?? ''));
+        if ($acct === null || (float)$acct['balance'] <= 0) {
+            out(['reply' => t('credit_attach_gone', (string)($card['name'] ?? ''))]);
+        }
+        out(['reply' => t('credit_attach_done',
+                $acct['name'] !== '' ? $acct['name'] : $acct['phone'], money((float)$acct['balance'])),
+             'action' => ['type' => 'credit', 'phone' => (string)$acct['phone'],
+                          'name' => (string)$acct['name'], 'balance' => (float)$acct['balance']],
+             'done' => $card]);
     }
     // An employee-remove card: the record leaves the people store.
     if ($card['type'] === 'employee_add') {

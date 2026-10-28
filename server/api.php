@@ -161,14 +161,19 @@ if ($method === 'GET' && isset($_GET['history'])) {
     exit;
 }
 if ($method === 'GET' && isset($_GET['credit'])) {
-    // A customer's store-credit balance, read from the ONE ledger (the
-    // loyalty store). Standalone only for now: in link mode the
-    // Festival balance lives MR.STORE-side as derived points with no
-    // spend ledger the register may write — the link leg is a named
-    // follow-up, answered plainly rather than guessed at.
-    if (golpos_link_on()) {
-        http_response_code(422);
-        echo json_encode(['error' => 'Store credit can\'t be spent at a linked register yet — the balance lives MR.STORE-side and that spend lane is still being wired.']);
+    // A customer's store-credit balance, read from the ONE record
+    // (Customer Identity Lane, Oct 28): standalone reads this register's
+    // loyalty ledger; link mode reads MR.STORE's customer record
+    // through the bridge — the same ledger the website gate and the
+    // Festival receipt flow write. This GET is the Credit BUTTON's
+    // door: tap Credit → type the number → the balance shows.
+    // Name-first rides here too (?credit&name=): matches come back with
+    // phone tails and the HUMAN picks — the pick re-enters as a phone
+    // lookup, so money only ever moves against a chosen record.
+    if (isset($_GET['name'])) {
+        echo json_encode(['ok' => true,
+                          'matches' => golpos_credit_find_by_name((string)$_GET['name'])],
+                         JSON_UNESCAPED_UNICODE);
         exit;
     }
     $acct = golpos_credit_account((string)($_GET['phone'] ?? ''));
@@ -682,20 +687,16 @@ if ($method === 'POST') {
         // The credit part is validated against the ONE ledger before
         // anything records: the setting, the account, the balance, the
         // sale's own total. Tax was computed above without any knowledge
-        // of tenders — paying by credit changes no tax by a cent. In
-        // link mode the Festival balance lives MR.STORE-side as derived
-        // points with no spend ledger the register may write, so the
-        // spend is refused plainly (the link leg is a named follow-up).
+        // of tenders — paying by credit changes no tax by a cent. The
+        // account read goes through the facade, so in link mode the
+        // balance being validated is MR.STORE's customer record — and
+        // the spend below lands in that same ledger, keyed by this
+        // sale's id (Customer Identity Lane, Oct 28).
         $creditAmt = 0.0; $creditPhone = ''; $creditName = '';
         if (isset($sale['credit']) && is_array($sale['credit'])) {
             if (empty(golpos_settings()['credit_redeem'])) {
                 http_response_code(422);
                 echo json_encode(['error' => 'Store credit redeem is off for this store — nothing was recorded.']);
-                exit;
-            }
-            if (golpos_link_on()) {
-                http_response_code(422);
-                echo json_encode(['error' => 'Store credit can\'t be spent at a linked register yet — the balance lives MR.STORE-side and that spend lane is still being wired. Nothing was recorded.']);
                 exit;
             }
             $acct = golpos_credit_account((string)($sale['credit']['phone'] ?? ''));

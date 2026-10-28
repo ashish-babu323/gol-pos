@@ -251,7 +251,14 @@
 
 <div class="cash-pay hidden" id="creditModal"><div class="cash-card">
   <h3>Store credit</h3>
-  <p class="cam-note">The customer's credit is real money the store owes them — points from their receipts (1 point per $20, 1 point = $1). Look it up by phone; the balance reads from the store's own ledger.</p>
+  <p class="cam-note">The customer's credit is real money the store owes them — points from their receipts (1 point per $20, 1 point = $1). Ask their NAME first, or look it up by phone; the balance reads from the store's own ledger.</p>
+  <label class="cash-label">Customer name
+    <input id="creditNameIn" type="text" autocomplete="off" placeholder="e.g. Ram Sharma">
+  </label>
+  <div class="cash-actions">
+    <button type="button" id="creditFindName">Find by name</button>
+  </div>
+  <div id="creditMatches" class="hidden"></div>
   <label class="cash-label">Customer phone
     <input id="creditPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="(216) 555-0100">
   </label>

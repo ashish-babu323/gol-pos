@@ -800,6 +800,10 @@ function chatCard(card) {
   } else if (card.type === 'batch_close') {
     body = `<div class="sc-what">Batch close — ${card.count} card sales</div>` +
       `<div class="sc-prices"><span class="sc-new">${money(card.total)}</span></div>`;
+  } else if (card.type === 'credit_attach') {
+    body = `<div class="sc-what">Store credit — ${esc(card.name || '')}</div>` +
+      `<div class="sc-prices"><span class="sc-new">${money(card.balance)}</span></div>` +
+      `<div class="sc-line">Confirm and the credit sits on this sale — it spends once, at the tender, for this sale only.</div>`;
   } else if (card.type === 'refund') {
     body = `<div class="sc-what">Refund — sale ${esc(card.sale_id || '')} · ${esc(card.sale_when || '')}</div>` +
       `<div class="sc-line">${esc(card.lines_label || '')}</div>` +
@@ -880,7 +884,7 @@ function chatCard(card) {
     const r = await res.json();
     chatMsg(r.reply, 'gol');
     applyLockState(r.locked, r.actor);
-    if (r.action && r.action.type === 'add') { addToCart(r.action.sku, { viaChat: true, qty: r.action.qty || 1 }); }
+    handleChatAction(r);
     loadCatalog(); loadSettings();
   });
   $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
@@ -918,7 +922,7 @@ async function sendChat(text) {
   applyLockState(r.locked, r.actor);
   if (r.unlock_event && r.unlock_event.id) { attachUnlockFrame(r.unlock_event.id); }
   if (r.card) { chatCard(r.card); }
-  if (r.action && r.action.type === 'add') { addToCart(r.action.sku, { viaChat: true, qty: r.action.qty || 1 }); }
+  handleChatAction(r);
   if (r.done) { loadCatalog(); loadSettings(); }
 }
 
@@ -982,6 +986,23 @@ $('clearBtn').addEventListener('click', () => {
 });
 $('receiptClose').addEventListener('click', () => $('receiptModal').classList.add('hidden'));
 
+// Chat actions: the brain's hands on this till. 'add' rings an item;
+// 'credit' (the credit_attach card's confirm — the employee chat door)
+// sits a customer's credit on the CURRENT sale: it becomes the exact
+// creditApplied state the Credit sheet sets, so the tender spends it
+// through the one server path, once per sale.
+function handleChatAction(r) {
+  if (!r || !r.action) { return; }
+  if (r.action.type === 'add') { addToCart(r.action.sku, { viaChat: true, qty: r.action.qty || 1 }); }
+  if (r.action.type === 'credit') {
+    creditApplied = { phone: r.action.phone, name: r.action.name,
+                      balance: Number(r.action.balance) || 0, amount: Number(r.action.balance) || 0 };
+    renderCart();
+    showToast('Store credit ' + money(creditApplied.amount) + ' on this sale for '
+      + (r.action.name || r.action.phone) + ' — it spends at the tender.');
+  }
+}
+
 // --- store credit tender --------------------------------------------------------
 // The Credit button beside Cash/Card (owner directive, Oct 28): look
 // the customer up by phone — the loyalty master key — read the balance
@@ -1003,6 +1024,8 @@ function openCreditSheet() {
   if (!storeIsOpen()) { storeClosedNote(); return; }
   creditNoteShow('');
   creditAcct = null;
+  $('creditMatches').classList.add('hidden');
+  $('creditMatches').innerHTML = '';
   $('creditResult').classList.add('hidden');
   $('creditRemove').classList.toggle('hidden', !creditApplied);
   if (creditApplied) { $('creditPhone').value = creditApplied.phone; }
@@ -1029,6 +1052,37 @@ async function creditLookup() {
   $('creditAmount').value = Math.min(Number(r.balance) || 0, creditBase()).toFixed(2);
   $('creditResult').classList.remove('hidden');
   updateCreditSheet();
+}
+// Name-first (owner directive, Oct 28): the customer says their name,
+// the sheet lists the records it matches — name, phone tail, balance —
+// and the HUMAN taps the right one. A pick only fills the phone box
+// and runs the same phone lookup, so money never moves on a guess.
+async function creditFindByName() {
+  const q = $('creditNameIn').value.trim();
+  creditNoteShow('');
+  const box = $('creditMatches');
+  box.innerHTML = ''; box.classList.add('hidden');
+  if (q.length < 2) { creditNoteShow('Type at least 2 letters of the name.'); return; }
+  let r = null;
+  try {
+    const res = await fetch(API + '?credit&name=' + encodeURIComponent(q));
+    r = await res.json();
+  } catch (e) { creditNoteShow('The credit ledger did not answer — try again.'); return; }
+  const hits = (r && r.matches) || [];
+  if (!hits.length) { creditNoteShow('No customer record matches that name.'); return; }
+  box.innerHTML = '';
+  hits.forEach((h) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'ghost';
+    b.textContent = (h.name || h.phone) + ' · …' + h.phone_tail + ' · ' + money(h.balance);
+    b.addEventListener('click', () => {
+      $('creditPhone').value = h.phone;
+      box.classList.add('hidden');
+      creditLookup();
+    });
+    box.appendChild(b);
+  });
+  box.classList.remove('hidden');
 }
 function updateCreditSheet() {
   if (!creditAcct) { return; }
@@ -1060,6 +1114,8 @@ async function applyCredit() {
   renderCart();
   showToast('Store credit ' + money(amt) + ' applied — ' + money(cashDueNow()) + ' still due by cash or card.');
 }
+$('creditFindName').addEventListener('click', creditFindByName);
+$('creditNameIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); creditFindByName(); } });
 $('creditBtn').addEventListener('click', openCreditSheet);
 $('creditBack').addEventListener('click', () => $('creditModal').classList.add('hidden'));
 $('creditCheck').addEventListener('click', creditLookup);
@@ -1391,7 +1447,7 @@ function renderSettingsView() {
     row('Refund PIN', onoff(st.refund_pin !== false)) +
     row('Refund window', String(st.refund_window_days ?? 30) + ' days') +
     row('Credit redeem at the till', onoff(st.credit_redeem !== false)) +
-    '<p class="owner-muted">Changes run through Gol chat — e.g. "card surcharge 3%", "refund pin off gara" or "refund window 15 din rakha" — staged as a card, confirmed with "gol". Refunds run from Transactions (pick the sale → Refund) or by asking Gol; a customer\'s credit balance reads in chat with their phone number.</p>';
+    '<p class="owner-muted">Changes run through Gol chat — e.g. "card surcharge 3%", "refund pin off gara" or "refund window 15 din rakha" — staged as a card, confirmed with "gol". Refunds run from Transactions (pick the sale → Refund) or by asking Gol; a customer\'s credit balance reads in chat with their name or phone number, and spends at the till with the Credit button.</p>';
 }
 
 // --- owner panel: Close the day — the daily action, top of the panel --------

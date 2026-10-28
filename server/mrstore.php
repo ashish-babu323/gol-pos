@@ -776,6 +776,72 @@ function mrstore_bill_vault_waiting(): array {
     return $out;
 }
 
+// --- the ONE customer record (Customer Identity Lane, Oct 28) ----------------
+// In link mode the register's credit lives in MR.STORE's customer record
+// (store-api/customer-ledger.php): one record per store keyed by phone,
+// an append-only points ledger (earn by receipt no., redeem by sale id,
+// restore by refund id), the balance always the ledger sum. The bridge
+// calls that lib in-process — the same write path the website gate and
+// the Festival receipt flow use — so a balance earned on the website is
+// the balance the till spends. Writes stay fenced to the QA store by
+// mrstore_write_allowed(), exactly like every other bridge write.
+
+function mrstore_customer_lib(): bool {
+    static $ok = null;
+    if ($ok !== null) { return $ok; }
+    $ok = false;
+    $cfg = golpos_link_config();
+    $lib = rtrim((string)$cfg['api_dir'], '/') . '/customer-ledger.php';
+    if (is_file($lib)) {
+        require_once $lib;
+        $ok = function_exists('cust_account');
+    }
+    return $ok;
+}
+
+function mrstore_customer_data(): ?array {
+    if (!golpos_link_on() || !mrstore_customer_lib()) { return null; }
+    $cfg = golpos_link_config();
+    return ['dir' => rtrim((string)$cfg['api_dir'], '/') . '/data',
+            'store' => (string)$cfg['store_id']];
+}
+
+function mrstore_customer_account(string $phone): ?array {
+    $c = mrstore_customer_data();
+    if ($c === null) { return null; }
+    $acct = cust_account($c['dir'], $c['store'], $phone);
+    if ($acct === null) { return null; }
+    return ['name' => (string)$acct['name'], 'phone' => (string)$acct['phone'],
+            'balance' => (float)$acct['balance']];
+}
+
+function mrstore_customer_balance(string $phone): ?float {
+    $acct = mrstore_customer_account($phone);
+    return $acct === null ? null : (float)$acct['balance'];
+}
+
+function mrstore_customer_find_by_name(string $q): array {
+    $c = mrstore_customer_data();
+    if ($c === null) { return []; }
+    $out = [];
+    foreach (cust_find_by_name($c['dir'], $c['store'], $q) as $m) {
+        $out[] = ['name' => (string)$m['name'], 'phone' => (string)$m['phone'],
+                  'phone_tail' => (string)$m['phone_tail'], 'balance' => (float)$m['balance']];
+    }
+    return $out;
+}
+
+// One ledger write through the bridge. Returns the entry, null on a
+// duplicate (the ledger's own idempotency refusing a second spend under
+// the same sale id / restore under the same refund id), or an error
+// array. Fenced: a non-QA binding can read but never write.
+function mrstore_customer_add(string $phone, float $amount, string $kind, array $extra = []) {
+    $c = mrstore_customer_data();
+    if ($c === null) { return ['error' => 'link down']; }
+    if (!mrstore_write_allowed()) { return ['error' => 'writes fenced to the QA store']; }
+    return cust_add($c['dir'], $c['store'], $phone, $amount, $kind, $extra);
+}
+
 // Append-only evidence trail on the POS side: every stock movement the
 // bridge makes, so a simulation can be cross-checked line by line.
 function golpos_link_log(array $entry): void {
