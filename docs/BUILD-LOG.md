@@ -1262,3 +1262,32 @@ One entry per day; the git history carries the same dates.
   and the receipt cut-line (never a button). node --check clean;
   throwaway HTTP smoke: index 200 with 21 inline SVGs, served app.js
   node-checks.
+
+## Day 3 (Oct 28) — Hisab-test fixes: reads never arm PIN-create; cancel clears a card
+- The intense hisab test (62 cases across MR.STORE Gol + the register
+  brain) graded the register 7/11 and reproduced two defects end-to-end:
+  D-11 — "this month's total sales?" on a PIN-less register opened the
+  PIN-create flow and the armed wait ate the next five messages as PIN
+  attempts; D-13 — "cancel" with a staged price card fell to the
+  fallback ("I can't cancel that here…") and the card stayed armed (the
+  Oct 30 watch item, confirmed broken).
+- D-11 fix (routing level): the gate arms PIN-create only behind a
+  genuinely pending gated action (executing a staged card on the
+  confirm word — the Beat-3 choreography, untouched) or an explicit
+  admin/pin setup ask; any other gated ask with no PIN set gets the
+  truthful pin_not_set line ("owner-only… say 'admin' when you want to
+  create one") and arms nothing. The create-stage wait now bails like
+  the verify stage: a worded message disarms it and runs fresh; only a
+  purely numeric message in the wrong shape is a PIN attempt and keeps
+  the wait with the format line.
+- D-13 fix: the dispatch's first check — a cancel word with a card
+  pending clears it deterministically and confirms the clear in one
+  line, before the confirm block and every lane; the cancel-word list
+  gains the romanized variants of its own words (radda, nahune,
+  hudaina, nakara, नगर, नहुने).
+- Verified on throwaway copies only: battery 151/151 (138 prior + 13
+  new pinflow cases with session/pending STATE assertions — pin_stage
+  null after a read, pending.json empty after a cancel, the hisab R08
+  sequence verbatim). Two harness setups that leaned on the old
+  read-arms-create behaviour now elevate via the owner's real explicit
+  "admin" path. php -l clean. Nothing deployed.
