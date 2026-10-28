@@ -118,9 +118,35 @@ button { font: inherit; cursor: pointer; }
 .tender button.ghost { flex: .62; font-weight: 600; }
 
 /* ---------- owner + receipt ---------- */
-.owner { margin: 0 20px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--panel-radius); padding: 18px; box-shadow: var(--tile-shadow); }
-.owner h2 { font-size: 15px; margin-bottom: 8px; }
-.owner button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; margin-top: 8px; }
+/* The Owner panel is a light mirror for the counter, dressed in the
+   register's own card language: a plain column of tile-recipe cards on
+   the page surface — no form wall (owner rejection, Oct 28). */
+.owner { margin: 0 auto 22px; padding: 6px 20px 4px; max-width: 1180px;
+  display: flex; flex-direction: column; gap: 14px; }
+.owner-head { display: flex; align-items: baseline; gap: 10px; padding: 12px 4px 0; }
+.owner-title { font-size: 21px; font-weight: 800; letter-spacing: .2px; }
+.owner-store { font-size: 14.5px; font-weight: 600; color: var(--dim); }
+.owner-store:not(:empty)::before { content: "· "; }
+.owner-card { background: var(--tile-bg); border: var(--tile-bw) solid var(--tile-line);
+  border-radius: var(--panel-radius); box-shadow: var(--tile-shadow); padding: 18px; color: var(--ink); }
+.ocard-title { font-size: 12.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--dim); margin: 0 0 12px; }
+.ocard-title small { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--faint); }
+.ocard-count { display: inline-block; background: var(--field-bg); border: 1px solid var(--field-line);
+  color: var(--dim); border-radius: 999px; padding: 1px 8px; font-size: 11.5px; letter-spacing: 0; margin-left: 4px; }
+.owner-muted { color: var(--faint); font-size: 13.5px; padding: 2px 0; }
+.owner-note { color: var(--dim); font-size: 13.5px; margin-top: 12px; }
+.feed-line { font-size: 14px; padding: 3px 0; }
+/* Today card — the day as four stat tiles, figures in the register's
+   big-number language; Close the day sits directly under them. */
+.stat-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.stat-tile { background: var(--field-bg); border: 1px solid var(--field-line);
+  border-radius: var(--field-radius); padding: 12px 14px; }
+.stat-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: 1.6px;
+  text-transform: uppercase; color: var(--dim); }
+.stat-num { display: block; font-family: var(--num); font-variant-numeric: tabular-nums;
+  font-size: 24px; font-weight: 800; color: var(--price); margin-top: 3px; }
+.owner button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; align-self: flex-start; }
 .receipt { position: fixed; inset: 0; background: rgba(6,12,26,.6); display: flex; align-items: center; justify-content: center; z-index: 40; }
 .receipt-card { background: var(--surface); color: var(--ink); border-radius: var(--panel-radius); padding: 20px; width: min(360px, 92vw); box-shadow: var(--cart-shadow); }
 .receipt-card pre { font-family: ui-monospace, monospace; white-space: pre-wrap; margin: 10px 0 14px; }
@@ -380,32 +406,52 @@ button { font: inherit; cursor: pointer; }
 .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 60;
   background: #12233f; color: #eaf2ff; padding: 10px 18px; border-radius: 999px;
   font-size: 14px; box-shadow: 0 12px 30px rgba(2,10,30,.4); max-width: 92vw; text-align: center; }
-.owner h3 { font-size: 14px; margin: 16px 0 8px; }
-.owner h3 small { color: var(--dim); font-weight: 400; }
-.os-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 14px; margin-bottom: 10px; }
-.os-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
-.os-grid label.os-chk { flex-direction: row; align-items: center; gap: 8px; }
-.os-grid input[type="text"], .os-grid select { padding: 7px 9px; border-radius: 8px;
-  border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; }
-#osSave, #dayCloseBtn { border-radius: 10px; padding: 9px 15px; font-weight: 700; border: none;
+/* Print settings card — labels above fields in a 3 / 2 / 1 column grid,
+   checkbox rows as tidy pills in the register's field language. */
+.os-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 14px; margin-bottom: 12px; }
+.os-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px;
+  font-weight: 700; letter-spacing: .4px; color: var(--dim); }
+.os-grid input[type="text"], .os-grid input[type="time"], .os-grid select { padding: 10px 12px;
+  border-radius: var(--field-radius); border: 1px solid var(--field-line);
+  background: var(--field-bg); color: var(--ink); font: inherit; font-size: 14.5px; width: 100%; }
+.os-grid input:focus, .os-grid select:focus { outline: none; }
+.os-grid label.os-chk { flex-direction: row; align-items: center; gap: 10px;
+  background: var(--field-bg); border: 1px solid var(--field-line); border-radius: var(--field-radius);
+  padding: 10px 12px; font-size: 13.5px; font-weight: 600; letter-spacing: 0; color: var(--ink); cursor: pointer; }
+.os-grid label.os-chk input { width: 17px; height: 17px; flex: none; accent-color: #2563eb; }
+#osSave, #dayCloseBtn { border-radius: 10px; padding: 10px 17px; font-weight: 700; border: none;
   background: linear-gradient(135deg, #5b93ff, #2563eb); color: #fff; cursor: pointer; }
 #dayCloseBtn.armed { background: #b91c1c; }
-/* Close the day sits at the TOP of the owner panel, under the summary —
-   daily actions first, sit-down settings below (owner directive, Oct 28). */
-.owner-close-day { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 12px 0 2px; }
+/* Close the day sits at the TOP of the owner panel, inside the Today card
+   directly under the stat tiles — daily actions first, sit-down settings
+   below (owner directive, Oct 28). */
+.owner-close-day { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 14px 0 0; }
 .ocd-result { font-size: 13.5px; color: var(--dim); }
-#osSaved { font-size: 13px; color: var(--dim); }
-.rep-tabs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
-.rep-tabs button { border-radius: 999px; padding: 7px 13px; border: 1px solid var(--line);
-  background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 13px; }
-.rep-tabs button.on { outline: 2px solid #3f80f5; font-weight: 700; }
-.rep-tabs input[type="date"] { padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
-  background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
-.rep-row { display: flex; gap: 12px; align-items: baseline; padding: 5px 0;
+#osSaved { font-size: 13px; color: var(--dim); margin-left: 10px; }
+/* Reports card — period chips in the register's category-chip language. */
+.rep-tabs { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.rep-tabs button { padding: 8px 15px; border-radius: 999px; font-size: 13.5px; font-weight: 600;
+  color: var(--cat-ink); background: var(--cat-bg); border: 1px solid var(--cat-line); cursor: pointer; font: inherit; }
+.rep-tabs button.on { color: #fff; border-color: transparent; font-weight: 700;
+  background: linear-gradient(135deg, #5b93ff, #2563eb); box-shadow: var(--cat-on-shadow); }
+.rep-tabs input[type="date"] { padding: 7px 11px; border-radius: 12px; border: 1px solid var(--field-line);
+  background: var(--field-bg); color: var(--ink); font: inherit; font-size: 13.5px; }
+.rep-row { display: flex; gap: 12px; align-items: baseline; padding: 7px 0;
   border-bottom: 1px dashed var(--line); font-size: 14px; flex-wrap: wrap; }
-.rep-row b { min-width: 74px; }
+.rep-row:last-child { border-bottom: none; }
+.rep-row b { min-width: 74px; font-family: var(--num); font-variant-numeric: tabular-nums; color: var(--price); }
 .rep-total { font-size: 15px; }
 .rep-closed { color: #34d399; font-style: normal; font-weight: 700; }
+/* Owner panel stacking — tiles and form grid narrow with the screen. */
+@media (max-width: 900px) {
+  .stat-tiles { grid-template-columns: repeat(2, 1fr); }
+  .os-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+  .owner { padding: 4px 12px 2px; }
+  .stat-tiles { grid-template-columns: 1fr; }
+  .os-grid { grid-template-columns: 1fr; }
+}
 
 /* ---------- Receipt Loyalty customer page (web/loyalty.html) ---------- */
 /* A standalone mobile page in the one Gol identity: blue header, white

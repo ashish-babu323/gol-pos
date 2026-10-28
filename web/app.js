@@ -378,28 +378,34 @@ $('photoInput').addEventListener('change', (e) => {
 });
 $('ownerBtn').addEventListener('click', async () => {
   $('ownerPanel').classList.remove('hidden');
+  $('ownerStoreName').textContent = $('storeName').textContent;
   const res = await fetch(API + '?summary'); const s = await res.json();
   const pres = await fetch(API + '?pending'); const p = await pres.json();
   const fres = await fetch(API + '?feed'); const feed = await fres.json();
   const feedHtml = Array.isArray(feed) && feed.length
-    ? `<p><b>Demo feed (${feed.length})</b></p>` + feed.slice().reverse().map(f =>
-        `<p>🖼️ ${f.caption || (f.name + ' — ' + money(f.price))}</p>`).join('')
-    : '<p>Demo feed is empty — ask Gol to "make an offer poster".</p>';
+    ? `<h3 class="ocard-title">Demo feed <span class="ocard-count">${feed.length}</span></h3>` + feed.slice().reverse().map(f =>
+        `<p class="feed-line">🖼️ ${f.caption || (f.name + ' — ' + money(f.price))}</p>`).join('')
+    : '<h3 class="ocard-title">Demo feed</h3><p class="owner-muted">Demo feed is empty — ask Gol to "make an offer poster".</p>';
+  $('ownerFeed').innerHTML = feedHtml;
   $('ownerBody').innerHTML =
-    `<p>Gross ${money(s.gross)} · Cash ${money(s.cash)} · Card ${money(s.card)} · Sales ${s.txns}</p>` +
-    (p && p.type ? `<p>Staged card waiting: ${p.type} — ${p.name || ''}</p>` : '<p>No staged cards waiting.</p>') +
-    feedHtml;
+    `<div class="stat-tiles">` +
+      `<div class="stat-tile"><span class="stat-label">Gross</span><b class="stat-num">${money(s.gross)}</b></div>` +
+      `<div class="stat-tile"><span class="stat-label">Cash</span><b class="stat-num">${money(s.cash)}</b></div>` +
+      `<div class="stat-tile"><span class="stat-label">Card</span><b class="stat-num">${money(s.card)}</b></div>` +
+      `<div class="stat-tile"><span class="stat-label">Sales</span><b class="stat-num">${s.txns}</b></div>` +
+    `</div>` +
+    (p && p.type ? `<p class="owner-note">Staged card waiting: ${p.type} — ${p.name || ''}</p>` : '<p class="owner-muted">No staged cards waiting.</p>');
   // Receipt Loyalty — the live leaderboard, computed by the server from the
   // receipt photos customers sent; it can never drift from what they were told.
   try {
     const lb = await (await fetch(LOYALTY + '?leaderboard')).json();
     const board = Array.isArray(lb.board) ? lb.board : [];
     $('ownerLoyalty').innerHTML =
-      `<h3>Receipt Loyalty — leaderboard <small>— send customers to web/loyalty.html</small></h3>` +
+      `<h3 class="ocard-title">Receipt Loyalty — leaderboard <small>— send customers to web/loyalty.html</small></h3>` +
       (board.length ? board.map(r =>
         `<div class="rep-row"><span>#${r.rank} ${esc(r.name)}</span><b>${money(r.total)}</b>` +
         `<span>${r.receipts} receipt${r.receipts === 1 ? '' : 's'}</span></div>`).join('')
-        : '<p>No loyalty receipts yet.</p>');
+        : '<p class="owner-muted">No loyalty receipts yet.</p>');
   } catch (e) { $('ownerLoyalty').innerHTML = ''; }
   await loadSettings(); renderSettingsForm();
   renderDayClose();
@@ -414,7 +420,7 @@ function renderSettingsForm() {
   const opts = (vals, cur) => vals.map(v =>
     `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${v}</option>`).join('');
   $('ownerSettings').innerHTML =
-    `<h3>Receipt print settings <small>— the same store Gol chat writes</small></h3>
+    `<h3 class="ocard-title">Receipt print settings <small>— the same store Gol chat writes</small></h3>
      <div class="os-grid">
        <label>Store name <input id="os_store_name" type="text" value="${esc(st.store_name || '')}"></label>
        <label>Address <input id="os_address" type="text" value="${esc(st.address || '')}"></label>

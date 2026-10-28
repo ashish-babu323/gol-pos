@@ -83,16 +83,27 @@
 </main>
 
 <section class="owner hidden" id="ownerPanel">
-  <h2>Owner — today</h2>
-  <div id="ownerBody">Loading…</div>
-  <div class="owner-close-day" id="ownerCloseDay">
-    <button id="dayCloseBtn" type="button">Close the day</button>
-    <span id="dayCloseResult" class="ocd-result"></span>
+  <div class="owner-head">
+    <h2 class="owner-title">Owner</h2>
+    <span class="owner-store" id="ownerStoreName"></span>
   </div>
-  <div id="ownerLoyalty"></div>
-  <div id="ownerSettings"></div>
-  <div class="owner-reports">
-    <h3>Reports</h3>
+  <div class="owner-card owner-today">
+    <h3 class="ocard-title">Today</h3>
+    <div id="ownerBody">Loading…</div>
+    <div class="owner-close-day" id="ownerCloseDay">
+      <button id="dayCloseBtn" type="button">Close the day</button>
+      <span id="dayCloseResult" class="ocd-result"></span>
+    </div>
+  </div>
+  <div class="owner-card">
+    <div id="ownerFeed"></div>
+  </div>
+  <div class="owner-card">
+    <div id="ownerLoyalty"></div>
+  </div>
+  <div class="owner-card" id="ownerSettings"></div>
+  <div class="owner-card owner-reports">
+    <h3 class="ocard-title">Reports</h3>
     <div class="rep-tabs" role="group" aria-label="Report period">
       <button type="button" data-report="today">Today</button>
       <button type="button" data-report="yesterday">Yesterday</button>
