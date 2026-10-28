@@ -643,3 +643,67 @@ One entry per day; the git history carries the same dates.
   carries these hunks too (verified present in ff6a208's tree).
   This entry registers the list build and bumps the asset stamps
   to ff6a208, the commit whose tree contains it.
+
+## Day 3 (Oct 28) — Add Stock from the tile: the receive sheet (ff6a208)
+- Owner, watching the living shelf live: "stock add nai garne bato pani
+  dine??" Every tile now wears a quiet "+ Stock" button in its foot
+  (price left, button right); on an OUT tile the same button wears the
+  brand dress — it is the rescue. Tiles became divs with role/tabindex
+  and Enter/Space parity (a <button> cannot nest the stock button).
+- The sheet mirrors the cash panel: product image + name, "Now: N in
+  stock", a - / + stepper, +6 / +12 / +24 chips (they set the amount),
+  a typed custom amount, and "Add N to stock". Nothing else on it.
+- ONE receive path, never a second writer: golpos_receive_stock in
+  store.php. Standing alone it increments the live catalog — the same
+  store golpos_decrement_stock decrements, so receives and rung sales
+  compose on one number (an untracked product starts tracking at the
+  delivery). In link mode it calls mrstore_adjust_stock — the exact
+  function the Gol chat's stock_receive card executes — and logs the
+  movement beside the chat's receives with via: "screen".
+- api.php POST {stock_add:{sku,qty}, session}: quantity is a whole
+  number 1..9999 or the call is refused plainly (422, nothing written);
+  unknown SKU likewise. The endpoint reads the SHARED session store
+  only — it never verifies a PIN itself.
+- The gate mirrors the chat exactly: receiving is an admin-domain
+  execution (the merged brain PIN-gates stock_receive the same way).
+  An unelevated session gets {error:"pin_required", pin:"create"|
+  "verify"|"locked"} and nothing is written. The sheet then asks the
+  PIN INSIDE itself, but the digits run through brain.php with the
+  chat's own session messages (arm with the bare admin ask, then the
+  PIN as a message) — so the two-entry create flow, wrong-PIN attempts
+  and the 3-strike 10-minute lockout are the brain's own machinery,
+  and an already-elevated session is never asked again. The sheet
+  retries the receive after each PIN entry and trusts the server's
+  answer, not the reply's wording; cancelling the PIN step sends the
+  chat's cancel word so the armed wait never eats the next chat
+  message. On success the sheet closes, the catalog reloads, the
+  tile's bar pours UP to the new level (last-fill animation; counts
+  may exceed par — the bar caps at 100%, the number stays true), and
+  a toast speaks it: "Coca-Cola 20oz — stock now 30."
+- Verified on throwaways (php -S + curl, and the real app.js under a
+  Node stub DOM against the real API): server 31/31 — fresh session
+  is pin-gated at "create" with zero written; the brain create flow
+  (including a deliberate confirm mismatch) then lands +12 on Coke
+  18 -> 30 with payload and catalog file agreeing; elevated +6 -> 36
+  with no ask; a second session eats 3 wrong PINs into the lockout
+  (pin:"locked", minutes named, nothing written) while a third
+  elevates after one wrong try; Hot Dog 0 -> +24 -> 24; quantities
+  0 / -3 / 10000 / "abc" / 12.5 and an unknown SKU all refuse 422
+  with stock untouched; a card sale takes Coke 36 -> 34 and a
+  receive composes back to 40; Beat-1 exact ($6.67 / $0.53 / $7.20,
+  $2.80 change); chat price answer and no-phantom-pending intact.
+  Client 23/23 — the door renders on every tile (rescue dress on the
+  OUT tile), the sheet's full create-PIN choreography lands the
+  receive and updates the tile to 30, the elevated receive skips the
+  PIN step entirely, qty 0 refuses in-sheet, the Hot Dog rescue
+  undims the tile and drops the OUT tag, Beat-1 client totals and
+  the Keypad regression exact. Link mode proven at code-path level:
+  with the link ON and the bridge unreachable the endpoint routes to
+  mrstore_adjust_stock, refuses plainly, and writes NOTHING locally
+  (the live QA receive is the parent's deploy-step proof). One
+  honesty note: ff6a208 also carried the Add Product sheet's
+  then-uncommitted tree work (its own entry is the 2f69505 one); the
+  combined tree was battery-green here and product_create was
+  smoke-proven on the same throwaway (SKU 1063 created, catalog 63).
+  node --check / php -l clean. Asset stamps read ff6a208 (bumped in
+  2f69505 — the commit's client assets are the ones the stamps name).
