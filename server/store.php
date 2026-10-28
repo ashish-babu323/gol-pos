@@ -4,6 +4,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/mrstore.php';
+
 function golpos_data_dir(): string {
     $dir = __DIR__ . '/../data';
     if (!is_dir($dir)) { mkdir($dir, 0775, true); }
@@ -26,7 +28,15 @@ function golpos_write(string $name, $data): void {
 }
 
 // The live catalog starts as a copy of the seed so staged writes never touch the seed.
+// LINK MODE (MR.STORE connected): the catalog IS the linked store's live
+// catalog — names, prices and on-hand counts from MR.STORE itself. The
+// local seed/live files are not consulted at all; if the link is down the
+// register falls back to them so it never stops ringing.
 function golpos_catalog(): array {
+    if (golpos_link_on()) {
+        $linked = mrstore_catalog_with_stock();
+        if ($linked !== null) { return $linked; }
+    }
     $live = golpos_read('catalog.live.json', null);
     if ($live === null) {
         $seed = golpos_read('catalog.seed.json', ['store' => [], 'products' => []]);
@@ -37,6 +47,12 @@ function golpos_catalog(): array {
 }
 
 function golpos_save_catalog(array $catalog): void {
+    if (golpos_link_on()) {
+        // In link mode the catalog lives in MR.STORE: owner price changes
+        // and new items sync there; the local file is never written.
+        mrstore_sync_catalog($catalog);
+        return;
+    }
     golpos_write('catalog.live.json', $catalog);
 }
 
@@ -44,10 +60,12 @@ function golpos_sales(): array {
     return golpos_read('sales.json', []);
 }
 
-function golpos_append_sale(array $sale): array {
+// $at lets the simulation runner record a sale at its simulated moment;
+// the register always passes null and stamps the real time.
+function golpos_append_sale(array $sale, ?string $at = null): array {
     $sales = golpos_sales();
     $sale['id'] = 'txn_' . substr(sha1(uniqid('', true)), 0, 10);
-    $sale['at'] = date('c');
+    $sale['at'] = $at ?? date('c');
     $sales[] = $sale;
     golpos_write('sales.json', $sales);
     return $sale;

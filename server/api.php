@@ -126,6 +126,19 @@ if ($method === 'POST') {
             $recordData['change_due'] = round($tendered - $total, 2);
         }
         $record = golpos_append_sale($recordData);
+        if (golpos_link_on()) {
+            // LINK MODE: the same sale moves the linked MR.STORE store's
+            // real stock, the way a live POS feed would. The note rides in
+            // the response and in the link log; the till record stands
+            // even if the link is down (stock note is then simply absent).
+            $notes = mrstore_record_sale($record['lines']);
+            if ($notes !== null) {
+                $record['mrstore_stock'] = $notes;
+                golpos_link_log(['kind' => 'sale', 'txn' => $record['id'],
+                                 'total' => $record['total'], 'tender' => $record['tender'],
+                                 'stock' => $notes]);
+            }
+        }
         echo json_encode($record, JSON_UNESCAPED_UNICODE);
         exit;
     }

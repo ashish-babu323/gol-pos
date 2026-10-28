@@ -169,3 +169,29 @@ One entry per day; the git history carries the same dates.
     (1 receipt) / Dev Patel #2 $9.36 (1 receipt); brain smoke test ("How much
     is a Coke?" → "A Coca-Cola 20oz costs $2.19.") unchanged. PHP -l clean on
     every server file, node --check clean on both JS files.
+
+## Day 3 (Oct 28) — MR.STORE link: Gol Connect simulation (branch mrstore-link)
+
+- server/mrstore.php (new): the bridge. It speaks MR.STORE's own storage
+  language — MySQL lm_ops_kv rows under the fixed Floor ops owner, loaded
+  and saved with the same patterns as store-api/gol-chat.php
+  (gol_catalog_load / gol_catalog_save / gol_pos_apply_stock /
+  gol_apply_stock_counts), including the stock_overrides patch and the
+  gol-backups backup convention. No mirror file exists: a write here is a
+  write in MR.STORE.
+- Fencing: every write path refuses unless the configured store id is the
+  Muse QA Test Store (22af5007-…). Reads are store-scoped the same way.
+- Wiring (all behind LINK_MRSTORE, default off; standalone POS unchanged —
+  smoke-tested link-off: seed catalog, sale, day total all normal):
+  golpos_catalog() serves the linked store's catalog (real store name,
+  live onHand, MR.STORE prices; POS-side demo prices only where MR.STORE
+  has none, never written back); a completed sale calls
+  mrstore_record_sale() so MR.STORE stock moves; the Gol chat gains a
+  stock lane (one item's stock, out/low list, staged stock-receive card
+  executing on "gol") answered from MR.STORE live state; day-total
+  answers name their source (POS till vs MR.STORE); owner price changes
+  and new items sync back into the MR.STORE catalog.
+- scripts/sim-month.php: the month runner — drives the same
+  golpos_append_sale + bridge functions in a loop (100 txns/day × 30
+  days), c-store-weighted baskets, twice-weekly + guard receives, a day
+  close per day, every simulated sale labelled source=sim-month.
