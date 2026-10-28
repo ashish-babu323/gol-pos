@@ -536,3 +536,67 @@ One entry per day; the git history carries the same dates.
   (10 TAX + 10 NON-TAX -> $20.00 / $0.80 / $20.80) and Beat-1 client
   totals exact. All 62 packshots serve over HTTP as image/webp.
   node --check / php -l clean. Asset stamps bumped to 5e2e56f.
+
+## Day 3 (Oct 28) — Number MEANING fix: price, count, or part of a name (dc1c5e1)
+
+- Owner-caught live on gol-pos-dev: "can u change the price of coca cola
+  20 oz to $3" staged **$20.00** — the extractor read the FIRST number in
+  the sentence, and the first number was the product's own size. The
+  staged card was cleared and the catalog verified untouched ($2.19)
+  before the fix began. The fix is one shared meaning layer in
+  server/brain.php, not a patch on the phrase:
+  - `golpos_extract_price` — the matched product is consumed first and
+    size-glued numbers (20 oz, 12oz, 16.9oz, 4pk, 500ml) are masked
+    before any number is read. An explicit $ amount always wins; a $
+    amount marked as the FROM price ("bata/from") is excluded; without
+    $, the price is the number bound to a price word (after
+    to/at/price/mulya/dam/daam, or before the postposition "ma") or the
+    one candidate left standing; a classifier-bound number ("20 ota")
+    is a count, never money. Two live candidates or none → the brain
+    ASKS ("Which price — $3 or $4?") and stages nothing.
+  - `golpos_extract_count` — counts bind to classifiers (ota/vata/वटा/
+    pcs), receive verbs, or the item word; money and sizes are masked
+    out. It replaces the receive lane's last-number-standing read
+    ("12 ota lays ayo, $1.19 ma" now receives 12; the money never
+    touches the card) and gives add-to-cart its quantity ("2 ota coke"
+    → qty 2; "coke 20oz thap" → 1 — a size is not a quantity; app.js
+    honors action.qty, landed with 5e2e56f).
+  - Add lane: a price in the sentence makes it a cataloging sentence —
+    unless the name said is exactly a known item's own name/alias, the
+    item is NEW. "add sunrise energy drink 12oz at $3.49" stages the
+    new-item card at $3.49 (name keeps its 12oz; Red Bull and Monster
+    both alias "energy drink" and neither is staged or rung), and "add
+    AAA batteries 4pk $5" is a new $5 item, not the $5.99 AA pack.
+    New-item names are built token-wise by `golpos_item_name_from`:
+    command words and the one price token come out, sizes stay.
+  - Price-change lane also accepts the "price of X to $Y" construction
+    (a $ or a decimal after "to" — a bare "to 2" stays a query).
+  - `golpos_size_pick` (server/store.php, inside resolve_item): a size
+    the owner named picks between siblings — on the QA catalog "coke
+    20 ota ayo" lands on Coke 20oz (mr-23), not the Coca-Cola 12pk that
+    owns the bare "coke" alias. Exactly one size carrier + a shared
+    non-size name word, or no pick — a price or count can't impersonate
+    a size (verified: the $2.50 in "Coke price 2.50 gara" picks nothing).
+  - Only brain.php + store.php are in dc1c5e1; the same-day working tree
+    also carried the living-shelf build's uncommitted hunks (a store.php
+    receive path, the Keypad-pane rows) — those were left uncommitted
+    for their own build, untouched.
+- Verified on throwaway copies only (nothing deployed): trap battery
+  21/21 — the owner's exact sentence stages $3.00; glued/decimal sizes,
+  the bata FROM-price, ambiguity → ask with zero staged, no-amount →
+  ask; new-item cases at $3.49/$5.00 with sizes kept in the names;
+  counts 2/1/1; and the Beat-3 choreography end-to-end (stage $2.50 →
+  "gol" unelevated demands PIN creation → PIN executes to exactly
+  $2.50 → restored $2.19). Gate-2 subsets 39/39 structural (the 3
+  Devanagari price-query language flags are the deterministic lane's
+  language-neutral name+price line — byte-identical on pristine HEAD,
+  not a regression). Non-regression on the original harnesses: access
+  43/43, auto-batch 16/16, Nepali gate 17/17. Link-mode receive battery
+  on a QA-bound server throwaway (deleted after): 9/9 — receive count
+  20 on Coke 20oz with no price field on the card, the mixed
+  count+price case at qty 12, and a live stock-read control (1955);
+  cards were never confirmed, so MR.STORE stock never moved. The
+  committed tree was then re-proven standalone (trap + access) from a
+  clean archive of dc1c5e1. php -l / node --check clean. No stamp bump:
+  the only client asset in the fix (app.js qty) already shipped inside
+  5e2e56f and index.html already points at it; PHP serves uncached.
