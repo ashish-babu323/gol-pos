@@ -18,6 +18,10 @@ header('Content-Type: application/json; charset=utf-8');
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+// Lazy AUTO batch pass: any API call can be the one that finds the store
+// past closing with an unsealed card segment (see golpos_batch_auto_sweep).
+golpos_batch_auto_sweep();
+
 if ($method === 'GET' && isset($_GET['products'])) {
     echo json_encode(golpos_catalog(), JSON_UNESCAPED_UNICODE);
     exit;
@@ -69,8 +73,15 @@ if ($method === 'GET' && isset($_GET['report'])) {
     }
     $d = (string)($_GET['date'] ?? date('Y-m-d'));
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) { $d = date('Y-m-d'); }
+    // Reports compose WITH batches, exactly like the chat day close: the
+    // day's sealed batches plus any card sales not yet inside one.
+    $unb = golpos_unbatched_card_sales($d);
+    $unbTotal = 0.0; foreach ($unb as $s) { $unbTotal += (float)($s['total'] ?? 0); }
     echo json_encode(['date' => $d, 'summary' => golpos_day_summary($d),
-                      'close' => golpos_close_record($d)], JSON_UNESCAPED_UNICODE);
+                      'close' => golpos_close_record($d),
+                      'batches' => golpos_batches_on($d),
+                      'unbatched_card' => ['count' => count($unb), 'total' => round($unbTotal, 2)]],
+                     JSON_UNESCAPED_UNICODE);
     exit;
 }
 if ($method === 'POST') {

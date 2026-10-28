@@ -39,6 +39,10 @@ function out(array $r): void {
     // response's meta field for the team (and the hackathon judges) to verify;
     // the register UI ignores it.
     $r['meta'] = $GLOBALS['golpos_meta'] ?? ['provider' => 'deterministic', 'model' => null];
+    // When the access gate consumed this turn's message as a PIN (including
+    // when it replayed the pending intent after a successful PIN), the
+    // client masks the typed bubble — the digits never stand in the history.
+    if (!empty($GLOBALS['golpos_pin_mask'])) { $r['pin_mask'] = true; }
     echo json_encode($r, JSON_UNESCAPED_UNICODE); exit;
 }
 function money(float $n): string { return '$' . number_format($n, 2); }
@@ -240,6 +244,152 @@ $S = [
     'np' => 'Ma saman thapna, mulya sodhna/badalna (card stage garera), din ko hisab dina, ra receipt print settings chalauna sakchhu. Prayas garnus: "print settings ke chha?"',
     'hi' => 'Main saaman jod sakta hoon, daam bata ya badal sakta hoon (card stage karke), aaj ka hisaab de sakta hoon, aur receipt print settings chala sakta hoon. Koshish kijiye: "print settings".',
     'dev' => 'म सामान थप्न, मूल्य सोध्न/बदल्न (कार्ड स्टेज गरेर), दिनको हिसाब दिन, र रसिद प्रिन्ट सेटिङ चलाउन सक्छु। प्रयास गर्नुस्: "प्रिन्ट सेटिङ के छ?"'],
+  // --- access: the admin PIN gate (owner directive, Oct 28) -----------------
+  'pin_ask' => [
+    'en' => 'That\'s an admin question — enter the admin PIN first, and I\'ll answer right after.',
+    'np' => 'Yo admin ko prashna ho — pahile admin PIN dinus, ma turuntai jawaf dinchhu.',
+    'hi' => 'Yeh admin ka sawaal hai — pehle admin PIN dijiye, main turant jawaab dunga.',
+    'dev' => 'यो एडमिनको प्रश्न हो — पहिले एडमिन PIN दिनुस्, म तुरुन्तै जवाफ दिन्छु।'],
+  'pin_create_ask' => [
+    'en' => 'No admin PIN is set yet — let\'s create one. Type a 4–6 digit PIN for admin access.',
+    'np' => 'Admin PIN ahile samma set chhaina — banaum. Admin access ko lagi 4–6 digit ko PIN lekhnus.',
+    'hi' => 'Admin PIN abhi set nahi hai — banate hain. Admin access ke liye 4–6 digit ka PIN likhiye.',
+    'dev' => 'एडमिन PIN अहिलेसम्म सेट छैन — बनाऔँ। एडमिन पहुँचका लागि ४–६ अंकको PIN लेख्नुस्।'],
+  'pin_create_confirm' => [
+    'en' => 'Once more — type that same PIN again to confirm it.',
+    'np' => 'Ek patak feri — tyahi PIN feri lekhnus, pakka garna.',
+    'hi' => 'Ek baar phir — wahi PIN dobara likhiye, pakka karne ke liye.',
+    'dev' => 'एक पटक फेरि — त्यही PIN फेरि लेख्नुस्, पक्का गर्न।'],
+  'pin_create_mismatch' => [
+    'en' => 'Those two PINs didn\'t match — let\'s start again. Type a 4–6 digit PIN.',
+    'np' => 'Ti dui PIN milena — suru bata garam. 4–6 digit ko PIN lekhnus.',
+    'hi' => 'Woh dono PIN nahi mile — shuru se karte hain. 4–6 digit ka PIN likhiye.',
+    'dev' => 'ती दुई PIN मिलेनन् — सुरुबाट गरौँ। ४–६ अंकको PIN लेख्नुस्।'],
+  'pin_bad_format' => [
+    'en' => 'A PIN is 4–6 digits — try again.',
+    'np' => 'PIN 4–6 digit ko hunchha — feri prayas garnus.',
+    'hi' => 'PIN 4–6 digit ka hota hai — phir koshish kijiye.',
+    'dev' => 'PIN ४–६ अंकको हुन्छ — फेरि प्रयास गर्नुस्।'],
+  'pin_wrong' => [
+    'en' => 'That PIN isn\'t right — nothing was shown or changed. %d %s left before a 10-minute lock.',
+    'np' => 'Tyo PIN milena — kehi dekhaiena, kehi badliena. 10 minute lock huna aghi %d %s baki chha.',
+    'hi' => 'Woh PIN sahi nahi — kuchh dikhaya ya badla nahi gaya. 10 minute lock se pehle %d %s baki.',
+    'dev' => 'त्यो PIN मिलेन — केही देखाइएन, केही बदलिएन। १० मिनेट लक हुनुअघि %d %s बाँकी छ।'],
+  'pin_locked' => [
+    'en' => 'Admin entry is locked after wrong PINs — try again in %d minute(s).',
+    'np' => 'Galat PIN pachhi admin entry lock chha — %d minute pachhi feri prayas garnus.',
+    'hi' => 'Galat PIN ke baad admin entry lock hai — %d minute baad phir koshish kijiye.',
+    'dev' => 'गलत PIN पछि एडमिन प्रवेश लक छ — %d मिनेटपछि फेरि प्रयास गर्नुस्।'],
+  'pin_lockout' => [
+    'en' => 'Too many wrong PINs — admin entry is now locked for 10 minutes. Nothing was shown or changed.',
+    'np' => 'Dherai galat PIN bhayo — admin entry aba 10 minute lock bhayo. Kehi dekhaiena, kehi badliena.',
+    'hi' => 'Bahut galat PIN ho gaye — admin entry ab 10 minute lock hai. Kuchh dikhaya ya badla nahi gaya.',
+    'dev' => 'धेरै गलत PIN भयो — एडमिन प्रवेश अब १० मिनेट लक भयो। केही देखाइएन, केही बदलिएन।'],
+  'pin_set' => [
+    'en' => 'Admin PIN is set — you are in admin mode now.',
+    'np' => 'Admin PIN set bhayo — tapai aba admin mode ma hununchha.',
+    'hi' => 'Admin PIN set ho gaya — aap ab admin mode mein hain.',
+    'dev' => 'एडमिन PIN सेट भयो — तपाईं अब एडमिन मोडमा हुनुहुन्छ।'],
+  'admin_on' => [
+    'en' => 'Admin mode is on.',
+    'np' => 'Admin mode on bhayo.',
+    'hi' => 'Admin mode on ho gaya.',
+    'dev' => 'एडमिन मोड खुल्यो।'],
+  'admin_off' => [
+    'en' => 'Admin mode is off — this register is a cashier again. Admin questions will ask for the PIN.',
+    'np' => 'Admin mode off bhayo — register feri cashier bhayo. Admin prashna ma PIN magchha.',
+    'hi' => 'Admin mode off ho gaya — register phir cashier hai. Admin sawaal par PIN mangega.',
+    'dev' => 'एडमिन मोड बन्द भयो — रजिस्टर फेरि क्यासियर भयो। एडमिन प्रश्नमा PIN माग्छ।'],
+  'pin_cancelled' => [
+    'en' => 'Cancelled — nothing was shown or changed.',
+    'np' => 'Radda bhayo — kehi dekhaiena, kehi badliena.',
+    'hi' => 'Radd ho gaya — kuchh dikhaya ya badla nahi gaya.',
+    'dev' => 'रद्द भयो — केही देखाइएन, केही बदलिएन।'],
+  'hours_line' => [
+    'en' => 'Store hours: opens %s, closes %s. Batch close mode: %s.',
+    'np' => 'Pasal ko samaya: %s khulchha, %s banda hunchha. Batch close mode: %s.',
+    'hi' => 'Dukaan ka samay: %s khulti hai, %s band hoti hai. Batch close mode: %s.',
+    'dev' => 'पसलको समय: %s खुल्छ, %s बन्द हुन्छ। ब्याच क्लोज मोड: %s।'],
+  'hours_ask' => [
+    'en' => 'Tell me the time too — e.g. "store closes at 9 PM" or "store 9 baje banda huncha".',
+    'np' => 'Samaya pani bhannus — jastai "store closes at 9 PM" wa "store 9 baje banda huncha".',
+    'hi' => 'Samay bhi bataiye — jaise "store closes at 9 PM".',
+    'dev' => 'समय पनि भन्नुस् — जस्तै "store closes at 9 PM" वा "store 9 baje banda huncha"।'],
+  'batch_none' => [
+    'en' => 'No unbatched card sales right now — every card sale is already inside a batch. Nothing was staged.',
+    'np' => 'Ahile unbatched card sale chhaina — sabai card sale batch bhitra chha. Kehi stage bhaena.',
+    'hi' => 'Abhi koi unbatched card sale nahi hai — har card sale batch ke andar hai. Kuchh stage nahi hua.',
+    'dev' => 'अहिले अनब्याच गरिएको कार्ड बिक्री छैन — सबै कार्ड बिक्री ब्याचभित्र छ। केही स्टेज भएन।'],
+  'batch_done' => [
+    'en' => 'Batch #%d sealed — %d card sales, %s.',
+    'np' => 'Batch #%d seal bhayo — %d ota card sale, %s.',
+    'hi' => 'Batch #%d seal ho gaya — %d card sale, %s.',
+    'dev' => 'ब्याच #%d सिल भयो — %d वटा कार्ड बिक्री, %s।'],
+  'batch_line' => [
+    'en' => 'Batch #%d — %d card sales, %s.',
+    'np' => 'Batch #%d — %d ota card sale, %s.',
+    'hi' => 'Batch #%d — %d card sale, %s.',
+    'dev' => 'ब्याच #%d — %d वटा कार्ड बिक्री, %s।'],
+  'batch_auto_line' => [
+    'en' => 'Batch #%d auto-closed at %s — %d card sales, %s.',
+    'np' => 'Batch #%d %s ma afai banda bhayo — %d ota card sale, %s.',
+    'hi' => 'Batch #%d %s par apne aap band ho gaya — %d card sale, %s.',
+    'dev' => 'ब्याच #%d %s मा आफैँ बन्द भयो — %d वटा कार्ड बिक्री, %s।'],
+  'close_unbatched' => [
+    'en' => '⚠️ %d card sales (%s) are not in a batch yet — say "batch close" to seal them.',
+    'np' => '⚠️ %d ota card sale (%s) batch ma pareko chhaina — seal garna "batch close" bhannus.',
+    'hi' => '⚠️ %d card sale (%s) abhi batch mein nahi hain — seal karne ke liye "batch close" kahiye.',
+    'dev' => '⚠️ %d वटा कार्ड बिक्री (%s) ब्याचमा परेको छैन — सिल गर्न "batch close" भन्नुस्।'],
+  'emp_none' => [
+    'en' => 'No employees yet. Say "add name@email.com as employee" and Gol will send them an invite.',
+    'np' => 'Ahile samma employee chhaina. "add name@email.com as employee" bhannus, Gol le invite pathauchha.',
+    'hi' => 'Abhi tak koi employee nahi hai. "add name@email.com as employee" kahiye, Gol invite bhejega.',
+    'dev' => 'अहिलेसम्म कर्मचारी छैन। "add name@email.com as employee" भन्नुस्, Gol ले निमन्त्रणा पठाउँछ।'],
+  'emp_list_head' => [
+    'en' => 'Employees:',
+    'np' => 'Employee haru:',
+    'hi' => 'Employees:',
+    'dev' => 'कर्मचारीहरू:'],
+  'emp_added_sent' => [
+    'en' => 'Employee added: %s — an invite email is on its way. They set their own PIN from the link in the email.',
+    'np' => 'Employee thapiyo: %s — invite email pathaiyo. Uni haru le email ko link bata afno PIN set garchhan.',
+    'hi' => 'Employee joda gaya: %s — invite email bhej diya. Woh email ke link se apna PIN set karenge.',
+    'dev' => 'कर्मचारी थपियो: %s — निमन्त्रणा इमेल पठाइयो। उनीहरूले इमेलको लिङ्कबाट आफ्नो PIN सेट गर्छन्।'],
+  'emp_added_link' => [
+    'en' => 'Employee added: %s — but the invite email could not be sent, so give them this link yourself: %s',
+    'np' => 'Employee thapiyo: %s — tara invite email pathauna milena, yo link afai dinus: %s',
+    'hi' => 'Employee joda gaya: %s — lekin invite email nahi bheja gaya, yeh link khud de dijiye: %s',
+    'dev' => 'कर्मचारी थपियो: %s — तर निमन्त्रणा इमेल पठाउन मिलेन, यो लिङ्क आफैँ दिनुस्: %s'],
+  'emp_exists' => [
+    'en' => '%s is already on the employee list (%s).',
+    'np' => '%s pahile nai employee list ma chha (%s).',
+    'hi' => '%s pehle se hi employee list mein hai (%s).',
+    'dev' => '%s पहिल्यै कर्मचारी सूचीमा छ (%s)।'],
+  'emp_removed' => [
+    'en' => 'Removed %s from the employees.',
+    'np' => '%s lai employee bata hataiyo.',
+    'hi' => '%s ko employees se hata diya.',
+    'dev' => '%s लाई कर्मचारीबाट हटाइयो।'],
+  'emp_not_found' => [
+    'en' => 'I don\'t have %s on the employee list.',
+    'np' => '%s employee list ma chhaina.',
+    'hi' => '%s employee list mein nahi hai.',
+    'dev' => '%s कर्मचारी सूचीमा छैन।'],
+  'emp_help' => [
+    'en' => 'Employees run from here: "add name@email.com as employee" (Gol sends the invite), "employees list", or "remove name@email.com".',
+    'np' => 'Employee yahi bata chalaunchha: "add name@email.com as employee" (Gol le invite pathauchha), "employees list", wa "remove name@email.com".',
+    'hi' => 'Employees yahin se chalte hain: "add name@email.com as employee" (Gol invite bhejega), "employees list", ya "remove name@email.com".',
+    'dev' => 'कर्मचारी यहीँबाट चल्छ: "add name@email.com as employee" (Gol ले निमन्त्रणा पठाउँछ), "employees list", वा "remove name@email.com"।'],
+  'board_none' => [
+    'en' => 'The loyalty leaderboard is empty — no customer has sent a receipt photo yet.',
+    'np' => 'Loyalty leaderboard khali chha — kunai customer le ahile samma receipt photo pathaeko chhaina.',
+    'hi' => 'Loyalty leaderboard khaali hai — kisi customer ne abhi tak receipt photo nahi bheja.',
+    'dev' => 'लोयाल्टी लिडरबोर्ड खाली छ — कुनै ग्राहकले अहिलेसम्म रसिद फोटो पठाएको छैन।'],
+  'board_head' => [
+    'en' => 'Receipt Loyalty — leaderboard:',
+    'np' => 'Receipt Loyalty — leaderboard:',
+    'hi' => 'Receipt Loyalty — leaderboard:',
+    'dev' => 'रसिद लोयाल्टी — लिडरबोर्ड:'],
 ];
 function t(string $key, ...$args): string {
     global $S, $L;
@@ -275,13 +425,22 @@ function golpos_setting_label(string $key): string {
       'paper_width'  => ['en' => 'Paper width', 'np' => 'Paper width', 'hi' => 'Paper width', 'dev' => 'कागज चौडाइ'],
       'show_tax'     => ['en' => 'Tax line', 'np' => 'Tax line', 'hi' => 'Tax line', 'dev' => 'कर लाइन'],
       'auto_open'    => ['en' => 'Receipt after each sale', 'np' => 'Harek sale pachhi receipt', 'hi' => 'Har sale ke baad receipt', 'dev' => 'हरेक बिक्रीपछि रसिद'],
+      'store_open'   => ['en' => 'Store opens', 'np' => 'Pasal khulne samaya', 'hi' => 'Dukaan khulne ka samay', 'dev' => 'पसल खुल्ने समय'],
+      'store_close'  => ['en' => 'Store closes', 'np' => 'Pasal banda hune samaya', 'hi' => 'Dukaan band hone ka samay', 'dev' => 'पसल बन्द हुने समय'],
+      'batch_mode'   => ['en' => 'Batch close mode', 'np' => 'Batch close mode', 'hi' => 'Batch close mode', 'dev' => 'ब्याच क्लोज मोड'],
     ];
     return $map[$key][$L] ?? $map[$key]['en'] ?? $key;
+}
+// "21:00" -> "9:00 PM" for spoken replies.
+function golpos_time12(string $hhmm): string {
+    $ts = strtotime($hhmm);
+    return $ts === false ? $hhmm : date('g:i A', $ts);
 }
 function golpos_setting_display(string $key, $v): string {
     if (in_array($key, ['show_address', 'show_phone', 'show_tax'], true)) { return golpos_shown((bool)$v); }
     if (in_array($key, ['logo', 'auto_open'], true)) { return golpos_onoff((bool)$v); }
     if ($key === 'copies') { return (string)(int)$v; }
+    if ($key === 'store_open' || $key === 'store_close') { return golpos_time12((string)$v); }
     return (string)$v;
 }
 function golpos_settings_read_reply(): string {
@@ -296,6 +455,10 @@ function golpos_settings_read_reply(): string {
     $lines[] = '• ' . golpos_setting_label('paper_width') . ': ' . $s['paper_width'];
     $lines[] = '• ' . golpos_setting_label('show_tax') . ': ' . golpos_shown((bool)$s['show_tax']);
     $lines[] = '• ' . golpos_setting_label('auto_open') . ': ' . golpos_onoff((bool)$s['auto_open']);
+    $lines[] = '• ' . golpos_setting_label('store_open') . ': ' . golpos_time12((string)$s['store_open']);
+    $lines[] = '• ' . golpos_setting_label('store_close') . ': ' . golpos_time12((string)$s['store_close']);
+    $lines[] = '• ' . golpos_setting_label('batch_mode') . ': ' . $s['batch_mode']
+        . ($s['batch_mode'] === 'auto' ? ' (seals at ' . golpos_time12((string)$s['store_close']) . ')' : '');
     return implode("\n", $lines);
 }
 // Stage one settings change as a card (old -> new). A value that already
@@ -315,6 +478,89 @@ function golpos_wants_off(string $msg): ?bool {
     if (preg_match('/(hide|bandha|lukau|hata|बन्द|लुकाउ|हटाउ)/iu', $msg) || preg_match('/\boff\b/iu', $msg)) { return true; }
     if (preg_match('/(show|khola|dekha|खोल|देखाउ)/iu', $msg) || preg_match('/\bon\b/iu', $msg)) { return false; }
     return null;
+}
+
+// --- access intents: matchers shared by the PIN gate and the dispatch --------
+// The gate (bottom of this file) must classify a message EXACTLY as the
+// dispatch will treat it, so both use these same matchers. Admin-domain
+// intents: reports beyond the running day total, the day-close record, batch
+// close, employee management, the loyalty leaderboard — plus every staged
+// card whose EXECUTION changes the business (price_change, new_item,
+// setting_change, batch_close, employee_remove), which is gated at the
+// confirm word rather than at staging.
+function golpos_is_lock_intent(string $msg): bool {
+    return preg_match('/^\s*(lock|log\s*out|admin\s+off)\s*[.!]?\s*$/iu', $msg) === 1
+        || preg_match('/(admin bata bahira|lock gara|लक गर)/iu', $msg) === 1;
+}
+function golpos_is_cancel_intent(string $msg): bool {
+    return preg_match('/^\s*(cancel|chhod|chhoda|रद्द|छोड)\s*[.!]?\s*$/iu', $msg) === 1;
+}
+function golpos_is_batch_close_intent(string $msg): bool {
+    return preg_match('/(batch\s*(close|banda|seal)|ब्याच)/iu', $msg) === 1;
+}
+function golpos_is_batch_mode_set(string $msg): bool {
+    return preg_match('/batch/iu', $msg) === 1 && preg_match('/\b(auto|manual)\b/iu', $msg) === 1;
+}
+function golpos_is_employee_intent(string $msg): bool {
+    return preg_match('/(employee|employees|staff|karmachari|कर्मचारी)/iu', $msg) === 1;
+}
+function golpos_is_loyalty_board_intent(string $msg): bool {
+    return preg_match('/(loyalty|leader\s*board)/iu', $msg) === 1;
+}
+function golpos_is_hours_read(string $msg): bool {
+    if (preg_match('/store\s+hours/iu', $msg)) { return true; }
+    if (preg_match('/(khulne|banda).{0,20}(kati|time|samaya|baje|when)/iu', $msg)) { return true; }
+    if (preg_match('/(kati baje|kun time|what time).{0,20}(khul|banda|open|close)/iu', $msg)) { return true; }
+    return false;
+}
+function golpos_is_hours_set(string $msg): bool {
+    $n = golpos_norm_digits($msg);
+    if (!preg_match('/\d{1,2}/', $n)) { return false; }
+    if (preg_match('/(store|pasal|shop|पसल)/iu', $msg) && preg_match('/(banda|close|khul|open|बन्द|खुल)/iu', $msg)) { return true; }
+    if (preg_match('/(banda|khulne).{0,12}\d{1,2}\s*(baje|pm|am)/iu', $n)) { return true; }
+    return false;
+}
+// A typed PIN: 4–6 digits and nothing else (Devanagari digits normalized).
+function golpos_pin_shaped(string $msg): ?string {
+    $d = golpos_norm_digits(trim($msg));
+    return preg_match('/^\d{4,6}$/', $d) ? $d : null;
+}
+// Read a time of day out of a message -> "HH:MM" 24h, or null. With no
+// am/pm marker, the hint decides ("store 9 baje banda" means 9 PM; an
+// opening "7 baje" means 7 AM).
+function golpos_parse_time(string $msg, string $hint): ?string {
+    $n = golpos_norm_digits($msg);
+    if (!preg_match('/(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?/iu', $n, $m)) { return null; }
+    $h = (int)$m[1]; $min = isset($m[2]) && $m[2] !== '' ? (int)$m[2] : 0;
+    $mer = mb_strtolower((string)($m[3] ?? ''));
+    if ($h > 23 || $min > 59) { return null; }
+    if ($mer === 'pm' && $h < 12) { $h += 12; }
+    elseif ($mer === 'am' && $h === 12) { $h = 0; }
+    elseif ($mer === '' && $hint === 'pm' && $h >= 1 && $h < 12) { $h += 12; }
+    return sprintf('%02d:%02d', $h, $min);
+}
+// The invite link an employee receives. Derived from the request so the
+// same code works on the demo preview and any future install.
+function golpos_invite_link(string $token): string {
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
+    $dir = rtrim(dirname(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/server/brain.php'))), '/');
+    return $scheme . '://' . $host . $dir . '/web/invite.html?t=' . $token;
+}
+// Send the invite in Gol's voice. Returns false when mail() refuses, so the
+// caller shows the link in chat instead of pretending it sent.
+function golpos_send_invite(string $email, string $name, string $link, string $shop): bool {
+    $who = $name !== '' ? $name : $email;
+    $subject = "You're invited to join {$shop} on Gol POS";
+    $body = "Hi {$who},\n\n"
+        . "You have been added as an employee at {$shop}. Gol runs the shop by chat — "
+        . "set your own employee PIN from this one-time link and your device will "
+        . "remember you at the register:\n\n{$link}\n\n"
+        . "The link works once. If you didn't expect it, you can ignore this email.\n\n"
+        . "— Gol, your store brain";
+    $headers = "From: Gol POS <no-reply@" . preg_replace('/[^A-Za-z0-9.\-]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'localhost')) . ">\r\n"
+        . "Content-Type: text/plain; charset=utf-8\r\n";
+    return @mail($email, $subject, $body, $headers);
 }
 
 // --- PRIMARY BRAIN: the Muse family via the Meta Model API -------------------
@@ -421,7 +667,17 @@ function golpos_week_facts(string $shop, array $products): array {
     return [implode("\n", $lines), $figures, $weekTx, $weekGross, $today, $monthGross, $monthTx, $monthCash, $monthCard];
 }
 
-if ($msg === '') { out(['reply' => t('empty')]); }
+// --- the dispatch -------------------------------------------------------------
+// Every intent below runs through this one function so the access layer (the
+// boot code at the bottom of this file) can replay the owner's original
+// message verbatim after a PIN elevation: the PIN turn then answers the
+// question that was asked before it, in the same reply. The confirm check
+// runs BEFORE the empty-message check — the register's Confirm button posts
+// {confirm:true} with no message text, and it must execute the card, not be
+// told to "type something".
+function golpos_dispatch(string $msg, array $in, array $catalog, array $products, string $shop): void {
+    global $L;
+    $L = golpos_lang($msg);
 
 // --- the confirm word --------------------------------------------------------
 if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['confirm'])) {
@@ -483,8 +739,30 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
         out(['reply' => t('setting_done', golpos_setting_label($card['setting']),
                           golpos_setting_display($card['setting'], $card['new'])), 'done' => $card]);
     }
+    // A batch-close card: seal exactly the staged segment — re-checked
+    // against the still-unbatched sales, so a segment can never seal twice
+    // (an auto close or a second confirm finds nothing left of it).
+    if ($card['type'] === 'batch_close') {
+        $ids = array_map('strval', $card['sale_ids'] ?? []);
+        $seg = array_values(array_filter(golpos_unbatched_card_sales(),
+            static fn($s) => in_array((string)($s['id'] ?? ''), $ids, true)));
+        golpos_clear_pending();
+        if (!$seg) { out(['reply' => t('batch_none')]); }
+        $b = golpos_seal_batch($seg, 'manual');
+        out(['reply' => t('batch_done', $b['n'], $b['count'], money((float)$b['total'])), 'done' => $card]);
+    }
+    // An employee-remove card: the record leaves the people store.
+    if ($card['type'] === 'employee_remove') {
+        golpos_clear_pending();
+        if (golpos_remove_employee((string)$card['email'])) {
+            out(['reply' => t('emp_removed', (string)$card['email']), 'done' => $card]);
+        }
+        out(['reply' => t('emp_not_found', (string)$card['email'])]);
+    }
     out(['reply' => t('card_fail')]);
 }
+
+if ($msg === '') { out(['reply' => t('empty')]); }
 
 // --- receipt print settings: read + staged changes ---------------------------
 // The POS keeps only its selling screen — print settings are run from this
@@ -493,6 +771,93 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
 // is staged as an old -> new card and executes only on "gol".
 if (preg_match('/(receipt|print|bill|paper).{0,30}settings|settings.{0,30}(receipt|print|bill)|settings\s+(ke|kasto)/iu', $msg)) {
     out(['reply' => golpos_settings_read_reply()]);
+}
+
+// --- store hours + batch mode (read open; changes stage like any setting) ---
+if (golpos_is_hours_read($msg)) {
+    $s = golpos_settings();
+    out(['reply' => t('hours_line', golpos_time12((string)$s['store_open']),
+                      golpos_time12((string)$s['store_close']), (string)$s['batch_mode'])]);
+}
+if (golpos_is_batch_mode_set($msg)) {
+    golpos_stage_setting('batch_mode', preg_match('/auto/iu', $msg) ? 'auto' : 'manual');
+}
+if (golpos_is_hours_set($msg)) {
+    $isClose = preg_match('/(banda|close|बन्द)/iu', $msg) === 1;
+    $t24 = golpos_parse_time($msg, $isClose ? 'pm' : 'am');
+    if ($t24 !== null) { golpos_stage_setting($isClose ? 'store_close' : 'store_open', $t24); }
+    out(['reply' => t('hours_ask')]);
+}
+
+// --- batch close: stage the unbatched card segment (execution on "gol") -----
+if (golpos_is_batch_close_intent($msg)) {
+    $seg = golpos_unbatched_card_sales();
+    if (!$seg) { out(['reply' => t('batch_none')]); }
+    $total = 0.0;
+    foreach ($seg as $s) { $total += (float)($s['total'] ?? 0); }
+    $card = golpos_stage(['type' => 'batch_close', 'count' => count($seg),
+        'total' => round($total, 2),
+        'from' => (string)($seg[0]['at'] ?? ''), 'to' => (string)($seg[count($seg) - 1]['at'] ?? ''),
+        'sale_ids' => array_map(static fn($s) => (string)($s['id'] ?? ''), $seg)]);
+    out(['reply' => t('card_staged'), 'card' => $card]);
+}
+
+// --- employees: add (invite by email), list, staged remove -------------------
+// Admin domain — the gate has already run, so a session reaching here with
+// an employee intent is elevated (or no admin exists yet).
+if (golpos_is_employee_intent($msg)) {
+    $email = null;
+    if (preg_match('/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/', $msg, $em)) { $email = golpos_norm_email($em[0]); }
+    if ($email !== null && preg_match('/(remove|hata|hatau|nikal|निकाल|हटाउ)/iu', $msg)) {
+        $e = golpos_employee($email);
+        if ($e === null) { out(['reply' => t('emp_not_found', $email)]); }
+        $card = golpos_stage(['type' => 'employee_remove', 'email' => $email,
+                              'name' => (string)($e['name'] ?? '')]);
+        out(['reply' => t('card_staged'), 'card' => $card]);
+    }
+    if ($email !== null && preg_match('/(add|thap|थप|invite|join)/iu', $msg)) {
+        $existing = golpos_employee($email);
+        if ($existing !== null) {
+            out(['reply' => t('emp_exists', $email, (string)($existing['status'] ?? ''))]);
+        }
+        $name = trim((string)preg_replace('/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/u', ' ', $msg));
+        $name = trim((string)preg_replace('/\b(add|thap|as|an|a|employee|staff|worker|new|naya|invite|please|plz)\b/iu', ' ', $name));
+        $name = trim((string)preg_replace('/[^\p{L}\s.\'-]/u', ' ', $name));
+        $name = (string)preg_replace('/\s+/', ' ', $name);
+        if (!preg_match('/^[\p{L}][\p{L} .\'-]{0,40}$/u', $name)) { $name = ''; }
+        $token = bin2hex(random_bytes(16));
+        golpos_save_employee(['name' => $name, 'email' => $email, 'role' => 'employee',
+            'status' => 'invited', 'pin_hash' => null,
+            'invite_token_hash' => hash('sha256', $token), 'created' => date('c')]);
+        $display = $name !== '' ? "{$name} ({$email})" : $email;
+        if (golpos_send_invite($email, $name, golpos_invite_link($token), $shop)) {
+            out(['reply' => t('emp_added_sent', $display)]);
+        }
+        out(['reply' => t('emp_added_link', $display, golpos_invite_link($token))]);
+    }
+    if (preg_match('/(list|dekha|dekhaunus|show|ko ko|kati|हेर|देखा)/iu', $msg)) {
+        $emps = golpos_people()['employees'];
+        if (!$emps) { out(['reply' => t('emp_none')]); }
+        $lines = [t('emp_list_head')];
+        foreach ($emps as $e) {
+            $who = trim((string)($e['name'] ?? '')) !== '' ? $e['name'] . ' <' . $e['email'] . '>' : (string)$e['email'];
+            $lines[] = '• ' . $who . ' — ' . (string)($e['status'] ?? '');
+        }
+        out(['reply' => implode("\n", $lines)]);
+    }
+    out(['reply' => t('emp_help')]);
+}
+
+// --- loyalty leaderboard in chat (the panel board, chat-native) --------------
+if (golpos_is_loyalty_board_intent($msg)) {
+    $board = golpos_loyalty_board();
+    if (!$board) { out(['reply' => t('board_none')]); }
+    $lines = [t('board_head')];
+    foreach ($board as $row) {
+        $lines[] = "#{$row['rank']} {$row['name']} — " . money((float)$row['total'])
+            . " ({$row['receipts']} " . ($row['receipts'] === 1 ? 'receipt' : 'receipts') . ')';
+    }
+    out(['reply' => implode("\n", $lines)]);
 }
 $msgN = golpos_norm_digits($msg);
 if (preg_match('/(receipt|bill|print|paper|footer|logo|tax|auto|cop(y|ies)|phone|address|store name|फोन|ठेगाना|लोगो|कर)/iu', $msg)) {
@@ -596,8 +961,21 @@ if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|
 // never mistaken for a question about the total.
 if (preg_match('/(close|banda|बन्द|क्लोज)/iu', $msg)) {
     $rec = golpos_close_day(date('Y-m-d'));
-    out(['reply' => t('close_done', money((float)$rec['gross']), (int)$rec['txns'], money((float)$rec['cash']), money((float)$rec['card'])),
-         'close_record' => $rec]);
+    $reply = t('close_done', money((float)$rec['gross']), (int)$rec['txns'], money((float)$rec['cash']), money((float)$rec['card']));
+    // The close composes WITH the batches: today's sealed batches are named
+    // (auto batches with their close time), and any card sales still outside
+    // a batch are flagged, never silently skipped.
+    foreach (($rec['batches'] ?? []) as $b) {
+        $reply .= "\n" . (($b['closed_by'] ?? '') === 'auto'
+            ? t('batch_auto_line', (int)$b['n'], golpos_time12((string)($b['close_time'] ?? '')),
+                (int)$b['count'], money((float)$b['total']))
+            : t('batch_line', (int)$b['n'], (int)$b['count'], money((float)$b['total'])));
+    }
+    if (($rec['unbatched_card']['count'] ?? 0) > 0) {
+        $reply .= "\n" . t('close_unbatched', (int)$rec['unbatched_card']['count'],
+                           money((float)$rec['unbatched_card']['total']));
+    }
+    out(['reply' => $reply, 'close_record' => $rec]);
 }
 
 // --- day total ---------------------------------------------------------------
@@ -739,3 +1117,173 @@ $reply = golpos_meta_compose($shop, $pack, $msg);
 if ($reply !== null) { out(['reply' => $reply]); }
 
 out(['reply' => t('fallback')]);
+} // end golpos_dispatch
+
+// =============================================================================
+// ACCESS LAYER — the admin PIN gate (owner directive, Oct 28)
+// =============================================================================
+// The register is one chat with two domains. CASHIER domain (never gated):
+// ringing sales, add-by-name, price queries, today's running total, poster
+// creation, settings READS and the STAGING of any card. ADMIN domain: report
+// questions beyond the running day total, the day-close record, batch close,
+// employee management, the loyalty leaderboard — and the EXECUTION of staged
+// price / new-item / setting / batch / remove cards, which is gated at the
+// confirm word.
+//
+// The gate runs before the dispatch and classifies with the dispatch's own
+// matchers, in the dispatch's own order, so a message is gated exactly as it
+// would be answered. An admin message from an unelevated session is never
+// answered and never hinted at: Gol asks for the PIN and nothing else, keeps
+// the original message server-side, and replays it through the dispatch the
+// moment the PIN verifies — one reply, figures and all. A typed PIN is
+// consumed by the gate, never dispatched, never echoed (the client masks
+// the bubble on pin_mask), and verified with password_verify. Three wrong
+// PINs lock elevation for 10 minutes.
+function golpos_needs_admin(string $msg, array $in): bool {
+    if (in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true) || !empty($in['confirm'])) {
+        $pend = golpos_pending();
+        return $pend !== null && in_array($pend['type'] ?? '', [
+            'price_change', 'new_item', 'setting_change', 'batch_close', 'employee_remove',
+        ], true);
+    }
+    if (preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', $msg)) { return true; }
+    if (preg_match('/(receipt|print|bill|paper).{0,30}settings|settings.{0,30}(receipt|print|bill)|settings\s+(ke|kasto)/iu', $msg)) { return false; }
+    if (golpos_is_hours_read($msg) || golpos_is_batch_mode_set($msg) || golpos_is_hours_set($msg)) { return false; }
+    if (golpos_is_batch_close_intent($msg)) { return true; }
+    if (golpos_is_employee_intent($msg)) { return true; }
+    if (golpos_is_loyalty_board_intent($msg)) { return true; }
+    if (preg_match('/(receipt|bill|print|paper|footer|logo|tax|auto|cop(y|ies)|phone|address|store name|फोन|ठेगाना|लोगो|कर)/iu', $msg)) { return false; }
+    if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|kasto|kina|hapta|हप्ता|week|month|suggest|advice|sujhab|sujhav|sallah|slow|trend|improv)/iu', $msg)) { return true; }
+    if (preg_match('/(close|banda|बन्द|क्लोज)/iu', $msg)) { return true; }
+    return false;
+}
+
+// Lazy AUTO batch pass first: any chat call can be the one that finds the
+// store past closing with a card segment waiting (see store.php).
+golpos_batch_auto_sweep();
+
+$sessionId = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($in['session'] ?? ''));
+if ($sessionId === '') { $sessionId = 'anon'; }
+$session = golpos_session($sessionId);
+
+// An identified employee device (invite flow) marks the session as that
+// employee. Identity grants the cashier domain only — never elevation.
+if (isset($in['employee']) && is_array($in['employee'])) {
+    $emp = golpos_employee_by_device((string)($in['employee']['email'] ?? ''),
+                                     (string)($in['employee']['token'] ?? ''));
+    if ($emp !== null) { $session['employee'] = (string)$emp['email']; }
+}
+
+// "lock" / "admin bata bahira" — drop elevation on the spot.
+if (golpos_is_lock_intent($msg)) {
+    $session['admin'] = false;
+    $session['pin_stage'] = null;
+    $session['pin_tmp'] = null;
+    $session['pending'] = null;
+    golpos_save_session($sessionId, $session);
+    out(['reply' => t('admin_off')]);
+}
+
+// A live PIN flow consumes the next message before anything else runs.
+if (!empty($session['pin_stage'])) {
+    $stage = (string)$session['pin_stage'];
+    if (golpos_is_cancel_intent($msg)) {
+        $session['pin_stage'] = null;
+        $session['pin_tmp'] = null;
+        $session['pending'] = null;
+        golpos_save_session($sessionId, $session);
+        out(['reply' => t('pin_cancelled'), 'pin_mask' => true]);
+    }
+    $pin = golpos_pin_shaped($msg);
+    if ($pin === null) {
+        if ($stage === 'verify') {
+            // Not a PIN — the wait is abandoned and the message runs as a
+            // fresh one (the gate below re-judges it on its own).
+            $session['pin_stage'] = null;
+            $session['pending'] = null;
+            golpos_save_session($sessionId, $session);
+        } else {
+            out(['reply' => t('pin_bad_format'), 'pin_mask' => true]);
+        }
+    } elseif ($stage === 'create1') {
+        $session['pin_tmp'] = password_hash($pin, PASSWORD_DEFAULT);
+        $session['pin_stage'] = 'create2';
+        golpos_save_session($sessionId, $session);
+        out(['reply' => t('pin_create_confirm'), 'pin_mask' => true]);
+    } elseif ($stage === 'create2') {
+        if (!password_verify($pin, (string)($session['pin_tmp'] ?? ''))) {
+            $session['pin_tmp'] = null;
+            $session['pin_stage'] = 'create1';
+            golpos_save_session($sessionId, $session);
+            out(['reply' => t('pin_create_mismatch'), 'pin_mask' => true]);
+        }
+        golpos_set_admin_pin((string)$session['pin_tmp']);
+        $session['admin'] = true;
+        $session['pin_stage'] = null;
+        $session['pin_tmp'] = null;
+        $pending = $session['pending'];
+        $session['pending'] = null;
+        golpos_save_session($sessionId, $session);
+        if (is_array($pending) && (string)($pending['message'] ?? '') !== '') {
+            $GLOBALS['golpos_pin_mask'] = true;
+            golpos_dispatch((string)$pending['message'],
+                            ['confirm' => !empty($pending['confirm'])], $catalog, $products, $shop);
+        }
+        out(['reply' => t('pin_set'), 'pin_mask' => true]);
+    } else { // verify
+        $now = time();
+        if ((int)($session['locked_until'] ?? 0) > $now) {
+            out(['reply' => t('pin_locked', (int)ceil(((int)$session['locked_until'] - $now) / 60)),
+                 'pin_mask' => true]);
+        }
+        $hash = golpos_admin_pin_hash();
+        if ($hash !== null && password_verify($pin, $hash)) {
+            $session['admin'] = true;
+            $session['pin_stage'] = null;
+            $session['attempts'] = 0;
+            $pending = $session['pending'];
+            $session['pending'] = null;
+            golpos_save_session($sessionId, $session);
+            // A bare "admin"/"pin" ask has nothing behind it — just confirm.
+            if (is_array($pending) && trim((string)($pending['message'] ?? '')) !== ''
+                && !preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', (string)$pending['message'])) {
+                $GLOBALS['golpos_pin_mask'] = true;
+                golpos_dispatch((string)$pending['message'],
+                                ['confirm' => !empty($pending['confirm'])], $catalog, $products, $shop);
+            }
+            out(['reply' => t('admin_on'), 'pin_mask' => true]);
+        }
+        $session['attempts'] = (int)($session['attempts'] ?? 0) + 1;
+        if ($session['attempts'] >= 3) {
+            $session['attempts'] = 0;
+            $session['locked_until'] = $now + 600;
+            $session['pin_stage'] = null;
+            $session['pending'] = null;
+            golpos_save_session($sessionId, $session);
+            out(['reply' => t('pin_lockout'), 'pin_mask' => true]);
+        }
+        golpos_save_session($sessionId, $session);
+        $left = 3 - (int)$session['attempts'];
+        out(['reply' => t('pin_wrong', $left, $left === 1 ? 'try' : 'tries'), 'pin_mask' => true]);
+    }
+}
+
+// The gate itself: an admin-domain message from an unelevated session gets
+// the PIN demand and NOTHING else — no figures, no hints, no partial answer.
+if (empty($session['admin']) && golpos_needs_admin($msg, $in)) {
+    $session['pending'] = ['message' => $msg, 'confirm' => !empty($in['confirm'])];
+    if (golpos_admin_pin_hash() === null) {
+        $session['pin_stage'] = 'create1';
+        golpos_save_session($sessionId, $session);
+        out(['reply' => t('pin_create_ask')]);
+    }
+    if ((int)($session['locked_until'] ?? 0) > time()) {
+        golpos_save_session($sessionId, $session);
+        out(['reply' => t('pin_locked', (int)ceil(((int)$session['locked_until'] - time()) / 60))]);
+    }
+    $session['pin_stage'] = 'verify';
+    golpos_save_session($sessionId, $session);
+    out(['reply' => t('pin_ask')]);
+}
+
+golpos_dispatch($msg, $in, $catalog, $products, $shop);
