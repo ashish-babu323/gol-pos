@@ -737,6 +737,11 @@ function golpos_settings_defaults(): array {
         'store_open'   => '08:00',
         'store_close'  => '21:00',
         'batch_mode'   => 'manual',
+        // Card surcharge (owner directive, Oct 28): a percent of
+        // subtotal + tax added to CARD sales only, computed by the
+        // sale endpoint from this saved value — never from the client.
+        // 0 = off; cash never carries it.
+        'card_surcharge_pct' => 0,
         // Register open/closed (owner directive, Oct 28): the Settings
         // dropdown's Store toggle. Closed pauses NEW sales — the register
         // blocks the tap and the sale endpoint refuses the POST — while
@@ -769,6 +774,10 @@ function golpos_save_settings(array $in): array {
     }
     if (isset($in['batch_mode']) && in_array($in['batch_mode'], ['manual', 'auto'], true)) {
         $cur['batch_mode'] = $in['batch_mode'];
+    }
+    if (isset($in['card_surcharge_pct']) && is_numeric($in['card_surcharge_pct'])) {
+        $pct = round((float)$in['card_surcharge_pct'], 1);
+        if ($pct >= 0 && $pct <= 10) { $cur['card_surcharge_pct'] = $pct; }
     }
     foreach (['store_open', 'store_close'] as $k) {
         if (isset($in[$k]) && is_string($in[$k])

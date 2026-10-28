@@ -396,7 +396,13 @@ function mrstore_append_ticket(array $sale, string $storeName, string $day, ?str
                 'pay' => $tender, 'total' => $total,
                 'cash' => $tender === 'cash' ? $total : 0.0,
                 'card' => $tender === 'card' ? $total : 0.0,
-                'tax' => (float)($sale['tax'] ?? 0), 'lines' => $lines];
+                'tax' => (float)($sale['tax'] ?? 0),
+                // The journal ticket's own surcharge field: the card
+                // surcharge rides inside `total`/`card` above AND is
+                // named here, so MR.STORE's card reports can split it
+                // back out. Cash sales carry 0.
+                'surcharge' => (float)($sale['surcharge'] ?? 0),
+                'lines' => $lines];
         return lm_pos_append_ticket($row);
     } catch (Throwable $e) {
         return null;

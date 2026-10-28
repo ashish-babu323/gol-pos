@@ -28,6 +28,8 @@ const LOYALTY = '../server/loyalty.php';
 const $ = (id) => document.getElementById(id);
 const money = (n) => '$' + Number(n).toFixed(2);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// A surcharge percent as the owner says it: 3, 2.5 — never 3.0.
+const fmtPct = (p) => String(Math.round(Number(p) * 10) / 10);
 
 // --- receipt print settings: ONE store, two doors -----------------------------
 // Gol chat stages changes as cards; the owner panel edits a form. Both write
@@ -111,6 +113,8 @@ let manualSeq = 0;
 let cartTotals = { subtotal: 0, tax: 0, total: 0 };
 let activeCat = 'All';
 let taxExempt = false; // Settings menu, current sale only — never persisted
+let cardTenderPreview = false; // a card payment is being taken: the totals
+// panel shows the card surcharge (the server computes the real one)
 
 async function loadCatalog() {
   const res = await fetch(API + '?products');
@@ -325,11 +329,24 @@ function renderCart() {
     lines.reduce((s, l) => s + (l.p.taxable === false ? 0 : l.total), 0)
     + manualLines.reduce((s, m) => s + (m.taxable ? m.price : 0), 0));
   const tax = taxExempt ? 0 : roundMoney(taxableSub * (catalog.store.tax_rate || 0));
-  cartTotals = { subtotal: sub, tax, total: roundMoney(sub + tax) };
+  // Card surcharge (owner setting, Oct 28): a percent of subtotal + tax,
+  // added to CARD sales only — cash never carries it. While a card
+  // payment is being taken the panel shows the line and the total the
+  // customer will pay; the server computes the recorded surcharge from
+  // the same setting, so this display never decides the charge.
+  const pct = Number((receiptSettings || {}).card_surcharge_pct) || 0;
+  const surcharge = (cardTenderPreview && pct > 0)
+    ? roundMoney((sub + tax) * pct / 100) : 0;
+  cartTotals = { subtotal: sub, tax, surcharge, total: roundMoney(sub + tax + surcharge) };
   $('subTotal').textContent = money(sub);
   $('taxTotal').textContent = money(tax);
   $('taxBadge').classList.toggle('hidden', !taxExempt);
-  $('grandTotal').textContent = money(sub + tax);
+  $('surchargeRow').classList.toggle('hidden', !(surcharge > 0));
+  if (surcharge > 0) {
+    $('surchargeLabel').textContent = 'Card surcharge (' + fmtPct(pct) + '%)';
+    $('surchargeTotal').textContent = money(surcharge);
+  }
+  $('grandTotal').textContent = money(cartTotals.total);
 }
 // Build the receipt text from the print settings: header lines (store name,
 // address, phone) appear only when their setting shows them, the tax line
@@ -346,6 +363,11 @@ function receiptText(sale) {
   rows.push(...sale.lines.map(l => `${l.name} x${l.qty}  ${money(l.line_total)}` + (l.manual ? (l.taxable ? ' (TAX)' : ' (NO-TAX)') : '')));
   rows.push(sep, `Subtotal  ${money(sale.subtotal)}`);
   if (st.show_tax !== false) { rows.push(`Tax       ${money(sale.tax)}`); }
+  if (Number(sale.surcharge) > 0) {
+    const p = (sale.surcharge_pct !== undefined && sale.surcharge_pct !== null)
+      ? ' (' + fmtPct(sale.surcharge_pct) + '%)' : '';
+    rows.push(`Card surcharge${p}  ${money(sale.surcharge)}`);
+  }
   rows.push(`TOTAL     ${money(sale.total)}`, `Paid by ${sale.tender}`);
   if (sale.tender === 'cash' && sale.tendered !== undefined && sale.tendered !== null) {
     rows.push(`Cash given ${money(sale.tendered)}`, `Change    ${money(sale.change_due || 0)}`);
@@ -392,6 +414,7 @@ async function tender(kind, tendered) {
   await loadCatalog(); // the rung units leave the shelf — counts and bars move
   const st = receiptSettings || {};
   taxExempt = false; // the exemption dies with the sale it was set for
+  cardTenderPreview = false; // and the surcharge preview with it
   setToggle($('smTaxBtn'), false);
   cart.clear(); manualLines = []; renderCart(); refreshToday();
   if (st.auto_open === false) {
@@ -725,7 +748,10 @@ $('scanInput').addEventListener('keydown', (e) => {
   else if (/^\d{8,14}$/.test(code)) { scanUnknownOffer(code); }
   else { chatMsg('Barcode ' + code + ' not found — tell Gol the name and I\'ll add it.', 'gol'); $('chatDrawer').classList.remove('hidden'); }
 });
-$('cashBtn').addEventListener('click', openCashPanel);
+$('cashBtn').addEventListener('click', () => {
+  cardTenderPreview = false; renderCart(); // cash never carries the surcharge
+  openCashPanel();
+});
 $('cashBack').addEventListener('click', () => $('cashModal').classList.add('hidden'));
 $('cashComplete').addEventListener('click', completeCashSale);
 $('cashReceived').addEventListener('input', updateCashPanel);
@@ -737,9 +763,15 @@ document.querySelectorAll('[data-cash-add]').forEach(b =>
     $('cashReceived').value = (cur + parseFloat(b.dataset.cashAdd)).toFixed(2);
     updateCashPanel();
   }));
-$('cardBtn').addEventListener('click', () => tender('card'));
+$('cardBtn').addEventListener('click', async () => {
+  // Taking a card payment: the totals panel first shows the surcharge
+  // line and the total the customer will pay, then the sale runs.
+  cardTenderPreview = true; renderCart();
+  await tender('card');
+});
 $('clearBtn').addEventListener('click', () => {
-  cart.clear(); manualLines = []; taxExempt = false; setToggle($('smTaxBtn'), false); renderCart();
+  cart.clear(); manualLines = []; taxExempt = false; cardTenderPreview = false;
+  setToggle($('smTaxBtn'), false); renderCart();
 });
 $('receiptClose').addEventListener('click', () => $('receiptModal').classList.add('hidden'));
 $('golBtn').addEventListener('click', () => { $('chatDrawer').classList.remove('hidden'); $('chatInput').focus(); });
@@ -817,6 +849,7 @@ function renderSettingsForm() {
        <label>Store opens <input id="os_store_open" type="time" value="${esc(st.store_open || '08:00')}"></label>
        <label>Store closes <input id="os_store_close" type="time" value="${esc(st.store_close || '21:00')}"></label>
        <label>Batch close <select id="os_batch_mode">${opts(['manual', 'auto'], st.batch_mode || 'manual')}</select></label>
+       <label>Card surcharge % <input id="os_card_surcharge_pct" type="number" min="0" max="10" step="0.1" value="${esc(st.card_surcharge_pct ?? 0)}"><span class="os-micro">added to card sales only</span></label>
        <label class="os-chk"><input id="os_show_address" type="checkbox" ${chk(st.show_address)}> Show address line</label>
        <label class="os-chk"><input id="os_show_phone" type="checkbox" ${chk(st.show_phone)}> Show phone line</label>
        <label class="os-chk"><input id="os_logo" type="checkbox" ${chk(st.logo)}> Logo on receipt</label>
@@ -833,12 +866,18 @@ async function saveSettingsForm() {
     copies: parseInt($('os_copies').value, 10), paper_width: $('os_paper_width').value,
     store_open: $('os_store_open').value, store_close: $('os_store_close').value,
     batch_mode: $('os_batch_mode').value,
+    card_surcharge_pct: parseFloat($('os_card_surcharge_pct').value) || 0,
     show_address: $('os_show_address').checked, show_phone: $('os_show_phone').checked,
     logo: $('os_logo').checked, show_tax: $('os_show_tax').checked,
     auto_open: $('os_auto_open').checked } };
   const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload) });
   receiptSettings = await r.json();
+  // The server validates (a surcharge outside 0–10 never lands): the
+  // field re-reads the stored value, so what it shows is what is set.
+  const osPct = $('os_card_surcharge_pct');
+  if (osPct) { osPct.value = receiptSettings.card_surcharge_pct ?? 0; }
+  renderCart();
   $('osSaved').textContent = 'Saved ✓ — Gol chat reads these same settings.';
 }
 
@@ -1110,6 +1149,11 @@ function txnRowEl(sale) {
   };
   tots.appendChild(trow('Subtotal', money(sale.subtotal)));
   tots.appendChild(trow('Tax' + (sale.tax_exempt ? ' — EXEMPT' : ''), money(sale.tax)));
+  if (Number(sale.surcharge) > 0) {
+    const p = (sale.surcharge_pct !== undefined && sale.surcharge_pct !== null)
+      ? ' (' + fmtPct(sale.surcharge_pct) + '%)' : '';
+    tots.appendChild(trow('Card surcharge' + p, money(sale.surcharge)));
+  }
   tots.appendChild(trow('Total', money(sale.total)));
   tots.appendChild(trow('Paid by', sale.tender === 'card' ? 'Card' : 'Cash'));
   if (sale.tender === 'cash' && sale.tendered !== undefined && sale.tendered !== null) {
@@ -1243,13 +1287,18 @@ function setEntryMode(mode) {
   $('tabProducts').setAttribute('aria-selected', entryMode === 'products' ? 'true' : 'false');
   $('tabKeypad').setAttribute('aria-selected', entryMode === 'keypad' ? 'true' : 'false');
 }
-// The keypad buffer is a decimal string the LCD readout formats as money;
-// the cap matches the server's manual-amount limit ($9,999.99).
+// The keypad buffer is an integer CENTS count, entered the way every
+// register and ATM takes money (owner directive, Oct 28): digits shift
+// in from the right as cents — 2, 9, 9 reads $2.99, never $299.00. The
+// "." key of the old decimal pad is now "00", appending two zeros.
+// Six digits caps the buffer at $9,999.99 — the server's manual-amount
+// limit — so an over-cap amount can never even be keyed.
 const MANUAL_CAP = 9999.99;
-let kpBuffer = '';
+const KP_MAX_DIGITS = 6;
+let kpCents = '';
 function kpShow() {
-  const v = kpBuffer === '' ? 0 : parseFloat(kpBuffer);
-  $('kpAmount').textContent = money(Number.isFinite(v) ? v : 0);
+  const cents = kpCents === '' ? 0 : parseInt(kpCents, 10);
+  $('kpAmount').textContent = money(cents / 100);
 }
 function kpErrorShow(text) {
   const el = $('kpError');
@@ -1258,26 +1307,25 @@ function kpErrorShow(text) {
 function kpErrorHide() { $('kpError').classList.add('hidden'); }
 function kpPress(key) {
   kpErrorHide();
-  if (key === 'B') { kpBuffer = kpBuffer.slice(0, -1); kpShow(); return; }
-  if (key === 'C') { kpBuffer = ''; kpShow(); return; }
-  if (key === '.') {
-    if (!kpBuffer.includes('.')) { kpBuffer = (kpBuffer === '' ? '0' : kpBuffer) + '.'; }
+  if (key === 'B') { kpCents = kpCents.slice(0, -1); kpShow(); return; }
+  if (key === 'C') { kpCents = ''; kpShow(); return; }
+  if (key === '00') {
+    kpCents = (kpCents + '00').slice(0, KP_MAX_DIGITS);
     kpShow(); return;
   }
-  if (!/^\d$/.test(key)) { return; }
-  const dot = kpBuffer.indexOf('.');
-  if (dot >= 0) { if (kpBuffer.length - dot > 2) { return; } } // two decimals max
-  else if (kpBuffer.replace(/^0+/, '').length >= 4) { return; } // ≤ $9,999 before the point
-  kpBuffer = kpBuffer === '0' ? key : kpBuffer + key;
+  if (!/^\d$/.test(key)) { return; } // "." is gone from the pad — ignored
+  if (kpCents.length >= KP_MAX_DIGITS) { return; }
+  kpCents += key;
   kpShow();
 }
 function kpAdd(taxable) {
   if (!storeIsOpen()) { storeClosedNote(); return; }
-  const v = kpBuffer === '' ? NaN : Math.round((parseFloat(kpBuffer) + Number.EPSILON) * 100) / 100;
+  const v = kpCents === '' ? NaN
+    : Math.round((parseInt(kpCents, 10) / 100 + Number.EPSILON) * 100) / 100;
   if (!(v > 0)) { kpErrorShow('Key an amount above $0.00 first.'); return; }
   if (v > MANUAL_CAP) { kpErrorShow('Manual amounts are capped at $9,999.99 — ring large items from the catalog.'); return; }
   manualLines.push({ id: 'm' + (++manualSeq), price: v, taxable });
-  kpBuffer = ''; kpShow(); kpErrorHide();
+  kpCents = ''; kpShow(); kpErrorHide();
   renderCart();
   showToast('Manual amount added — ' + (taxable ? 'TAXABLE ' : 'NON-TAX ') + money(v));
 }
@@ -1293,12 +1341,13 @@ $('kpClearBtn').addEventListener('click', () => kpPress('C'));
 $('kpTaxableBtn').addEventListener('click', () => kpAdd(true));
 $('kpNonTaxBtn').addEventListener('click', () => kpAdd(false));
 // A physical keyboard drives the same pad while the Keypad tab is up —
-// digits, ".", Backspace, and Enter for Add · TAXABLE — unless the
-// cashier is typing into a field (scan, search, chat).
+// digits, Backspace, and Enter for Add · TAXABLE — unless the
+// cashier is typing into a field (scan, search, chat). "." is ignored:
+// the cents-shift pad has no decimal key.
 document.addEventListener('keydown', (e) => {
   if (entryMode !== 'keypad') { return; }
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) { return; }
-  if (/^\d$/.test(e.key) || e.key === '.') { kpPress(e.key); }
+  if (/^\d$/.test(e.key)) { kpPress(e.key); }
   else if (e.key === 'Backspace') { e.preventDefault(); kpPress('B'); }
   else if (e.key === 'Enter') { e.preventDefault(); kpAdd(true); }
 });

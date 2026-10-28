@@ -9,6 +9,8 @@
 // the Settings menu still zeroes the sale's tax).
 // Cash sales may carry the amount tendered; the server calculates change
 // and refuses an under-tendered sale instead of recording a false total.
+// Card sales carry the settings' card surcharge, computed here from the
+// saved percent (never from the client) and recorded as `surcharge`.
 // GET  ?summary             -> today's summary
 // GET  ?batch               -> unbatched card segment + today's batches
 // GET  ?last_sale           -> today's most recent sale (reprint), or null
@@ -294,12 +296,29 @@ if ($method === 'POST') {
         // this sale records no tax; nothing about it persists to the next.
         $taxExempt = !empty($sale['tax_exempt']);
         $tax = $taxExempt ? 0.0 : round($taxableSubtotal * $taxRate, 2);
-        $total = round($subtotal + $tax, 2);
         $tender = ($sale['tender'] ?? 'cash') === 'card' ? 'card' : 'cash';
+        // Card surcharge (owner setting): computed HERE from the saved
+        // setting for card sales only — a client-sent figure is never
+        // trusted — and folded into the total the customer pays, so the
+        // day summary's card figure is the paid figure, surcharge
+        // included, exactly as the journal's card field expects. Cash
+        // never carries it; at 0% the record is untouched.
+        $surcharge = 0.0; $surchargePct = 0.0;
+        if ($tender === 'card') {
+            $surchargePct = (float)(golpos_settings()['card_surcharge_pct'] ?? 0);
+            if ($surchargePct > 0) {
+                $surcharge = round((round($subtotal, 2) + $tax) * $surchargePct / 100, 2);
+            }
+        }
+        $total = round($subtotal + $tax + $surcharge, 2);
         $recordData = [
             'lines' => $lines, 'subtotal' => round($subtotal, 2), 'tax' => $tax,
             'total' => $total, 'tender' => $tender,
         ];
+        if ($surcharge > 0) {
+            $recordData['surcharge'] = $surcharge;
+            $recordData['surcharge_pct'] = $surchargePct;
+        }
         if ($taxExempt) { $recordData['tax_exempt'] = true; }
         if ($tender === 'cash') {
             // No tendered amount from an older client means exact cash; an
