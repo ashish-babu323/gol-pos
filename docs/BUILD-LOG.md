@@ -438,3 +438,56 @@ One entry per day; the git history carries the same dates.
   CSS var the new rules consume defined in all three theme blocks
   (--num via :root), ≤900px two-column and ≤560px one-column stacking.
   node --check clean. Asset stamps bumped to 3c0998c.
+
+## Day 3 (Oct 28) — Manual amount entry: the Keypad tab + per-line tax (6c764cd)
+- Owner ask: how does the cashier ring a MANUAL amount — taxable or
+  non-tax? It did not exist. Owner design call: not a cart popover —
+  the products panel gets a TAB SWITCH ("Products" | "Keypad") and
+  Keypad mode turns the whole left side into a register keypad.
+- The Keypad (web/index.html #keypadPane, .kp-* dress in the register's
+  tile language, all three themes): an inset LCD readout (big tabular
+  amount), large tactile keys 1–9, 0, ".", backspace, and a round C
+  (clear) beside the readout; below, two large actions — "Add ·
+  TAXABLE" (brand gradient) and "Add · NON-TAX" (field dress).
+  Category chips live inside the Products pane, so they exist only in
+  Products mode. Adding clears the amount and leaves the pad ready;
+  the cart stays on the right and the line lands there with a TAX /
+  NO-TAX tag (tooltip: remove and re-add to change the amount — qty
+  is fixed at 1, removal rides the cart's line-remove wiring). The
+  cart's ghost "Manual $" button only flips the tab — no popover UI.
+  A physical keyboard drives the pad while the tab is up (digits,
+  ".", Backspace, Enter = Add · TAXABLE) unless a field has focus.
+  Entry discipline: integer part caps at $9,999, two decimals max;
+  zero/empty refuses in the pad with a plain line.
+- Tax is PER-LINE now, client and server: the 8% rate falls on taxable
+  lines only. Catalog products stay taxable by default (a catalog
+  taxable:false flag is honored if present; the seed is untouched),
+  manual lines carry the keypad choice, and the Settings dropdown's
+  whole-sale Tax Exempt still overrides everything to $0 and composes
+  with manual lines (recorded tax_exempt as before).
+- Server (api.php sale path): a line {manual:true, price, qty:1,
+  taxable} needs no SKU and records exactly as keyed —
+  {"manual":true,"name":"Manual amount","price":10,"qty":1,
+  "taxable":true,"line_total":10}. The amount must be $0.01–$9,999.99;
+  a bad amount (0, negative, over cap, non-numeric) refuses the whole
+  sale with a 422 and the plain error, and nothing records. The
+  receipt prints the manual line with its marker — "Manual amount x1
+  $10.00 (NO-TAX)". Day totals and the Gol chat read the same sale
+  records, so a manual sale counts identically in both (chat "today's
+  total" answered $10.80 over the manual-only sale in the battery).
+  No chat intents added; access/PIN/batch/loyalty untouched.
+- Verified on throwaway copies (php -S + curl, and the real app.js
+  under a Node stub DOM against the real API): server 20/20 — manual
+  taxable $10.00 → tax $0.80 / total $10.80 / change $9.20, summary +
+  chat totals include it; non-tax $10.00 → $0.00 / $10.00; mixed Coke
+  $2.19 + non-tax $5.00 → $7.19 / $0.18 / $7.37; Beat-1 regression
+  exact ($6.67 / $0.53 / $7.20, $10 tender → $2.80 change); five
+  invalid amounts 422 with nothing recorded; Tax Exempt + manual
+  taxable → tax $0.00 with the flag stored. Client 28/28 — tab flips
+  both ways with the cart intact, chips inside the hidden Products
+  pane in Keypad mode, wired key buttons drive the pad, amounts clear
+  after Add, entries survive a tab round-trip, the × removal restores
+  catalog-only totals ($2.19 / $0.18 / $2.37), cap/backspace/clear
+  discipline, manual-only tender records through the real API and the
+  receipt shows the marker. node --check / php -l clean. Asset
+  stamps bumped to 6c764cd.
