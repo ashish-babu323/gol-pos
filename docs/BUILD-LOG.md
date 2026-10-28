@@ -1458,3 +1458,67 @@ both stages restored byte-for-byte from the pre-build snapshot (dev
 plus the fictional credit fixture Ava $12.00 / Ben $25.50 as the
 spec-ordered end state; sim 3,000 / $57,301.04 / 30 closes, virgin
 roster, QA stock netted out).
+
+## Register Camera Part B (Oct 28, 2026) — commit ce265fa, stamps ce265fa
+
+MR.STORE is the master of the register camera; Part A put the keys on
+the store's shop_profile (register_camera master, register_camera_audio,
+register_camera_record — strict booleans, children effective only under
+the master). Part B makes the POS obey them. One function —
+golpos_regcam_state() in server/mrstore.php — is the single source of
+truth, reading the SAME profile record mrstore_settings() already
+reads (top-level mirror keys first, store_ops fallback; absent = OFF):
+effective state = mode, master, audio/record (master && child), the
+local flip, and stream = master && flip. api.php?settings (and the
+settings POST response) carry the block, so the client never guesses.
+
+Link mode (sim): master OFF -> the register NEVER starts a stream —
+client gates keyed on regcam.stream (syncWatchCam, pair flows, capture
+view, sense) plus a server-side second gate: frame.php refuses a
+still-frame POST in link mode while the master is OFF. The flip can be
+saved under a held master but turns nothing on; a held sense attempt
+answers in chat, honestly. Master ON + flip ON -> auto-start as
+before; master ON + flip OFF -> down at that till. The audio child
+joins the stream request (getUserMedia audio flag; a live stream is
+restarted when the flag changes under it) and rides the captured
+evidence metadata. The record child turns a CASH tender's evidence
+into a ~4s MediaRecorder event clip (still frame kept beside it) via
+frame.php's new clip door — cash only, record-effective only, video
+mime only, one clip per sale, re-take replaces — served back at
+frame.php?clip=<txn>; Transactions rows show the clip (with a "with
+sound" marker) beside the still. Card sales never capture (unchanged
+law, clip and frame alike). Gol chat answers camera state from the
+same facts in the asker's language (en / Romanized NP / Hindi /
+Devanagari); in link mode the master's children are chat-read-only —
+the answer names MR.STORE Settings and stages nothing; a bare "camera
+on/off" intent is held the same way while the master is off. The
+footage shelf ships register-side: api.php?footage (records) and
+server/footage.php (owner-gated list page, same session gate as the
+?team feed). The MR.STORE desk leg inside gol-chat.php is a NAMED
+FOLLOW-UP — that file was off-limits this build (another build owns
+it today); store-api/gol-chat.php untouched.
+
+Standalone (dev): no master above the till — the local flip stands in
+for it, and audio/record exist as LOCAL settings of the same names
+(defaults OFF = the shipped still-frame behavior), staged via chat
+cards like any other setting; the Owner panel + Register Settings
+mirror the effective state read-only in both modes.
+
+Battery: 51/51 over real HTTP on two throwaways (link instance bound
+to the QA store + a profile toggle drill, standalone instance) —
+master-off block (settings state, NP + EN honest state asks, held
+flip intent, server frame refusal, no file saved), master-on matrix
+(flip off = down, flip on = up, audio flag in the settings block the
+client receives + served-JS code path asserts), record on/off (cash
+clip lands with txn id + audio metadata, footage endpoint + page,
+still-only when off), card-sale refusals on both doors, unlock-photo
+door regression (stamped photo on the team feed), and the smoke slice
+(unlock -> sale -> refund quote -> chat day close). Restorations:
+QA shop_profile back to ABSENT (the pre-drill state), product_catalog
++ stock_overrides byte-exact incl. updated_at, today's QA journal
+file md5-restored, throwaways removed. Live proofs: sim regcam reads
+link/all-off, sim month intact 3,000 / $57,301.04; dev standalone
+defaults, month 887 / $9,178.79, today 0/0, 29 closes, watch_frame
+OFF, owner people/sessions/settings md5-identical — his PIN never
+touched. NOT claimed: real microphone audio inside a real clip — no
+device exists on this machine; the Oct 30 hardware pass owns it.
