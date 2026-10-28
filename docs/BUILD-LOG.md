@@ -169,3 +169,74 @@ One entry per day; the git history carries the same dates.
     (1 receipt) / Dev Patel #2 $9.36 (1 receipt); brain smoke test ("How much
     is a Coke?" → "A Coca-Cola 20oz costs $2.19.") unchanged. PHP -l clean on
     every server file, node --check clean on both JS files.
+- **Access management + batch close + full chat parity (owner directive, Oct 28 — the Oct 30 gate set).**
+  The owner panel stays exactly as it was — the law is parity, not removal: nothing may
+  REQUIRE the backend screen, so every function the panel shows is now fully answerable
+  and stageable in the Gol chat.
+  - **Two domains, one chat.** Cashier domain (never gated): ringing sales, add-by-name,
+    price queries, today's running total, poster creation, settings reads, and the
+    STAGING of any card. Admin domain: report questions beyond the running day total,
+    the day-close record, batch close, employee management, the loyalty leaderboard —
+    and the EXECUTION of staged price / new-item / setting / batch / employee-remove
+    cards, gated at the confirm word (a non-admin saying "gol" to an admin card gets
+    the PIN demand first; the card executes the moment the PIN verifies).
+  - **The admin PIN gate** (`server/brain.php` access layer over `data/people.json` +
+    `data/sessions.json`): chat calls carry a client session id (localStorage); the
+    server keys elevation to it. No PIN yet → the first admin intent runs a create-PIN
+    flow (enter a 4–6 digit PIN, once more to confirm; `password_hash` at rest).
+    Unelevated admin intent → Gol asks for the PIN and NOTHING else (no figures, no
+    hints), keeps the original message server-side, and replays it through the intent
+    dispatch on success — the PIN turn answers the original question in one reply.
+    A typed PIN is consumed by the gate, never dispatched, never logged as text (the
+    response's `pin_mask` flag makes the client render the bubble as ••••); 3 wrong
+    PINs lock elevation for 10 minutes; "lock" / "admin bata bahira" drops it. The
+    dispatch now runs as one function so the gate can replay into it, and the confirm
+    check moved above the empty-message check — the register's Confirm button posts
+    {confirm:true} with no text and previously met the "type something" reply instead
+    of executing its card; it executes now.
+  - **Employees** (admin domain): "add Ram <email> as employee" creates the invited
+    record and sends a one-time invite email via PHP `mail()` in Gol's voice (link to
+    the new `web/invite.html`); if `mail()` fails the reply says so plainly and carries
+    the link — never a pretend send. `server/invite.php` validates the token by hash,
+    the employee sets their own 4–6 digit PIN (status → active, invite token burned),
+    and the device token it issues rides with that device's chat calls. An identified
+    employee holds the cashier domain only — admin questions demand the ADMIN PIN;
+    the employee PIN never elevates. List and staged remove ("remove <email>" + "gol")
+    included.
+  - **Batch close** (`data/batches.json`): segments are computed from sale ids, so a
+    segment can never seal twice and cash never batches. "batch close gara" stages the
+    unbatched card segment (count / total / period); "gol" seals batch #N; no unbatched
+    card sales → said plainly, nothing staged. Day close and the Reports API compose
+    WITH batches — the day's batches are named and any unbatched card remainder is
+    flagged, never skipped.
+  - **AUTO batch mode (owner addition, same day):** new settings `store_open` /
+    `store_close` / `batch_mode` in the shared settings store, settable in chat as
+    staged setting changes ("batch auto gara", "store closes at 9 PM", "store 9 baje
+    banda huncha") and readable ("store hours kati ho?"). The POS is request-driven,
+    so the seal is lazy: every API/chat call first runs the sweep — in auto mode, past
+    today's close (compared as a full timestamp; a minute-granularity compare held the
+    seal a beat too long in the first battery run and was fixed), today's unsealed card
+    segment seals itself with `closed_by: "auto"` and the close time recorded, at most
+    one auto batch per day. Day close names it: "Batch #N auto-closed at 9:00 PM —
+    12 card sales, $XXX". A manual close earlier that day leaves nothing for the pass.
+  - **Verified on a throwaway copy only** (PHP built-in server, invite mail sunk to a
+    file — no real email sent; repo and preview data untouched): access battery 43/43 —
+    cashier price/day-total/add-by-name open; first admin ask runs create-PIN with zero
+    figures leaked; wrong PINs refused with tries counted; correct PIN answers the
+    pending question and the next admin question needs no PIN; non-admin "gol" on a
+    staged price change demands the PIN before the price moves (verified unchanged,
+    then executed on the PIN, then restored); employee added → record invited + invite
+    captured in the mail sink with a working token → PIN set → active → employee's
+    admin ask demands the ADMIN PIN and the employee PIN is refused as one; batch:
+    2 card sales stage with exact count/total → "gol" seals batch #1 → second close
+    stages nothing → day close names batch #1 with no unbatched warning; loyalty
+    leaderboard answers from the store (Maya Sharma #1, $24.50) for admin and demands
+    the PIN from a cashier; "lock" re-gates; no plaintext PIN anywhere in the stores.
+    Auto-batch battery 16/16 — hours read open; manual mode seals nothing past a past
+    or future close; mode switch stages for a cashier but executes only past the PIN;
+    after switching to auto, the next call seals the waiting segment as batch #2
+    (auto, correct count/total/close time), never twice; the day close names it.
+    Employee remove (staged + "gol"), settings read with the new lines, and a Nepali
+    PIN demand with no leak spot-checked by hand. PHP -l clean on every server file,
+    node --check clean on app.js + invite.js; asset stamps bumped to the client
+    commit per the static-cache law.
