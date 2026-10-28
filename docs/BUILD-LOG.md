@@ -491,3 +491,48 @@ One entry per day; the git history carries the same dates.
   discipline, manual-only tender records through the real API and the
   receipt shows the marker. node --check / php -l clean. Asset
   stamps bumped to 6c764cd.
+- Living shelf (owner directive, Oct 28: "product lai live inventory
+  banau, inventory count sahit alive dekhiyo — filled bar lights,
+  almost empty — Coca-Cola a liquid bar, candy solid bar" + "item ko
+  image hala"): every product tile is now a shelf slot. The seed
+  carries stock / par / img per product (par by category: Drinks 24,
+  Snacks 20, Grocery 12, Household 10, Health 15, Beer and Wine 24,
+  Counter 30; the opening shelf shows every state, Hot Dog at 0).
+  Tiles show the packshot (62 real product images normalized to
+  480x480 white-padded WebP in web/assets/products/, 1.1 MB total;
+  a missing file falls back to the letter tile via onerror — never a
+  broken-image icon), the live count ("24 in stock" / "Only 3 left"),
+  a state light (healthy calm, <50% amber, <20% red pulse, 0 = OUT
+  tag + dimmed tile) and a fill bar against par: a LIQUID bar with an
+  animated foam wave for Drinks + Beer and Wine, a SOLID bar with a
+  slow shine for snacks/candy/grocery/household/health/counter.
+  LIVE means live: api.php decrements the standalone shelf as sales
+  record (store.php golpos_decrement_stock, floors at zero, untracked
+  products skipped; link mode untouched — MR.STORE moves its own
+  stock, never both), and golpos_catalog_fill_shelf() fills
+  stock/par/img from the seed into live catalogs written before the
+  shelf existed, without rolling back staged price changes. The grid
+  refreshes after every tender and on chat-drawer close, and bars
+  animate from their last level (last-fill tracking) instead of
+  snapping. Tapping an OUT tile toasts "Out of stock" and adds
+  nothing; the chat's add path is unchanged (viaChat). Rider from the
+  owner's screenshot: the tax-exempt flag now disarms itself whenever
+  renderCart finds the cart empty — the EXEMPT badge never lingers
+  on an empty cart, and the Settings toggle re-reads the same flag.
+- Verified on a throwaway copy (php -S + curl, and the real app.js
+  under a Node stub DOM against the real API): API — 2x Coke sale
+  exact ($4.38 / $0.35 / $4.73, change $5.27) and Coke stock 18 -> 16
+  in the payload; Beat-1 exact ($6.67 / $0.53 / $7.20, $2.80 change);
+  manual taxable $10 -> $0.80 / $10.80, non-tax $10 -> $10.00,
+  exempt + manual taxable -> tax $0.00 with the flag stored; an
+  OUT product's sale floors its stock at 0, never negative. Client
+  21/21 — tile states render from the payload (Coke liquid ok 75%,
+  Gum solid crit "Only 3 left", Eggs crit, Milk solid low, Heineken
+  ok at exactly 50%, Hot Dog OUT dimmed + tag), OUT tap refused with
+  the toast, tender drops the Coke count to 16 with the bar target
+  updated and server stock agreeing, a server-side stock write +
+  drawer-close refresh raises the bar again, the exempt rider
+  disarms on last-line and last-manual-line removal, keypad totals
+  (10 TAX + 10 NON-TAX -> $20.00 / $0.80 / $20.80) and Beat-1 client
+  totals exact. All 62 packshots serve over HTTP as image/webp.
+  node --check / php -l clean. Asset stamps bumped to 5e2e56f.
