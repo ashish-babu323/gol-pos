@@ -29,6 +29,24 @@ header('Content-Type: application/json; charset=utf-8');
 
 function pout(array $r): void {
     $r['meta'] = $GLOBALS['golpos_meta'] ?? ['provider' => 'deterministic', 'model' => null];
+    // Verify Loop tap: a staged bill card is a checkable claim — its
+    // lines against its total (arithmetic facet). WHICH items the lines
+    // name can never be re-proven from arithmetic (a same-sum swap
+    // passes any sum check), so the identity facet is journaled as
+    // uncheckable by design — the verifier logs it, never guesses it.
+    if (!empty($r['card']) && ($r['card']['type'] ?? '') === 'bill') {
+        $c = $r['card'];
+        $lines = [];
+        foreach ((array)($c['lines'] ?? []) as $l) {
+            $lines[] = ['name' => (string)($l['name'] ?? ''), 'qty' => (float)($l['qty'] ?? 1),
+                        'unit_cost' => round((float)($l['unit_cost'] ?? 0), 2),
+                        'line_total' => round((float)($l['line_total'] ?? 0), 2)];
+        }
+        golpos_verify_journal(['class' => 'bill_arithmetic', 'label' => (string)($c['vendor'] ?? 'bill'),
+            'figure' => round((float)($c['total'] ?? 0), 2), 'unit' => 'money',
+            'inputs' => ['lines' => $lines], 'facets' => ['identity' => 'uncheckable'],
+            'session' => (string)($GLOBALS['golpos_photo_session'] ?? '')]);
+    }
     echo json_encode($r, JSON_UNESCAPED_UNICODE); exit;
 }
 $GLOBALS['golpos_meta'] = ['provider' => 'deterministic', 'model' => null];
@@ -61,6 +79,7 @@ if ($prompt === '') { $prompt = 'product'; }
 // the SAME session the owner's chat answers in.
 $sessionId = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($_POST['session'] ?? ''));
 if ($sessionId === '') { $sessionId = 'anon'; }
+$GLOBALS['golpos_photo_session'] = $sessionId;
 
 // Scan-by-phone pairing: an upload carrying a pair_token was taken on a
 // phone acting as THIS register's camera. The token — minted by the
@@ -77,6 +96,7 @@ if ($pairToken !== '') {
         pout(['reply' => 'That scan link has expired or is not recognized — ask the register for a fresh "Scan with phone" link, then take the photo again. Nothing was read or staged.']);
     }
     $sessionId = (string)$rec['session'];
+    $GLOBALS['golpos_photo_session'] = $sessionId;
     $paired = true;
 }
 $inboxPush = static function (array $out) use ($paired, $sessionId): void {

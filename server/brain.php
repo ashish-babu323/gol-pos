@@ -67,6 +67,70 @@ function golpos_claims_sale(string $reply): bool {
     }
     return false;
 }
+// --- Verify Loop tap: journal this reply's checkable claims -----------------
+// Structured payloads only (audit v1 scope): graph series/totals, the
+// close record, executed pay cards. The journal carries the inputs the
+// lane claims — the dates, and the sales/refund counts as a PREFIX
+// fingerprint: the data files are append-only, so the verifier
+// recomputes exactly the world this reply saw, even as today grows.
+function golpos_verify_out(array $r): void {
+    $fp = ['sales_n' => count(golpos_sales()), 'refunds_n' => count(golpos_refunds())];
+    $sid = (string)($GLOBALS['golpos_session_id'] ?? '');
+    if (!empty($r['graph']) && is_array($r['graph']) && empty($r['graph']['empty'])) {
+        $g = $r['graph'];
+        $kind = (string)($g['kind'] ?? '');
+        if ($kind === 'bars' || $kind === 'spark' || $kind === 'compare') {
+            $dates = [];
+            foreach ((array)$g['series'] as $p) {
+                if (!isset($p['ymd'])) { continue; }
+                $dates[] = (string)$p['ymd'];
+                golpos_verify_journal(['class' => 'money_day_total', 'label' => (string)$p['ymd'],
+                    'figure' => round((float)$p['value'], 2), 'unit' => 'money',
+                    'inputs' => $fp, 'session' => $sid]);
+            }
+            if ($dates && $kind !== 'compare') {
+                golpos_verify_journal(['class' => 'money_range_total',
+                    'label' => $dates[0] . '..' . $dates[count($dates) - 1],
+                    'figure' => round((float)($g['total'] ?? 0), 2), 'unit' => 'money',
+                    'inputs' => $fp + ['from' => $dates[0], 'to' => $dates[count($dates) - 1]],
+                    'session' => $sid]);
+            }
+        } elseif ($kind === 'hbars') {
+            foreach ((array)$g['series'] as $p) {
+                $qty = null;
+                if (isset($p['sub']) && preg_match('/×(\d+)/u', (string)$p['sub'], $m)) { $qty = (int)$m[1]; }
+                golpos_verify_journal(['class' => 'best_seller_rev', 'label' => (string)($p['label'] ?? ''),
+                    'figure' => round((float)($p['value'] ?? 0), 2), 'unit' => 'money',
+                    'inputs' => $fp + ['ymd' => (string)($p['ymd'] ?? ''), 'qty' => $qty],
+                    'session' => $sid]);
+            }
+        }
+    }
+    if (!empty($r['close_record']) && is_array($r['close_record'])) {
+        $rec = $r['close_record'];
+        golpos_verify_journal(['class' => 'close_figure', 'label' => (string)($rec['date'] ?? ''),
+            'figure' => round((float)($rec['gross'] ?? 0), 2), 'unit' => 'money',
+            'inputs' => $fp + ['cash' => round((float)($rec['cash'] ?? 0), 2),
+                               'card' => round((float)($rec['card'] ?? 0), 2),
+                               'txns' => (int)($rec['txns'] ?? 0)], 'session' => $sid]);
+    }
+    if (!empty($r['done']) && is_array($r['done'])
+        && in_array((string)($r['done']['type'] ?? ''), ['pay_send', 'pay_approve'], true)) {
+        $c = $r['done'];
+        golpos_verify_journal(['class' => 'pay_math',
+            'label' => (string)($c['employee_email'] ?? '') . ' ' . (string)($c['period_from'] ?? '') . '..' . (string)($c['period_to'] ?? ''),
+            'figure' => round((float)($c['amount'] ?? 0), 2), 'unit' => 'money',
+            'inputs' => ['employee_email' => (string)($c['employee_email'] ?? ''),
+                         'period_from' => (string)($c['period_from'] ?? ''),
+                         'period_to' => (string)($c['period_to'] ?? ''),
+                         'lines' => (array)($c['lines'] ?? []),
+                         'segments' => (array)($c['segments'] ?? []),
+                         'hours' => round((float)($c['hours'] ?? 0), 2),
+                         'covered_until' => $c['covered_until'] ?? null,
+                         'unlocks_n' => count(golpos_unlocks())],
+            'session' => $sid]);
+    }
+}
 function out(array $r): void {
     // ANTI-BLUFF GUARD (owner-caught, Oct 28): a reply may only say a card
     // was staged when a card is actually in this response or still pending
@@ -108,6 +172,7 @@ function out(array $r): void {
     // when it replayed the pending intent after a successful PIN), the
     // client masks the typed bubble — the digits never stand in the history.
     if (!empty($GLOBALS['golpos_pin_mask'])) { $r['pin_mask'] = true; }
+    golpos_verify_out($r);
     echo json_encode($r, JSON_UNESCAPED_UNICODE); exit;
 }
 function money(float $n): string { return '$' . number_format($n, 2); }
@@ -2706,7 +2771,7 @@ function golpos_graph_days_series(int $n, ?string $focusYmd = null): array {
         $ymd = date('Y-m-d', strtotime("-{$i} days"));
         $v = round((float)golpos_day_summary($ymd)['gross'], 2);
         $total = round($total + $v, 2);
-        $p = ['label' => date('D j', strtotime($ymd)), 'value' => $v];
+        $p = ['label' => date('D j', strtotime($ymd)), 'value' => $v, 'ymd' => $ymd];
         if ($focusYmd !== null && $ymd === $focusYmd) { $p['highlight'] = true; }
         $series[] = $p;
     }
@@ -2719,7 +2784,7 @@ function golpos_graph_month_series(): array {
         $ymd = date('Y-m-') . str_pad((string)$d, 2, '0', STR_PAD_LEFT);
         $v = round((float)golpos_day_summary($ymd)['gross'], 2);
         $total = round($total + $v, 2);
-        $series[] = ['label' => date('M j', strtotime($ymd)), 'value' => $v,
+        $series[] = ['label' => date('M j', strtotime($ymd)), 'value' => $v, 'ymd' => $ymd,
                      'highlight' => $ymd === date('Y-m-d')];
     }
     return [$series, $total];
@@ -5064,6 +5129,10 @@ if (preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khatam|restock|received|d
             $st = mrstore_stock_of((string)($p['mr_name'] ?? $p['name']));
             if ($st === null) { out(['reply' => t('stock_link_down')]); }
             if ($st['onHand'] === null) { out(['reply' => t('stock_untracked', $st['name'])]); }
+            golpos_verify_journal(['class' => 'stock_count', 'label' => (string)$st['name'],
+                'figure' => (float)$st['onHand'], 'unit' => 'count',
+                'inputs' => ['sku' => (string)($p['sku'] ?? ''), 'name' => (string)$st['name'], 'mode' => 'link'],
+                'session' => (string)($GLOBALS['golpos_session_id'] ?? '')]);
             $reply = t('stock_one', $st['name'], $fmtq($st['onHand']));
             $tail = golpos_cal_notes_tail($st['name']);
             if ($tail !== '') { $reply .= "\n" . $tail; }
@@ -5071,6 +5140,10 @@ if (preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khatam|restock|received|d
         }
         $oh = $onHandOf($p);
         if ($oh === null) { out(['reply' => t('stock_untracked_local', $p['name'])]); }
+        golpos_verify_journal(['class' => 'stock_count', 'label' => (string)$p['name'],
+            'figure' => (float)$oh, 'unit' => 'count',
+            'inputs' => ['sku' => (string)($p['sku'] ?? ''), 'name' => (string)$p['name'], 'mode' => 'local'],
+            'session' => (string)($GLOBALS['golpos_session_id'] ?? '')]);
         $reply = t('stock_one_local', $p['name'], $fmtq($oh));
         $tail = golpos_cal_notes_tail((string)$p['name']);
         if ($tail !== '') { $reply .= "\n" . $tail; }
@@ -5099,8 +5172,8 @@ if (golpos_is_bestseller_ask($msg) || golpos_is_compare_ask($msg)) {
             : ($diff < 0 ? t('cmp_diff_down', 'Today', money(abs($diff))) : t('cmp_diff_even'));
         // The two bars ARE the two figures in the sentence — same reads.
         $graph = golpos_graph_payload('compare', t('graph_compare'), [
-            ['label' => golpos_day_label($yday), 'value' => round((float)$a['gross'], 2)],
-            ['label' => golpos_day_label($today), 'value' => round((float)$b['gross'], 2),
+            ['label' => golpos_day_label($yday), 'value' => round((float)$a['gross'], 2), 'ymd' => $yday],
+            ['label' => golpos_day_label($today), 'value' => round((float)$b['gross'], 2), 'ymd' => $today,
              'highlight' => true],
         ], round((float)$a['gross'] + (float)$b['gross'], 2));
         out(['reply' => t('cmp_line', golpos_day_label($yday), money((float)$a['gross']), (int)$a['txns'],
@@ -5124,7 +5197,7 @@ if (golpos_is_bestseller_ask($msg) || golpos_is_compare_ask($msg)) {
     // Horizontal bars from the SAME sorted list the sentence names: the
     // top-3-by-revenue figures in the text are bars 1–3, value for value.
     $topRev = array_slice($byRev, 0, 5);
-    $series = array_map(static fn($i) => ['label' => (string)$i['name'],
+    $series = array_map(static fn($i) => ['label' => (string)$i['name'], 'ymd' => $ymd,
         'value' => round((float)$i['rev'], 2), 'sub' => '×' . (int)$i['qty']], $topRev);
     $gTotal = 0.0; foreach ($series as $p) { $gTotal = round($gTotal + $p['value'], 2); }
     out(['reply' => t('best_line', golpos_day_label($ymd),
@@ -5294,12 +5367,24 @@ if (preg_match('/(kati|kitna|kitne|price|mulya|dam|daam|how much|मूल्य
     $r = resolve_item($products, $msg);
     if (!empty($r['one'])) {
         $p = $r['one'];
+        golpos_verify_journal(['class' => 'price_shelf', 'label' => (string)$p['name'],
+            'figure' => round((float)$p['price'], 2), 'unit' => 'money',
+            'inputs' => ['sku' => (string)($p['sku'] ?? ''), 'name' => (string)$p['name'],
+                         'mode' => golpos_link_on() ? 'link' : 'local'],
+            'session' => (string)($GLOBALS['golpos_session_id'] ?? '')]);
         // Muse phrases the answer around the exact resolved price.
         $reply = golpos_meta_compose($shop, "Price fact: {$p['name']} costs " . money((float)$p['price']) . ". The owner asked its price.", $msg);
         if ($reply !== null && strpos($reply, money((float)$p['price'])) !== false) { out(['reply' => $reply]); }
         out(['reply' => $p['name'] . ' — ' . money((float)$p['price']) . '.']);
     }
     if (!empty($r['many'])) {
+        foreach ($r['many'] as $cand) {
+            golpos_verify_journal(['class' => 'price_shelf', 'label' => (string)$cand['name'],
+                'figure' => round((float)$cand['price'], 2), 'unit' => 'money',
+                'inputs' => ['sku' => (string)($cand['sku'] ?? ''), 'name' => (string)$cand['name'],
+                             'mode' => golpos_link_on() ? 'link' : 'local'],
+                'session' => (string)($GLOBALS['golpos_session_id'] ?? '')]);
+        }
         $list = implode(', ', array_map(fn($p) => $p['name'] . ' (' . money((float)$p['price']) . ')', $r['many']));
         $reply = golpos_meta_compose($shop, "Several products match the owner's words. Candidates with exact prices: {$list}. Ask which one they mean.", $msg);
         if ($reply !== null) {

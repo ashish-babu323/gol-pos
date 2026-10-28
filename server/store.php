@@ -28,6 +28,27 @@ function golpos_write(string $name, $data): void {
     rename($tmp, $path);
 }
 
+// --- Verify Loop tap (Oct 28 — the watchdog claim, made mechanical) ----------
+// Every structured figure this register speaks is journaled here so the
+// MR.STORE Verify Loop (store-api/gol-verify.php) can re-compute it
+// against the books on its */10 sweep: a wrong figure tickets itself,
+// births a battery case, and — on test stages only — corrects in-thread.
+// Append-only and best-effort BY LAW: a journal failure must never break
+// a reply, so every error is swallowed.
+function golpos_verify_instance(): string {
+    return basename(dirname(__DIR__));
+}
+function golpos_verify_journal(array $claim): void {
+    try {
+        $claim = ['id' => 'c_' . bin2hex(random_bytes(6)), 'ts' => gmdate('c'),
+                  'surface' => 'gol-pos', 'instance' => golpos_verify_instance()] + $claim;
+        $line = json_encode($claim, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($line !== false) {
+            @file_put_contents(golpos_data_dir() . '/verify_journal.jsonl', $line . "\n", FILE_APPEND | LOCK_EX);
+        }
+    } catch (Throwable $e) { /* the tap never breaks a reply */ }
+}
+
 // The live catalog starts as a copy of the seed so staged writes never touch the seed.
 // LINK MODE (MR.STORE connected): the catalog IS the linked store's live
 // catalog — names, prices and on-hand counts from MR.STORE itself. The
