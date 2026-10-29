@@ -144,10 +144,18 @@ async function loadCatalog() {
   $('storeName').textContent = catalog.store.name || 'Register';
   renderCats(); renderGrid(); renderKpCats(); renderKpList(); refreshToday();
 }
+// The Out view (owner, Oct 28): every product whose live stock is 0,
+// from the same stockOf() the tiles read — a sale that rings the last
+// unit adds the product here, a receive takes it back out, because the
+// view is re-derived on every render, never snapshotted.
+function outOf(p) { const s = stockOf(p); return s !== null && s <= 0; }
+function outCount() { return catalog.products.filter(outOf).length; }
 function renderCats() {
   const cats = ['All', ...new Set(catalog.products.map(p => p.category))];
+  const oc = outCount();
   $('catRow').innerHTML = cats.map(c =>
-    `<button type="button" class="${c === activeCat ? 'on' : ''}" data-cat="${c}">${c}</button>`).join('');
+    `<button type="button" class="${c === activeCat ? 'on' : ''}" data-cat="${c}">${c}</button>`).join('') +
+    `<button type="button" class="out-chip${activeCat === 'Out' ? ' on' : ''}" data-cat="Out">Out${oc ? `<span class="out-count">${oc}</span>` : ''}</button>`;
   $('catRow').querySelectorAll('button').forEach(b =>
     b.addEventListener('click', () => { activeCat = b.dataset.cat; renderCats(); renderGrid(); }));
 }
@@ -222,7 +230,7 @@ function animateFills(scopeEl) {
 function renderGrid() {
   const q = $('searchInput').value.trim().toLowerCase();
   const items = catalog.products.filter(p =>
-    (activeCat === 'All' || p.category === activeCat) &&
+    (activeCat === 'All' || (activeCat === 'Out' ? outOf(p) : p.category === activeCat)) &&
     (!q || p.name.toLowerCase().includes(q) || p.barcode.includes(q)));
   $('grid').innerHTML = items.map(p => {
     const s = stockOf(p);
@@ -231,7 +239,7 @@ function renderGrid() {
        <span class="tile-media"><span class="tile-art ${artClass(p)}">${(p.name || 'G').trim().charAt(0).toUpperCase()}</span>${p.img ? `<img class="tile-img" src="${esc(p.img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}${out ? '<span class="tile-out-tag">OUT</span>' : ''}</span>
        <span class="tile-name">${p.name}</span>${stockHtml(p)}<span class="tile-foot"><span class="tile-price">${money(p.price)}</span><button type="button" class="tile-stock-add${out ? ' rescue' : ''}" data-stock-sku="${p.sku}" aria-label="Add stock to ${esc(p.name)}">＋ Stock</button></span>
      </div>`;
-  }).join('') || '<p class="empty">No products match.</p>';
+  }).join('') || `<p class="empty">${activeCat === 'Out' && !q ? 'Nothing is out right now.' : 'No products match.'}</p>`;
   $('grid').querySelectorAll('.tile').forEach(t => {
     t.addEventListener('click', () => addToCart(t.dataset.sku));
     t.addEventListener('keydown', (e) => {
@@ -330,6 +338,10 @@ function renderCart() {
     : '<p class="empty">Cart is empty — tap a product or scan.</p>';
   const count = lines.reduce((s, l) => s + l.qty, 0) + manualLines.length;
   $('cartCount').textContent = count ? count + (count === 1 ? ' item' : ' items') : '';
+  // Clear lives in the cart header now (tender declutter, Oct 28) and
+  // exists only when there is something to clear.
+  const clearEl = $('clearBtn');
+  if (clearEl) { clearEl.classList.toggle('hidden', count === 0); }
   $('cartLines').querySelectorAll('[data-inc]').forEach(b =>
     b.addEventListener('click', () => { cart.set(b.dataset.inc, cart.get(b.dataset.inc) + 1); renderCart(); }));
   $('cartLines').querySelectorAll('[data-dec]').forEach(b =>
@@ -1002,10 +1014,39 @@ function chatGraph(g) {
   } else {
     inner += graphSvg(g);
   }
+  // Cash card (owner, Oct 28): the period's tender split, summed by the
+  // brain from the same journal reads as the bars. No split recorded ->
+  // the note says so plainly; a zero-sales period draws no cash row.
+  if (g.cash) {
+    const c = g.cash;
+    if (!c.split && c.txns > 0) {
+      inner += `<p class="cash-note">${esc(c.note || 'Tender split not recorded for these sales.')}</p>`;
+    } else if (c.txns > 0) {
+      inner += `<div class="cash-row"><span><b>${esc(c.cash_lbl || 'Cash')}</b> ${money(c.cash)}</span>` +
+        `<span><b>${esc(c.card_lbl || 'Card')}</b> ${money(c.card)}</span>` +
+        (c.credit ? `<span><b>${esc(c.credit_lbl || 'Credit')}</b> ${money(c.credit)}</span>` : '') + `</div>`;
+    }
+  }
+  // Calendar card (owner, Oct 28): the register's own month. Days with
+  // sales are buttons — a tap asks for that day's report through the
+  // same chat path a typed question takes; days without sales are
+  // plain text, and today is ringed.
+  if (g.calendar && Array.isArray(g.calendar.days)) {
+    const cal = g.calendar;
+    const dows = (cal.dows || []).map(x => `<span class="cal-dow">${esc(x)}</span>`).join('');
+    const blanks = '<span class="cal-blank"></span>'.repeat(cal.lead || 0);
+    const cells = cal.days.map(x => x.has
+      ? `<button type="button" class="cal-day has${x.today ? ' today' : ''}" data-ymd="${x.ymd}" title="${esc(x.ymd)} — ${money(x.value)}">${x.d}</button>`
+      : `<span class="cal-day${x.today ? ' today' : ''}">${x.d}</span>`).join('');
+    inner += `<div class="cal-card"><div class="cal-head">${esc(cal.month)}</div><div class="cal-grid">${dows}${blanks}${cells}</div>${cal.hint ? `<div class="cal-hint">${esc(cal.hint)}</div>` : ''}</div>`;
+  }
   if (g.focus) {
     inner += `<div class="graph-foot">${esc(g.focus.label)} — <b>${money(g.focus.value)}</b></div>`;
   }
   d.innerHTML = inner;
+  d.querySelectorAll('.cal-day.has').forEach(b => b.addEventListener('click', () => {
+    sendChat(b.dataset.ymd + ' report');
+  }));
   $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
 }
 
@@ -2091,10 +2132,6 @@ function kpAdd(taxable) {
 }
 $('tabProducts').addEventListener('click', () => setEntryMode('products'));
 $('tabKeypad').addEventListener('click', () => setEntryMode('keypad'));
-$('manualBtn').addEventListener('click', () => {
-  if (!storeIsOpen()) { storeClosedNote(); return; }
-  setEntryMode('keypad');
-});
 document.querySelectorAll('[data-kp]').forEach(b =>
   b.addEventListener('click', () => kpPress(b.dataset.kp)));
 $('kpClearBtn').addEventListener('click', () => kpPress('C'));

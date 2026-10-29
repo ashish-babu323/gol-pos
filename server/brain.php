@@ -1093,6 +1093,47 @@ $S = [
     'np' => 'Ahile korna kei chhaina — yo range ma bikri chhaina.',
     'hi' => 'Abhi kuchh dikhane ko nahi hai — is range mein bikri nahi hai.',
     'dev' => 'अहिले कोर्न केही छैन — यो दायरामा बिक्री छैन।'],
+  // --- report card companions: cash block + calendar (owner, Oct 28) ---------
+  'cash_lbl' => [
+    'en' => 'Cash',
+    'np' => 'Cash',
+    'hi' => 'Cash',
+    'dev' => 'नगद'],
+  'card_lbl' => [
+    'en' => 'Card',
+    'np' => 'Card',
+    'hi' => 'Card',
+    'dev' => 'कार्ड'],
+  'credit_lbl' => [
+    'en' => 'Credit',
+    'np' => 'Credit',
+    'hi' => 'Credit',
+    'dev' => 'क्रेडिट'],
+  'cash_split_none' => [
+    'en' => 'Tender split not recorded for these sales.',
+    'np' => 'Yo bikri haru ko tender split record chhaina.',
+    'hi' => 'In bikriyon ka tender split record nahi hai.',
+    'dev' => 'यी बिक्रीहरूको टेन्डर विभाजन रेकर्ड छैन।'],
+  'cal_dows' => [
+    'en' => 'Su,Mo,Tu,We,Th,Fr,Sa',
+    'np' => 'Su,Mo,Tu,We,Th,Fr,Sa',
+    'hi' => 'Ra,So,Ma,Bu,Gu,Shu,Sha',
+    'dev' => 'आ,सो,मं,बु,बि,शु,श'],
+  'cal_hint' => [
+    'en' => 'Tap a day for its report',
+    'np' => 'Kunai din ko report ko lagi tyo din ma tap garnus',
+    'hi' => 'Kisi din ki report ke liye us din par tap karein',
+    'dev' => 'कुनै दिनको रिपोर्टका लागि त्यो दिनमा ट्याप गर्नुहोस्'],
+  'named_day_total' => [
+    'en' => '%s: %s total (%d sales) — cash %s, card %s.',
+    'np' => '%s ko hisab: jamma %s (%d ota sale) — cash %s, card %s.',
+    'hi' => '%s ka hisaab: kul %s (%d sale) — cash %s, card %s.',
+    'dev' => '%s को हिसाब: जम्मा %s (%d वटा बिक्री) — नगद %s, कार्ड %s।'],
+  'named_day_none' => [
+    'en' => 'No sales recorded on %s.',
+    'np' => '%s ma bikri record chhaina.',
+    'hi' => '%s ko koi bikri record nahi hai.',
+    'dev' => '%s मा बिक्री रेकर्ड छैन।'],
   'pay_pending' => [
     'en' => 'Your pay request is already with the owner: %s for %s — waiting on the owner. I won\'t send a second one.',
     'np' => 'Tapai ko talab ko anurodh pahile nai malik samma pugisakyo: %s (%s ko lagi) — malik ko jawaf parkhidaichha. Dosro pathaudina.',
@@ -2852,6 +2893,85 @@ function golpos_graph_month_series(): array {
                      'highlight' => $ymd === date('Y-m-d')];
     }
     return [$series, $total];
+}
+// Per-day gross bars for the trailing $n days ENDING on a named day —
+// the calendar tap's picture: the week that led into the asked day,
+// with the asked day lit. Same day summaries, same return shape.
+function golpos_graph_days_series_to(int $n, string $endYmd): array {
+    $series = []; $total = 0.0;
+    $end = strtotime($endYmd);
+    for ($i = $n - 1; $i >= 0; $i--) {
+        $ymd = date('Y-m-d', strtotime("-{$i} days", $end));
+        $v = round((float)golpos_day_summary($ymd)['gross'], 2);
+        $total = round($total + $v, 2);
+        $p = ['label' => date('D j', strtotime($ymd)), 'value' => $v, 'ymd' => $ymd];
+        if ($ymd === $endYmd) { $p['highlight'] = true; }
+        $series[] = $p;
+    }
+    return [$series, $total];
+}
+// --- report card companions: cash block + month calendar (owner, Oct 28) -----
+// The graph card grows two companions built from the SAME reads that
+// compose the sentence and the bars — golpos_day_summary() over the
+// register journal. No second truth: the cash block sums exactly the
+// days the lane reports on, and the calendar is the register's own
+// journal days for the current month.
+function golpos_cash_block(array $ymds): array {
+    $cash = 0.0; $card = 0.0; $credit = 0.0; $total = 0.0; $txns = 0;
+    foreach ($ymds as $ymd) {
+        $s = golpos_day_summary($ymd);
+        $cash += $s['cash']; $card += $s['card']; $credit += $s['credit'];
+        $total += $s['gross']; $txns += $s['txns'];
+    }
+    // Honesty gate: the split is fact only when every sale in the period
+    // actually carries its tender — day_summary reads a sale with no
+    // tender record as cash, which is an assumption, not a fact. A
+    // period containing such a sale (or a refund with no tender map)
+    // says so plainly instead of dressing the assumption up as truth.
+    $split = true;
+    if ($txns > 0) {
+        $set = array_flip($ymds);
+        foreach (golpos_sales() as $r) {
+            if (!isset($set[substr((string)($r['at'] ?? ''), 0, 10)])) { continue; }
+            if (!isset($r['tender']) && !isset($r['tenders'])) { $split = false; break; }
+        }
+        if ($split) {
+            foreach (golpos_refunds() as $r) {
+                if (!isset($set[substr((string)($r['at'] ?? ''), 0, 10)])) { continue; }
+                if (empty($r['tenders']) || !is_array($r['tenders'])) { $split = false; break; }
+            }
+        }
+    }
+    $blk = ['cash' => round($cash, 2), 'card' => round($card, 2),
+            'total' => round($total, 2), 'txns' => $txns, 'split' => $split,
+            'cash_lbl' => t('cash_lbl'), 'card_lbl' => t('card_lbl'),
+            'credit_lbl' => t('credit_lbl')];
+    if ($credit > 0) { $blk['credit'] = round($credit, 2); }
+    if (!$split && $txns > 0) { $blk['note'] = t('cash_split_none'); }
+    return $blk;
+}
+function golpos_calendar_payload(): array {
+    $today = date('Y-m-d');
+    $first = date('Y-m-01');
+    $days = [];
+    $n = (int)date('t');
+    for ($d = 1; $d <= $n; $d++) {
+        $ymd = substr($first, 0, 8) . str_pad((string)$d, 2, '0', STR_PAD_LEFT);
+        $s = golpos_day_summary($ymd);
+        $days[] = ['d' => $d, 'ymd' => $ymd, 'value' => round((float)$s['gross'], 2),
+                   'txns' => (int)$s['txns'],
+                   'has' => $s['gross'] > 0 || $s['txns'] > 0,
+                   'today' => $ymd === $today];
+    }
+    return ['month' => date('F Y', strtotime($first)),
+            'lead' => (int)date('w', strtotime($first)),
+            'dows' => array_map('trim', explode(',', t('cal_dows'))),
+            'days' => $days, 'hint' => t('cal_hint')];
+}
+function golpos_report_card(array $graph, array $ymds): array {
+    $graph['cash'] = golpos_cash_block($ymds);
+    $graph['calendar'] = golpos_calendar_payload();
+    return $graph;
 }
 
 // --- employee lane composition --------------------------------------------------
@@ -5240,6 +5360,7 @@ if (golpos_is_bestseller_ask($msg) || golpos_is_compare_ask($msg)) {
             ['label' => golpos_day_label($today), 'value' => round((float)$b['gross'], 2), 'ymd' => $today,
              'highlight' => true],
         ], round((float)$a['gross'] + (float)$b['gross'], 2));
+        $graph = golpos_report_card($graph, [$yday, $today]);
         out(['reply' => t('cmp_line', golpos_day_label($yday), money((float)$a['gross']), (int)$a['txns'],
                           golpos_day_label($today), money((float)$b['gross']), (int)$b['txns'], $tail),
              'graph' => $graph]);
@@ -5248,7 +5369,8 @@ if (golpos_is_bestseller_ask($msg) || golpos_is_compare_ask($msg)) {
     $items = golpos_day_items($ymd);
     if (!$items) {
         out(['reply' => t('best_none', golpos_day_label($ymd)),
-             'graph' => golpos_graph_payload('hbars', t('graph_best', golpos_day_label($ymd)), [], 0.0)]);
+             'graph' => golpos_report_card(
+                 golpos_graph_payload('hbars', t('graph_best', golpos_day_label($ymd)), [], 0.0), [$ymd])]);
     }
     $fmtTop = static function (array $list): string {
         return implode('; ', array_map(static fn($i) => $i['name'] . ' ×' . $i['qty']
@@ -5266,7 +5388,8 @@ if (golpos_is_bestseller_ask($msg) || golpos_is_compare_ask($msg)) {
     $gTotal = 0.0; foreach ($series as $p) { $gTotal = round($gTotal + $p['value'], 2); }
     out(['reply' => t('best_line', golpos_day_label($ymd),
                       $fmtTop(array_slice($byQty, 0, 3)), $fmtTop(array_slice($byRev, 0, 3))),
-         'graph' => golpos_graph_payload('hbars', t('graph_best', golpos_day_label($ymd)), $series, $gTotal)]);
+         'graph' => golpos_report_card(
+             golpos_graph_payload('hbars', t('graph_best', golpos_day_label($ymd)), $series, $gTotal), [$ymd])]);
 }
 
 // --- analysis / advice: the DEEP-THINK lane (Muse Wonder) --------------------
@@ -5286,9 +5409,11 @@ if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|
     if ($isMonthAsk) {
         [$mSeries, $mTotal] = golpos_graph_month_series();
         $graph = golpos_graph_payload('spark', t('graph_month'), $mSeries, $mTotal);
+        $graph = golpos_report_card($graph, array_column($mSeries, 'ymd'));
     } else {
         [$wSeries, $wTotal] = golpos_graph_days_series(7, date('Y-m-d'));
         $graph = golpos_graph_payload('bars', t('graph_week'), $wSeries, $wTotal);
+        $graph = golpos_report_card($graph, array_column($wSeries, 'ymd'));
     }
     if ($weekTx === 0 && $monthTx === 0) { out(['reply' => t('week_none'), 'graph' => $graph]); }
     $grounded = function (?string $reply) use ($figures): bool {
@@ -5332,6 +5457,27 @@ if (preg_match('/(close|banda|बन्द|क्लोज)/iu', $msg)) {
     out(['reply' => $reply, 'close_record' => $rec]);
 }
 
+// --- named-day total (calendar tap + typed dated asks) -----------------------
+// A report ask carrying an explicit ISO date answers for THAT day, from
+// the same summary the today lane uses; the card draws the trailing week
+// ENDING on the named day. Deterministic on purpose — dated asks used to
+// fall through to the free brain, which waved them off to "today".
+if (preg_match('/\b(\d{4})-(\d{2})-(\d{2})\b/', $msg, $dm)
+    && checkdate((int)$dm[2], (int)$dm[3], (int)$dm[1])
+    && preg_match('/(report|hisab|hisaab|total|sales|bikri)/iu', $msg)) {
+    $ymd = $dm[1] . '-' . $dm[2] . '-' . $dm[3];
+    $s = golpos_day_summary($ymd);
+    [$nSeries, $nTotal] = golpos_graph_days_series_to(7, $ymd);
+    $graph = golpos_graph_payload('bars', date('D, M j', strtotime($ymd)), $nSeries, $nTotal,
+        ['label' => golpos_day_label($ymd), 'value' => round((float)$s['gross'], 2)]);
+    $graph = golpos_report_card($graph, [$ymd]);
+    if ($s['txns'] === 0) {
+        out(['reply' => t('named_day_none', golpos_day_label($ymd)), 'graph' => $graph]);
+    }
+    out(['reply' => t('named_day_total', golpos_day_label($ymd), money($s['gross']),
+        $s['txns'], money($s['cash']), money($s['card'])), 'graph' => $graph]);
+}
+
 // --- day total ---------------------------------------------------------------
 if (preg_match('/(kati bikri|kitni bikri|aaja ko|aaj ka|aaja kati|becheu|आज|हिसाब|बिक्री|today|close|banda|hisab|hisaab|sales|total)/iu', $msg)) {
     $s = golpos_day_summary(date('Y-m-d'));
@@ -5342,6 +5488,9 @@ if (preg_match('/(kati bikri|kitni bikri|aaja ko|aaj ka|aaja kati|becheu|आज|
     [$dSeries, $dTotal] = golpos_graph_days_series(7, date('Y-m-d'));
     $graph = golpos_graph_payload('bars', t('graph_week'), $dSeries, $dTotal,
         ['label' => t('graph_today'), 'value' => round((float)$s['gross'], 2)]);
+    // The day lane's sentence is about TODAY — its cash card sums today
+    // alone (the bars still show the trailing week they always showed).
+    $graph = golpos_report_card($graph, [date('Y-m-d')]);
     if ($s['txns'] === 0) {
         out(['reply' => t('day_none'), 'graph' => $graph]);
     }

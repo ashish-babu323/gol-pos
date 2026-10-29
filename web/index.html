@@ -126,7 +126,7 @@
   </section>
 
   <aside class="cart">
-    <h2>Current sale <em id="cartCount"></em></h2>
+    <h2><span>Current sale <em id="cartCount"></em></span><button id="clearBtn" type="button" class="cart-clear hidden">Clear</button></h2>
     <div id="cartLines" class="cart-lines"><p class="empty">Cart is empty — tap a product or scan.</p></div>
     <div class="totals">
       <div class="row"><span>Subtotal</span><b id="subTotal">$0.00</b></div>
@@ -136,12 +136,10 @@
       <div class="row hidden" id="creditDueRow"><span>Still due</span><b id="creditDue">$0.00</b></div>
       <div class="grand"><span>Total</span><b id="grandTotal">$0.00</b></div>
     </div>
+    <button id="creditBtn" type="button" class="credit-strip">Store credit · Redeem</button>
     <div class="tender">
       <button id="cashBtn" type="button">Cash</button>
       <button id="cardBtn" type="button">Card</button>
-      <button id="creditBtn" type="button">Credit</button>
-      <button id="manualBtn" type="button" class="ghost">Manual $</button>
-      <button id="clearBtn" type="button" class="ghost">Clear</button>
     </div>
   </aside>
 </main>
