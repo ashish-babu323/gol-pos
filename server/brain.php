@@ -267,6 +267,11 @@ $S = [
     'np' => 'Kun mulya — %s ki %s? Ma anuman gardina.',
     'hi' => 'Kaun sa daam — %s ya %s? Main andaza nahi lagaunga.',
     'dev' => 'कुन मूल्य — %s कि %s? म अनुमान गर्दिनँ।'],
+  'price_ask_item' => [
+    'en' => 'Which item should I change to %s? Name it and I\'ll stage the card — it runs only when you say "gol".',
+    'np' => 'Kun saman ko mulya %s banaune? Naam bhannus, card stage garchhu — "gol" bhane pachhi matra chalchha.',
+    'hi' => 'Kis saaman ka daam %s karoon? Naam bataiye, card stage karta hoon — "gol" kahne par hi chalega.',
+    'dev' => 'कुन सामानको मूल्य %s बनाउने? नाम भन्नुस्, कार्ड स्टेज गर्छु — "गोल" भनेपछि मात्र चल्छ।'],
   'card_staged' => [
     'en' => 'Card ready — say "gol" to confirm.',
     'np' => 'Card baneko chhu — pakka garna "gol" bhannus.',
@@ -2116,6 +2121,65 @@ function golpos_price_await_set(?array $await): void {
     $s = golpos_session($id);
     $s['price_await'] = $await;
     golpos_save_session($id, $s);
+}
+
+// --- conversation context: the thread Gol is IN ------------------------------
+// A conversation is not a pile of independent sentences: when a lane
+// resolves a product, that product becomes the session's topic (ctx),
+// and follow-ups bind to it — "change is to $3.19" right after a Coke
+// price answer is a Coke price change, not a fresh puzzle. The ctx
+// carries only what a lane actually resolved (sku + the intent that
+// resolved it); it never guesses a topic into existence.
+function golpos_ctx_set(?array $product, string $intent): void {
+    $id = (string)($GLOBALS['golpos_session_id'] ?? '');
+    if ($id === '') { return; }
+    $s = golpos_session($id);
+    $s['ctx'] = $product === null ? null : [
+        'sku' => (string)($product['sku'] ?? ''), 'name' => (string)($product['name'] ?? ''),
+        'intent' => $intent, 'ts' => time()];
+    golpos_save_session($id, $s);
+}
+
+// The ctx topic resolved against the CURRENT shelf (a product renamed
+// or removed since it was discussed simply stops binding), or null.
+function golpos_ctx_product(array $products): ?array {
+    $id = (string)($GLOBALS['golpos_session_id'] ?? '');
+    if ($id === '') { return null; }
+    $ctx = golpos_session($id)['ctx'] ?? null;
+    if (!is_array($ctx) || empty($ctx['sku'])) { return null; }
+    foreach ($products as $p) {
+        if ((string)$p['sku'] === (string)$ctx['sku']) { return $p; }
+    }
+    return null;
+}
+
+// Is this message a QUESTION? The same question words the price lanes
+// already trust, plus the question mark itself. While a clarifier wait
+// is armed, a question is answered by its own lane and does NOT get
+// eaten as the wait's answer (the standing pass-through rule).
+function golpos_is_question(string $msg): bool {
+    if (preg_match('/\?\s*$/u', trim($msg))) { return true; }
+    return preg_match('/(kati|kitna|kitne|how\s+much|how\s+many|ke\s+chha|k\s+ho|kasto|kina|what|which|why|kun|कति|कितना|कुन)/iu', $msg) === 1;
+}
+
+// A bare greeting (the dispatch greeting lane's own anchored shape) —
+// it cancels every armed wait and takes its normal path.
+function golpos_is_bare_greeting(string $msg): bool {
+    return preg_match('/^\s*(good\s*(morning|afternoon|evening)|namaste|namaskar|hello|hi|hey|suprabhat|नमस्ते|नमस्कार|शुभ\s*प्रभात)\s*[!.।]?\s*$/iu', $msg) === 1;
+}
+
+// A price-change imperative carrying its price but naming NO item and
+// using NO price word: "change is to $3.19", "make it $3.19". The bare
+// form below cannot see it (nothing resolves, so its money test never
+// runs) and the named lanes all demand a price word — the sentence fell
+// to the free-form composer, which asked "which item?" in prose and
+// held no state for the answer. The deterministic lane owns it now:
+// bind the conversation's topic, or arm the item wait and ask for real.
+function golpos_amount_price_change(string $msg): bool {
+    if (golpos_is_question($msg)) { return false; }
+    if (preg_match('/(\badd\b|\bthap|\bjodo\b|\blagao\b|\bgive\b|\bchahiyo\b|\bchahinchha\b|\bdeu\b|\bdinus\b|\bayo\b|\baayo\b|\breceive\b|\breceived\b|\brestock\b|\bdelivery\b|\bwithdraw\b|\bexpense\b|kharcha|थप|चाहियो|आयो)/iu', $msg)) { return false; }
+    if (!preg_match('/(\bchange\b|\bset\b|\bmake\b|badha|badal|badlo|rakha|gara|गर|बढा|बदल|राख|बनाउ)/iu', $msg)) { return false; }
+    return golpos_extract_price($msg, null)['status'] === 'ok';
 }
 
 // The bare form rides the same meaning with no price word and no verb at
@@ -5322,10 +5386,12 @@ if (preg_match('/(new\s+(item|product)|naya\s+(saman|item)|नयाँ|नय�
 // --- price change (staged) ---------------------------------------------------
 if (preg_match('/(mulya|price|dam|daam|मूल्य|दाम).*(gara|set|badha|badal|rakha|change|badlo|karo|गर|राख|बनाउ|बदल)|(gara|set|change|badlo|गर|बनाउ).*(mulya|price|dam|daam|मूल्य|दाम)/iu', $msg) ||
     preg_match('/(price|mulya|dam|daam|मूल्य|दाम).*\bto\s*(?:\$\s*\d|\d+\.\d{1,2})/iu', golpos_norm_digits($msg)) ||
-    golpos_bare_price_change($msg, $products)) {
+    golpos_bare_price_change($msg, $products) ||
+    golpos_amount_price_change($msg)) {
     $r = resolve_item($products, $msg);
     if (!empty($r['one'])) {
         $p = $r['one'];
+        golpos_ctx_set($p, 'price_change');
         // The price the owner SAID, by the meaning rules — the product is
         // matched first, its size is never money, and an explicit $ amount
         // always wins. No readable price, or two live candidates: Gol asks
@@ -5358,6 +5424,43 @@ if (preg_match('/(mulya|price|dam|daam|मूल्य|दाम).*(gara|set|bad
         $list = implode(', ', array_map(fn($p) => $p['name'] . ' (' . money((float)$p['price']) . ')', $r['many']));
         out(['reply' => t('which_price', $list)]);
     }
+    // No item in the words — but the CONVERSATION may be carrying one.
+    // A price change said right after an item was discussed binds to
+    // that item (the card names it, and execution still waits for
+    // "gol" + the PIN gate). With no topic in play, the price the owner
+    // DID say is remembered and Gol asks for the item for real: the
+    // ask arms the item wait (price_await), so the owner's one-word
+    // answer completes the staging instead of starting a new puzzle.
+    $ctxP = golpos_ctx_product($products);
+    $ex = golpos_extract_price($msg, $ctxP);
+    if ($ctxP !== null) {
+        if ($ex['status'] === 'ambiguous') {
+            golpos_price_await_set(['sku' => (string)$ctxP['sku'], 'price_candidates' => $ex['candidates']]);
+            out(['reply' => t('price_ask_which', $ctxP['name'], money($ex['candidates'][0]), money($ex['candidates'][1]))]);
+        }
+        golpos_price_await_set(null);
+        if ($ex['status'] === 'ok') {
+            golpos_ctx_set($ctxP, 'price_change');
+            if ($ex['value'] === (float)$ctxP['price']) {
+                out(['reply' => t('price_same', $ctxP['name'], money($ex['value']))]);
+            }
+            $card = golpos_stage(['type' => 'price_change', 'sku' => $ctxP['sku'], 'name' => $ctxP['name'],
+                                  'old_price' => $ctxP['price'], 'new_price' => $ex['value']]);
+            out(['reply' => t('card_staged'), 'card' => $card]);
+        }
+        // Only the price is missing: the topic is known, so ask for its
+        // price by name and hold the wait on it.
+        golpos_price_await_set(['sku' => (string)$ctxP['sku']]);
+        out(['reply' => t('price_ask', $ctxP['name'])]);
+    }
+    if ($ex['status'] === 'ok') {
+        golpos_price_await_set(['price' => $ex['value'], 'need_item' => true]);
+        out(['reply' => t('price_ask_item', money($ex['value']))]);
+    }
+    if ($ex['status'] === 'ambiguous') {
+        golpos_price_await_set(null);
+        out(['reply' => t('price_ask_which_plain', money($ex['candidates'][0]), money($ex['candidates'][1]))]);
+    }
     golpos_price_await_set(null);
     out(['reply' => t('not_found_price')]);
 }
@@ -5367,6 +5470,7 @@ if (preg_match('/(kati|kitna|kitne|price|mulya|dam|daam|how much|मूल्य
     $r = resolve_item($products, $msg);
     if (!empty($r['one'])) {
         $p = $r['one'];
+        golpos_ctx_set($p, 'price_query');
         golpos_verify_journal(['class' => 'price_shelf', 'label' => (string)$p['name'],
             'figure' => round((float)$p['price'], 2), 'unit' => 'money',
             'inputs' => ['sku' => (string)($p['sku'] ?? ''), 'name' => (string)$p['name'],
@@ -5471,6 +5575,11 @@ $sum = golpos_day_summary(date('Y-m-d'));
 $pack = "Shop: {$shop}. Today so far: " . money($sum['gross']) . " across {$sum['txns']} sales"
     . " (cash " . money($sum['cash']) . ", card " . money($sum['card']) . ").\nCatalog (name — price): "
     . implode('; ', array_map(fn($p) => $p['name'] . ' — ' . money((float)$p['price']), $products));
+$ctxTopic = golpos_ctx_product($products);
+if ($ctxTopic !== null) {
+    $pack .= "\nCurrently discussing: {$ctxTopic['name']} — " . money((float)$ctxTopic['price'])
+        . ". Follow-ups ('it', 'tesko', a bare price change) are about this item.";
+}
 if (golpos_link_on()) {
     $pack .= "\nStock on hand (MR.STORE live): " . implode('; ', array_map(
         fn($p) => $p['name'] . ' — ' . (isset($p['onHand']) && $p['onHand'] !== null ? (string)(float)$p['onHand'] : 'not tracked'),
@@ -5698,6 +5807,7 @@ if (golpos_is_lock_intent($msg)) {
     $session['pin_tmp'] = null;
     $session['pending'] = null;
     $session['price_await'] = null;
+    $session['ctx'] = null;
     golpos_save_session($sessionId, $session);
     golpos_lock_session($sessionId);
     out(['reply' => t('admin_off')]);
@@ -5856,9 +5966,20 @@ if (!empty($session['gap_await']) && golpos_pending() === null) {
 // A price question Gol just asked owns the follow-up the same way a bill
 // does: the owner's next words carry the missing piece (the price, or the
 // item pick when the price was already said) and the staging completes —
-// Gol never asks again for what it was already told. A follow-up with no
-// number and no candidate item in it is a topic change: the wait drops
-// and the message runs its normal course through the gate and dispatch.
+// Gol never asks again for what it was already told. Three shapes ride
+// here: the item is known and the PRICE is missing (sku); the price is
+// known and the pick is one of a named tie (item_skus); the price is
+// known and the ITEM was never named at all (need_item — armed when a
+// price-change sentence carried its price but no item and the
+// conversation held no topic to bind). Two standing rules bind every
+// shape: a bare greeting cancels the wait and takes its normal path,
+// and a QUESTION passes through — answered by its own lane, the wait
+// untouched — because an interruption is not an answer. A follow-up
+// with no number and no candidate item in it is a topic change: the
+// wait drops and the message runs its normal course through the gate
+// and dispatch. The one exception is need_item, where Gol asked the
+// question itself and owns it: an answer that resolves nothing earns
+// ONE plain re-ask before the wait drops.
 if (!empty($session['price_await']) && golpos_pending() === null) {
     $await = $session['price_await'];
     if (golpos_is_cancel_intent($msg)) {
@@ -5866,9 +5987,37 @@ if (!empty($session['price_await']) && golpos_pending() === null) {
         golpos_save_session($sessionId, $session);
         out(['reply' => t('ask_cancelled')]);
     }
+    if (golpos_is_bare_greeting($msg) || golpos_is_smalltalk($msg)) {
+        $session['price_await'] = null;
+        golpos_save_session($sessionId, $session);
+        // fall through: the greeting takes its normal path, wait-free
+    } else {
     $isConfirm = in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true) || !empty($in['confirm']);
-    $target = null; $newPrice = null; $reask = null; $topicChange = false;
-    if (!empty($await['sku'])) {
+    $target = null; $newPrice = null; $reask = null; $topicChange = false; $passThrough = false;
+    if (!empty($await['need_item']) && isset($await['price'])) {
+        if ($isConfirm) { $reask = t('price_ask_item', money((float)$await['price'])); }
+        elseif (golpos_is_question($msg)) { $passThrough = true; }
+        else {
+            $r = resolve_item($products, $msg);
+            if (!empty($r['one'])) { $target = $r['one']; $newPrice = (float)$await['price']; }
+            elseif (!empty($r['many'])) {
+                // The answer narrowed the field to a tie: the wait
+                // becomes the named-tie shape and asks the pick.
+                $session['price_await'] = ['price' => (float)$await['price'],
+                    'item_skus' => array_map(static fn($c) => (string)$c['sku'], $r['many'])];
+                golpos_save_session($sessionId, $session);
+                $list = implode(', ', array_map(static fn($p) => $p['name'] . ' (' . money((float)$p['price']) . ')', $r['many']));
+                out(['reply' => t('which_price', $list)]);
+            }
+            elseif ((int)($await['reasks'] ?? 0) >= 1) { $topicChange = true; }
+            else {
+                $await['reasks'] = 1;
+                $session['price_await'] = $await;
+                golpos_save_session($sessionId, $session);
+                $reask = t('price_ask_item', money((float)$await['price']));
+            }
+        }
+    } elseif (!empty($await['sku'])) {
         foreach ($products as $p) {
             if ((string)$p['sku'] === (string)$await['sku']) { $target = $p; break; }
         }
@@ -5876,7 +6025,8 @@ if (!empty($session['price_await']) && golpos_pending() === null) {
         elseif ($isConfirm) { $reask = t('price_ask', (string)$target['name']); }
         else {
             $ex = golpos_extract_price($msg, $target);
-            if ($ex['status'] === 'ambiguous') {
+            if ($ex['status'] !== 'ok' && golpos_is_question($msg)) { $passThrough = true; $target = null; }
+            elseif ($ex['status'] === 'ambiguous') {
                 $reask = t('price_ask_which', (string)$target['name'], money($ex['candidates'][0]), money($ex['candidates'][1]));
             } elseif ($ex['status'] === 'ok') {
                 $cands = array_map(static fn($v) => round((float)$v, 2), (array)($await['price_candidates'] ?? []));
@@ -5895,6 +6045,7 @@ if (!empty($session['price_await']) && golpos_pending() === null) {
             $r = resolve_item($cands, $msg);
             if (!empty($r['one'])) { $target = $r['one']; $newPrice = (float)$await['price']; }
             elseif (!empty($r['many'])) { $reask = t('which_price', $list); }
+            elseif (golpos_is_question($msg)) { $passThrough = true; }
             elseif (!preg_match('/\d|\$/u', $msg)) { $topicChange = true; }
             else { $reask = t('which_price', $list); }
         }
@@ -5906,6 +6057,7 @@ if (!empty($session['price_await']) && golpos_pending() === null) {
         if ($newPrice === (float)$target['price']) {
             out(['reply' => t('price_same', (string)$target['name'], money($newPrice))]);
         }
+        golpos_ctx_set($target, 'price_change');
         $card = golpos_stage(['type' => 'price_change', 'sku' => $target['sku'], 'name' => $target['name'],
                               'old_price' => $target['price'], 'new_price' => $newPrice]);
         out(['reply' => t('card_staged'), 'card' => $card]);
@@ -5915,6 +6067,10 @@ if (!empty($session['price_await']) && golpos_pending() === null) {
         $session['price_await'] = null;
         golpos_save_session($sessionId, $session);
         // fall through: the gate and dispatch see the message fresh
+    }
+    // $passThrough: fall through with the wait intact — the question is
+    // answered by its own lane and the answer to Gol's question can
+    // still arrive as the next message.
     }
 }
 

@@ -1942,3 +1942,52 @@ the verifier's recompute was right and the plant was fixed, not the
 verifier. Deployed to sim + dev (backups under ~/backups/verify-tap-*);
 sim month 3,000 / $57,301.04 and dev month 887 / $9,178.79 verified
 intact after deploy.
+
+## Conversation continuity — context binding + armed clarifiers (Oct 28)
+
+Owner catch (gol-pos-dev, verbatim): "How much is a Coke?" -> "$2.19"
+-> "change is to $3.19" -> Gol asked "Which item...?" -> "coca cola"
+-> Gol answered with the price and a cart offer. Two failures: the
+price-change sentence carried its price but no item and no price word,
+so NO deterministic lane claimed it (the bare-form gate needs a
+resolved item before its money test can run); the free-form composer
+improvised the clarifying question in prose and held no state, so the
+one-word answer fell into the default lanes. There was also no
+conversational context anywhere: the price-query lane resolved
+Coca-Cola and recorded nothing.
+
+Fix (reasoning level, no phrase patches):
+- Session ctx (store.php session record): a lane that resolves a
+  product records it as the conversation topic {sku, name, intent}.
+  Set by the price-query lane, the price-change lane, and the await
+  consumer on staging; read back against the CURRENT shelf
+  (golpos_ctx_product), cleared on register lock. The free-form
+  composer's context pack now names the topic too.
+- The price-change lane binds the topic: an amount-carrying
+  price-change imperative with no item in the words
+  (golpos_amount_price_change: change verb + extractable price, not a
+  question, no add/receive verbs) stages against the topic directly;
+  with no topic, the price is remembered and the ask ARMS the wait.
+- price_await gains a third shape {price, need_item}: the next
+  non-question message is consumed as the item answer before any
+  default lane; a tie answer narrows the wait to the {price,
+  item_skus} shape; an unresolvable answer earns ONE plain re-ask
+  (reasks flag), then the wait drops. All shapes now pass QUESTIONS
+  through with the wait intact, and a bare greeting or smalltalk
+  clears the wait and takes its normal path. Staging through the
+  consumer records the topic.
+- New template price_ask_item (en/np/hi/dev).
+
+Battery (throwaway gol-pos-vtest, real HTTP): continuity suite 43/43
+— the owner's transcript stages Coca-Cola 20oz $2.19 -> $3.19 AT
+TURN 2 and executes on "gol"; pronoun and "tesko" forms bind;
+no-context ask + one-word answer stages; question interruption leaves
+the wait armed; greeting cancels it; "chips" narrows to the tie and
+"doritos" binds only Doritos; unresolvable answers re-ask once then
+drop; the Beat-3 PIN choreography (virgin register: stage -> "gol" ->
+PIN create x2 -> replay executes, price verified $3.19, restored).
+Gate-2 regression (60 cases, per-case state restore): 210 checks
+pass, 1 fail — close-en-2 ("end of day close out") misroutes to a
+report lane IDENTICALLY on unpatched HEAD; pre-existing, not this
+change. Also observed pre-existing: "set 2 coke" stages a $2.00 price
+card (count read as price by the shared extractor) — untouched.

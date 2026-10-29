@@ -1458,7 +1458,7 @@ function golpos_session(string $id): array {
     return array_merge([
         'admin' => false, 'pin_stage' => null, 'pin_tmp' => null,
         'attempts' => 0, 'locked_until' => 0, 'pending' => null, 'employee' => null,
-        'bill_await' => null, 'price_await' => null,
+        'bill_await' => null, 'price_await' => null, 'ctx' => null,
         // The morning lock (employee lane, Oct 28): a session starts
         // LOCKED and a roster PIN is what opens it. 'unlocked_by' is the
         // identity the session carries — an employee email, or 'admin'.
