@@ -12,6 +12,16 @@ Built from scratch during the **Meta Global AI Developer Hackathon**
 (October 26 – November 4, 2026) — see `docs/BUILD-LOG.md`. The demo store,
 "Sunrise Mart," is fictional; no real business data is used anywhere.
 
+## Architecture — one tree
+
+One mind at the root (**Central Gol**, `server/brain.php`); every module
+under it is a small intelligence of its own — Sales, Stock, Reports,
+Loyalty, Eyes, People, the MR.STORE Bridge, and a Verify Loop conscience
+that journals every claim Gol speaks. Every feature communicates with
+Central Gol and, through Gol, with each other; only staged writes change
+the shared store state, and only on the owner's confirm word. The full
+tree, drawn and mapped to the code: `docs/ARCHITECTURE.md`.
+
 ## Layout
 
 - `web/` — the register (product grid, cart, tender, receipt) + Gol chat drawer + owner view
