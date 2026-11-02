@@ -7,6 +7,47 @@ through Gol. Nothing talks to the user except Gol; nothing holds a private
 copy of the truth. Every feature communicates with Central Gol, and through
 Gol, with every other feature.
 
+## The network form — Tree of Gol, with multiple nodes (owner, Nov 2, 2026)
+
+The owner's words: *"Central gol dekhi nai sabai website ko same strategy
+gol ko"* — from Central Gol itself, every website's Gol runs the same
+strategy. *"Mero CEO ko Gol le afno agadi pura mero network lai rakhcha"* —
+my CEO Gol holds my whole network in front of it. *"Tree of Gol, with
+multiple nodes."*
+
+This repository is **one node** of that tree (Sunrise Mart, the demo). Above
+every node sits the one **Central Gol** at the owner's CEO desk:
+
+```
+                    ┌──────────────────────────┐
+                    │       CENTRAL GOL        │
+                    │    the owner's CEO desk  │
+                    │  holds the WHOLE NETWORK │
+                    │  in front of it · sees   │
+                    │  across nodes · acts     │
+                    │  center-out, by staged   │
+                    │  approval only           │
+                    └────────────┬─────────────┘
+        ┌──────────┬──────────┬───┴────┬──────────┬──────────┐
+        │          │          │        │          │          │
+   LUCKY MART   123 GROCERY  PALM IT  IT ACADEMY  EVEREST   SUNRISE
+   (store)      & SMOKE      SOLUTIONS NEPAL      (studio)  MART
+                             (client)                       (demo —
+                                                            this repo)
+        └──────────┴──────────┴────────┴──────────┴──────────┘
+     every website or business running Gol is a node of this
+     one tree · a node's data stays inside the node — no node
+     sees a sibling's · Central Gol alone sees the whole network
+```
+
+**Inside every node, the same strategy** — the tree drawn below. Each
+node's Gol is the one Central Gol seated in that business: a **reasoning
+layer on top** that understands first, thinking over **that node's own
+live context pack** before any action; the **heads underneath**, each
+holding its own domain's truth; and **fences as guards only** — rules
+never decide the work, they only fence it, and a write executes only on
+the owner's confirm word, **"gol"**.
+
 ```
                           ┌─────────────────────┐
                           │     CENTRAL GOL     │
