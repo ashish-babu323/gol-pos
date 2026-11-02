@@ -21,7 +21,13 @@ that journals every claim Gol speaks. And this shop is one **node** of a
 wider tree: Central Gol at the owner's CEO desk holds the whole network
 of websites and businesses running Gol, and every node runs this same
 strategy — its data stays inside the node, and only Central Gol sees
-across nodes (the network form: `docs/ARCHITECTURE.md`). Every feature communicates with
+across nodes (the network form: `docs/ARCHITECTURE.md`). The tree is
+recursive: every node is itself a head node — MR.STORE's Gol heads one
+Gol per store (Lucky's, 123's, and one more for every store that
+joins), and each store's Gol heads its own POS, storefront and books
+Gols — the same strategy at every level, each node reasoning over its
+own live pack, Central Gol alone seeing the whole tree (the recursive
+form: `docs/ARCHITECTURE.md`). Every feature communicates with
 Central Gol and, through Gol, with each other; only staged writes change
 the shared store state, and only on the owner's confirm word. The full
 tree, drawn and mapped to the code: `docs/ARCHITECTURE.md`.

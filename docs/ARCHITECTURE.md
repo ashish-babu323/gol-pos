@@ -68,6 +68,48 @@ the owner's confirm word, **"gol"**.
               every head reads it · only staged writes change it
 ```
 
+## The recursive form — every node is a head node (owner, Nov 2, 2026)
+
+The owner's extension, minutes after the network form: *"each node is
+head node to many other node."* The pattern repeats at **every level** —
+a node is never just a leaf; it is the head of everything below it.
+**MR.STORE's Gol is one head node**; under it, **one Gol for Lucky Mart**
+and **one Gol for 123 Grocery & Smoke** — and as more stores come, that
+many nodes are added. Under each store's Gol sit its own sub-nodes:
+
+```
+                    ┌──────────────────────────┐
+                    │       CENTRAL GOL        │
+                    │  CEO desk · sees the     │
+                    │      WHOLE TREE          │
+                    └────────────┬─────────────┘
+                                 │
+                    ┌────────────┴─────────────┐
+                    │       MR.STORE GOL       │
+                    │  head node: every store  │
+                    └────────────┬─────────────┘
+              ┌──────────────────┼──────────────────┐
+              │                  │                  │
+        LUCKY'S GOL         123'S GOL         + EVERY NEW
+        (head node)         (head node)        STORE = A
+              │                  │             NEW NODE
+      ┌───────┼────────┐         └─ same shape below
+      │       │        │
+   POS GOL  STOREFRONT  BOOKS /
+            GOL         BACKEND GOL
+            (the heads drawn below sit under each)
+```
+
+The rule is plain, and it holds at every level: **a head node holds
+everything below it in front of it** — the way Central Gol holds the
+whole network, MR.STORE's Gol holds every store, and a store's Gol
+holds its register, storefront and books. **Each node reasons over its
+own live pack; the same strategy runs at every level; a node's data
+stays in the node; only Central Gol sees the whole tree.** The tree
+drawn in the network section above is exactly this rule seen inside
+one node — heads under that node's Gol — and this repository sits on
+one branch of the recursion: a store node's register face.
+
 ## The heads — each one a brain, not a folder
 
 - **Sales** (`server/api.php`, `server/store.php`) — the register's own
