@@ -121,6 +121,13 @@ The full drawing, mapped to this code: `docs/ARCHITECTURE.md`.
   builder himself** — plus client sites. That production data is private and appears nowhere here; the claim
   is stated so a reviewer understands this is a working system with a demo
   face, not a demo with ambitions.
+- The tree has already crossed an ocean. During this same hackathon period,
+  the builder installed Gol for his maternal uncle, **Lokendra Dhakal**, whose
+  business — **Palm It Solutions**, an IT sales-and-repair shop in Itahari,
+  Nepal ([palmit.com.np](https://palmit.com.np)) — he now manages through Gol,
+  in Nepali. Same one engine: two grocery stores in Ohio and a family IT shop
+  in Nepal — a different trade, a different language, a different continent,
+  one more node on the tree.
 - This repo is the POS node of the tree: the register face, Central Gol's
   brain endpoint, and the heads that live with the register. The wider tree
   (books, storefronts, bank feed, the CEO desk) is drawn in
