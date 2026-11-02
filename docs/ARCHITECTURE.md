@@ -171,6 +171,28 @@ default attached. The modules above are that tree, grown inside one
 codebase: one head per domain, every leaf alive, every line running back
 to the root.
 
+## Why this scales
+
+The tree is the scaling strategy, not a diagram of one shop:
+
+- **Growth is additive.** A new business is a new node running the same
+  strategy — reasoning layer, heads, staged writes — with its own data.
+  Nothing about the root changes when a branch is added.
+- **Isolation is the default.** A node's data stays inside the node; heads
+  inside a node see only their node's truth. Central Gol's cross-node sight
+  is scoped: it holds the map and asks nodes for merged summaries rather
+  than holding every node's raw data.
+- **Load triggers migration, not headcount.** Storage moves to a heavier
+  engine when measured concurrency demands it — the trigger is load on a
+  node, never the number of clients on the tree.
+- **Rollout is per node.** Each node carries its own version; a change
+  travels dev → QA → test battery → canary node → staged rollout, so a bad
+  build can hurt at most the canary, never the fleet.
+- **The reasoning contract is portable.** Every node speaks the same
+  contract — live pack in, structured intent out, deterministic lanes
+  execute, writes staged for one confirm word — so behaviour learned or
+  fixed at one node is the behaviour of every node.
+
 ## Rules the code is built by
 
 - **One truth.** `data/` holds the shop's state; heads read it, staged
