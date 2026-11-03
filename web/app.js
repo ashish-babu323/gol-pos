@@ -170,11 +170,14 @@ function scanUnknownOffer(code) {
   toastTimer = setTimeout(() => el.classList.add('hidden'), 9000);
 }
 
-// --- themes (presentation only — Midnight default, owner picks on device) -----
+// --- themes (presentation only — Clean default since Nov 3: the locked
+// fleet look is the clean white Gol surface; a device that already picked
+// its own theme keeps it — applyTheme only falls back when nothing valid
+// is stored. Owner picks on device) -------------------------------------
 const THEMES = ['midnight', 'clean', 'bold'];
 const THEME_LABELS = { midnight: 'Midnight Register', clean: 'Clean Counter', bold: 'Bold Blue' };
 function applyTheme(name, save) {
-  if (!THEMES.includes(name)) { name = 'midnight'; }
+  if (!THEMES.includes(name)) { name = 'clean'; }
   document.documentElement.dataset.theme = name;
   if (save) { try { localStorage.setItem('golpos_theme', name); } catch (e) { /* private mode */ } }
   document.querySelectorAll('[data-set-theme]').forEach(b =>
@@ -184,7 +187,7 @@ function applyTheme(name, save) {
 }
 document.querySelectorAll('[data-set-theme]').forEach(b =>
   b.addEventListener('click', () => applyTheme(b.dataset.setTheme, true)));
-applyTheme(document.documentElement.dataset.theme || 'midnight', false);
+applyTheme(document.documentElement.dataset.theme || 'clean', false);
 
 // --- header clock -------------------------------------------------------------
 function tickClock() {
@@ -1028,6 +1031,12 @@ function chatCard(card) {
   } else if (card.type === 'new_item') {
     body = `<div class="sc-what">New item — ${esc(card.name)} · ${money(card.price)}</div>` +
       (card.barcode ? `<div class="sc-line">Barcode ${esc(card.barcode)}</div>` : '');
+  } else if (card.type === 'price_stock') {
+    // One turn, two changes: the price line and the stock line, each
+    // with its before -> after from the live pack.
+    body = `<div class="sc-what">${esc(card.name)} — price + stock</div>` +
+      `<div class="sc-prices"><span class="sc-old">${money(card.old_price)}</span><span class="sc-arrow">→</span><span class="sc-new">${money(card.new_price)}</span></div>` +
+      `<div class="sc-line">Stock +${card.add_qty}${card.stock_before != null ? ` (${card.stock_before} → ${card.stock_after})` : ''}</div>`;
   } else if (card.type === 'stock_receive') {
     body = `<div class="sc-what">Stock received — ${esc(card.name)} · ${card.qty}</div>` +
       `<div class="sc-line">MR.STORE stock goes up when you confirm</div>`;
@@ -1047,11 +1056,25 @@ function chatCard(card) {
     // The vendor order draft: every suggested line with the shelf truth
     // that earned it (OUT / on hand vs par / sold since last delivery)
     // and its recorded cost — the owner edits in chat before confirming.
+    // A MULTI card (the What's Out shelf order) groups its lines under
+    // a header per vendor; vendor-less lines sit under their own
+    // honest header — they are on no sheet until a vendor is set.
     const flag = (l) => l.flag === 'out' ? ' · OUT'
       : (l.on_hand !== null && l.on_hand !== undefined
         ? ` · ${fmtCount(l.on_hand)} on hand${l.par ? ' / par ' + l.par : ''}${l.sold ? ' · sold ' + l.sold : ''}` : '');
-    const lineHtml = (card.lines || []).map(l =>
-      `<div class="sc-line">${esc(l.name)} × ${l.qty}${l.cost !== null && l.cost !== undefined ? ' · ' + money(l.cost) + ' ea' : ''}${flag(l)}</div>`).join('');
+    const oneLine = (l) =>
+      `<div class="sc-line">${esc(l.name)} × ${l.qty}${l.cost !== null && l.cost !== undefined ? ' · ' + money(l.cost) + ' ea' : ''}${flag(l)}</div>`;
+    let lineHtml = '';
+    if (card.multi) {
+      let lastV = null;
+      (card.lines || []).forEach(l => {
+        const v = l.vendor || 'Vendor not set';
+        if (v !== lastV) { lastV = v; lineHtml += `<div class="sc-line sc-vgroup">${esc(v)}</div>`; }
+        lineHtml += oneLine(l);
+      });
+    } else {
+      lineHtml = (card.lines || []).map(oneLine).join('');
+    }
     body = `<div class="sc-what">Order — ${esc(card.vendor)} · est. ${money(card.est_total)}</div>${lineHtml}` +
       (card.uncosted ? `<div class="sc-line">${card.uncosted} line(s) have no cost on record — outside the estimate</div>` : '');
   } else if (card.type === 'vendor_teach') {
@@ -1318,6 +1341,26 @@ function chatDCard(c) {
     inner = `<div class="graph-head"><span class="graph-title">${esc(c.title || 'Stock')}</span></div>`
       + (c.items || []).map(it => row(it.name, (it.qty === null || it.qty === undefined) ? (it.stock_state || 'not tracked') : (String(it.qty) + (it.stock_state ? ' · ' + it.stock_state : '')))).join('')
       + (c.more ? `<p class="cash-note">+ ${esc(String(c.more))} more</p>` : '');
+  } else if (c.type === 'stock_out') {
+    // The what's-out card (Nov 3): out and running-low as two clear
+    // groups with counts — the designed answer that replaced the plain
+    // bullet list. The staged order draft rides under it as a card.
+    const grp = (label, items, fmt) => (items && items.length)
+      ? `<div class="dcard-group">${esc(label)} — ${items.length}</div>`
+        + items.map(it => row(it.name, fmt(it))).join('') : '';
+    inner = `<div class="graph-head"><span class="graph-title">${esc(c.title || "What's out")}</span></div>`
+      + (c.scope ? `<div class="dcard-scope">${esc(c.scope)}</div>` : '')
+      + grp('Out', c.out, () => '0 · Out of stock')
+      + grp('Running low', c.low, (it) => String(it.qty) + ' left');
+  } else if (c.type === 'top_sellers') {
+    // The ranked sellers card (Nov 3): rank + name, units + revenue —
+    // tied rows carry the same rank number, straight from the payload.
+    const qi = (v) => Number.isInteger(Number(v)) ? String(Number(v)) : String(v);
+    inner = `<div class="graph-head"><span class="graph-title">${esc(c.title || 'Top sellers')}</span></div>`
+      + (c.items || []).map(it => row('#' + it.rank + ' ' + it.name, qi(it.qty) + ' sold · ' + money(it.rev))).join('');
+  } else if (c.type === 'best_day') {
+    inner = `<div class="graph-head"><span class="graph-title">${esc(c.title || 'Best day')}</span></div>`
+      + (c.items || []).map(it => row(it.name, money(it.rev))).join('');
   } else if (c.type === 'vendor_profile') {
     inner = `<div class="graph-head"><span class="graph-title">${esc(c.vendor || 'Vendor')}</span><span class="graph-total">${c.median_visit !== null && c.median_visit !== undefined ? money(c.median_visit) : ''}</span></div>`
       + (c.kind ? row('Vendor', c.kind) : '') + row('Learned from', String(c.bills || 0) + ' bills')
@@ -1838,16 +1881,99 @@ function clearTillSearch() {
   if (b && b.value) { b.value = ''; }
 }
 window.addEventListener('pageshow', clearTillSearch);
+// --- one resolver for every scanner door --------------------------------
+// The barcode box, a hardware wedge burst caught anywhere on the
+// register, and the camera's live barcode read all land here, so a code
+// behaves identically however it arrived: a hit rings the item with
+// name + price + running total shown and spoken; a genuine barcode
+// shape (8-14 digits) with no match earns the Add door; anything else
+// keeps the plain not-found word in chat. A camera reading an EAN-13
+// label returns the same UPC-A code with a leading 0 — that twin is
+// tried too, or half the shelf would miss from the camera alone.
+function resolveScannedCode(code) {
+  code = String(code || '').trim();
+  if (!code) { return false; }
+  let p = catalog.products.find(x => x.barcode === code || x.sku === code);
+  if (!p && /^0\d{12}$/.test(code)) {
+    p = catalog.products.find(x => x.barcode === code.slice(1) || x.sku === code.slice(1));
+  }
+  if (p) {
+    const before = cart.get(p.sku) || 0;
+    addToCart(p.sku);
+    if ((cart.get(p.sku) || 0) > before) { scanFeedback(p); }
+    return true;
+  }
+  if (/^\d{8,14}$/.test(code)) { scanUnknownOffer(code); return false; }
+  chatMsg('Barcode ' + code + ' not found — tell Gol the name and I\'ll add it.', 'gol');
+  $('chatDrawer').classList.remove('hidden');
+  return false;
+}
+// A scan that lands shows and says the same three facts — what went
+// in, its price, and the open sale's running total (the open-sale
+// total law: while a sale is open, 'total' is THIS sale). The voice
+// rides the register's own mouth; golSpeak self-gates on the voice
+// setting, so a muted till stays muted.
+function scanFeedback(p) {
+  const total = cartTotals ? cartTotals.total : 0;
+  showToast('\u2713 ' + p.name + ' \u2014 ' + money(p.price) + ' \u00b7 Total ' + money(total));
+  golSpeak({ text: p.name + ', ' + money(p.price) + '. Total ' + money(total) + '.', lang: 'en' });
+}
 $('scanInput').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') { return; }
   const code = $('scanInput').value.trim();
-  const p = catalog.products.find(x => x.barcode === code || x.sku === code);
-  if (p) { addToCart(p.sku); $('scanInput').value = ''; }
-  // A genuine barcode shape (8-14 digits) with no match earns the Add
-  // door; anything else keeps the plain not-found word in chat.
-  else if (/^\d{8,14}$/.test(code)) { scanUnknownOffer(code); }
-  else { chatMsg('Barcode ' + code + ' not found — tell Gol the name and I\'ll add it.', 'gol'); $('chatDrawer').classList.remove('hidden'); }
+  $('scanInput').value = '';
+  resolveScannedCode(code);
 });
+// --- hardware wedge capture ---------------------------------------------
+// A wedge scanner is a keyboard that types too fast to be a person:
+// the whole code lands in a burst (gaps of a few ms) and ends in
+// Enter. Until tonight that burst only rang when the barcode box
+// itself held focus; a cashier who had just tapped a tile or a button
+// scanned into the void. Now a burst typed while NO field and NO
+// overlay owns the keyboard rings from anywhere on the register
+// surface. Human typing is protected twice over: a burst that STARTS
+// inside a field is never taken (the field keeps its text — a scan
+// aimed at the search box still filters the shelf, which matches
+// barcodes), and ordinary-speed keys never accumulate into a burst.
+const SCAN_GATE_IDS = ['lockOverlay', 'pinPad', 'chatDrawer', 'camModal',
+  'scanSheet', 'scanModal', 'cashModal', 'creditModal', 'refundModal',
+  'productModal', 'stockModal', 'pinModal', 'pinSetModal', 'tasksModal',
+  'txnModal', 'receiptModal', 'orderSheetModal', 'frameModal', 'clipModal',
+  'settingsPop'];
+function scanGateBlocked() {
+  for (const id of SCAN_GATE_IDS) {
+    const el = $(id);
+    if (el && !el.classList.contains('hidden')) { return true; }
+  }
+  return false;
+}
+let wedgeBuf = '', wedgeLastT = 0, wedgeFieldBorn = false;
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) { wedgeBuf = ''; return; }
+  if (e.key === 'Enter') {
+    if (wedgeBuf.length >= 6 && !wedgeFieldBorn && !scanGateBlocked()
+        && (e.timeStamp - wedgeLastT) <= 80) {
+      const code = wedgeBuf; wedgeBuf = '';
+      e.preventDefault(); e.stopPropagation();
+      // Burst digits also flashed across the keypad pane's amount on
+      // their way here (its own listener heard them first) — hand the
+      // pad back empty; its Enter-add never fires, stopped above.
+      if (entryMode === 'keypad' && kpCents) { kpCents = ''; kpShow(); }
+      resolveScannedCode(code);
+    } else { wedgeBuf = ''; }
+    return;
+  }
+  if (e.repeat) { return; } // a held key is a person, never a scanner
+  if (e.key.length !== 1) { if (e.key !== 'Shift') { wedgeBuf = ''; } return; }
+  const t = e.timeStamp;
+  if (!wedgeBuf || (t - wedgeLastT) > 45) {
+    const tg = e.target;
+    wedgeFieldBorn = !!(tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA'
+      || tg.tagName === 'SELECT' || tg.isContentEditable));
+    wedgeBuf = e.key;
+  } else { wedgeBuf += e.key; }
+  wedgeLastT = t;
+}, true);
 $('cashBtn').addEventListener('click', () => {
   cardTenderPreview = false; renderCart(); // cash never carries the surcharge
   if (creditApplied && cashDueNow() <= 0) { openCreditSheet(); return; } // credit covers it all
@@ -2191,6 +2317,21 @@ $('chatClose').addEventListener('click', () => { if (window.__golFoldPanel) { wi
 // --- quick-ask chips: one tap sends the everyday asks — no typing at the till.
 document.querySelectorAll('[data-chip]').forEach(b =>
   b.addEventListener('click', () => sendChat(b.dataset.chip)));
+// --- Scan bill chip (owner order, Nov 3 01:16: "scan bill ko button
+// hala — icon wala"): an ACTION chip, not an ask. It opens the
+// composer's own photo picker with the next photo flagged as a BILL —
+// sendPhoto's existing mode=bill channel (the same door the in-app
+// camera's "Use as bill" uses) routes it to the bill-scan lane. No
+// second scan pipeline. The flag is one-shot and time-boxed, and the
+// picker's own cancel clears it, so a later ordinary photo can never
+// inherit the bill flag.
+let photoBillNextAt = 0;
+{ const sb = $('scanBillChip');
+  if (sb) { sb.addEventListener('click', () => {
+    photoBillNextAt = Date.now();
+    $('chatDrawer').classList.remove('hidden');
+    $('photoInput').click();
+  }); } }
 $('chatForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const v = $('chatInput').value.trim();
@@ -2213,13 +2354,18 @@ $('chatInput').addEventListener('keydown', (e) => {
 $('photoInput').addEventListener('change', (e) => {
   const f = e.target.files[0];
   if (!f) { return; }
+  // The Scan bill chip's flag wins over the composer text: this photo
+  // is a bill, and sendPhoto's mode=bill channel carries that intent.
+  const billMode = photoBillNextAt > 0 && (Date.now() - photoBillNextAt) < 120000;
+  photoBillNextAt = 0;
   // Whatever the owner typed with the photo is the concept SAM looks for.
-  const hint = $('chatInput').value.trim();
+  const hint = billMode ? 'bill' : $('chatInput').value.trim();
   $('chatInput').value = '';
   $('chatDrawer').classList.remove('hidden');
   sendPhoto(f, hint);
   e.target.value = '';
 });
+$('photoInput').addEventListener('cancel', () => { photoBillNextAt = 0; });
 $('lockChatBtn').addEventListener('click', openChatToGol);
 // ---- The chat's PIN state (Oct 30) ----------------------------------
 // When the register is locked — or a gated ask demands the admin PIN —
@@ -2406,30 +2552,13 @@ $('taskNoteSend').addEventListener('click', () => {
 });
 { const lb = $('smLockBtn'); if (lb) { lb.addEventListener('click', () => { $('settingsPop').classList.add('hidden'); sendChat('lock'); }); } }
 { const mb = $('smMrstoreBtn'); if (mb) { mb.addEventListener('click', () => { $('settingsPop').classList.add('hidden'); openMrstoreDoor(); }); } }
-{ const tb = $('smTeamBtn'); if (tb) { tb.addEventListener('click', () => { $('settingsPop').classList.add('hidden'); openOwnerAtTeam(); }); } }
 { const ac = $('actorChip'); if (ac) { ac.addEventListener('click', () => { if (lockActor && lockActor.role === 'admin') { $('ownerBtn').click(); } }); } }
-// Team lives in the Owner panel, and the owner kept looking for it in
-// the Settings gear menu (Nov 2 late, twice: "Team aaena"). Two extra
-// doors now lead to the same panel: the Settings → Team row (wired
-// just above, rendered admin-only like the MR.STORE row) and the
-// "Owner · admin" chip, which read as a button but was a status label
-// — it opens the panel for an admin and stays a plain label for an
-// employee (the leak rules keep every team door admin-only).
-// openOwnerAtTeam runs the one panel load, then walks the view down
-// to the Team card once its content lands (or its retry fallback does).
-function openOwnerAtTeam() {
-  $('ownerBtn').click();
-  const card = $('ownerTeam');
-  if (!card || !card.scrollIntoView) { return; }
-  let tries = 0;
-  const iv = setInterval(() => {
-    tries++;
-    if (card.querySelector('.team-person, #teamRetryBtn') || tries >= 30) {
-      clearInterval(iv);
-      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, 100);
-}
+// Team management is NOT in this POS (owner law, Oct 28 + Nov 3):
+// the Owner panel is a light mirror only. Team, tasks, day
+// trails and PINs live in MR.STORE and in the Gol chat (the
+// presence lane, the pin_set card). The Settings → Team door
+// and the panel's Team card were removed Nov 3 on the owner's
+// repeat correction — see mrstore-fix-list.md.
 $('ownerBtn').addEventListener('click', async () => {
   $('ownerPanel').classList.remove('hidden');
   $('ownerStoreName').textContent = $('storeName').textContent;
@@ -2461,98 +2590,19 @@ $('ownerBtn').addEventListener('click', async () => {
         `<span>${r.receipts} receipt${r.receipts === 1 ? '' : 's'}${Number(r.credit) > 0 ? ' · credit ' + money(r.credit) : ''}</span></div>`).join('')
         : '<p class="owner-muted">No loyalty receipts yet.</p>');
   } catch (e) { $('ownerLoyalty').innerHTML = ''; }
-  // Today's rep visits — the register order prep state: which vendors are
-  // due today and where each order stands (prepared / confirmed / given).
-  // The sheet button opens the confirmed order to print or share for the
-  // rep; staging and confirming themselves live in the Gol chat.
-  try {
-    const od = await (await fetch(API + '?orders&session=' + encodeURIComponent(SESSION_ID))).json();
-    const stWord = { prepared: 'Prepared — waiting for "gol"', confirmed: 'Confirmed — sheet ready', given: 'Given to the rep', none: 'Not prepared yet' };
-    const dayName = (k) => ({ sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' }[k] || k);
-    const due = (od.visits || []).filter(v => v.due_today);
-    const rest = (od.visits || []).filter(v => !v.due_today);
-    const sheetBtn = (oid) => oid ? ` <button type="button" class="rep-sheet-btn" data-sheet="${esc(oid)}">Order sheet</button>` : '';
-    $('ownerVendors').innerHTML =
-      `<h3 class="ocard-title">Today's rep visits <small>— orders are prepared in the Gol chat</small></h3>` +
-      (due.length ? due.map(v =>
-        `<div class="rep-row"><span>${esc(v.name)}</span><b>${stWord[v.status] || v.status}</b>` +
-        `<span>${v.est_total !== null && v.est_total !== undefined ? 'est. ' + money(v.est_total) : ''}${sheetBtn(v.order_id)}</span></div>`).join('')
-        : '<p class="owner-muted">No rep visits today.</p>') +
-      (rest.length ? '<p class="owner-muted">Pack: ' + rest.map(v =>
-        esc(v.name) + ' — rep ' + (v.rep_days || []).map(dayName).join(' + ')).join(' · ') + '</p>' : '');
-    $('ownerVendors').querySelectorAll('[data-sheet]').forEach(b =>
-      b.addEventListener('click', () => openOrderSheet(b.dataset.sheet)));
-  } catch (e) { $('ownerVendors').innerHTML = ''; }
-  // Team card + unlock feed + What's Out: the employee lane's owner
-  // side, from the one ?team read (owner session — the endpoint 403s
-  // an unelevated session and the cards simply stay empty).
-  // LIGHT MIRROR (leak fix, Nov 2): the payload now carries counts,
-  // names and statuses only — no task item texts (the price-gap items
-  // name cost work), no note texts, no trail texts — so this card
-  // renders the counts and points at the Gol chat for the detail.
-  // A failed team read (a mid-deploy blip, a 403 from a session whose
-  // admin flag lagged the unlock) used to leave this card SILENTLY
-  // empty — the owner saw "Team is gone" with no trace and no way back
-  // (owner catch, Nov 2 late). The card now says so and offers a retry
-  // (a plain re-run of this panel load). The fallback carries no team
-  // data at all — the light-mirror leak fix stays closed.
-  const teamFail = () => {
-    $('ownerTeam').innerHTML =
-      `<h3 class="ocard-title">Team <small>— tasks, notes, the day's trail</small></h3>` +
-      `<p class="owner-muted">Team couldn't load just now. <button type="button" class="pin-set-btn" id="teamRetryBtn">Retry</button></p>`;
-    const rb = $('teamRetryBtn');
-    if (rb) { rb.addEventListener('click', () => $('ownerBtn').click()); }
-  };
+  // Unlock feed + What's Out: glance mirrors from the one ?team
+  // read (owner session — the endpoint 403s an unelevated session
+  // and the cards simply stay empty). The TEAM card that used to
+  // render here (per-person open/done counts, day-trail lines, PIN
+  // set/reset buttons, pay requests) was REMOVED Nov 3 on the
+  // owner's repeat correction: team management inside the POS is
+  // a second MR.STORE. It lives in MR.STORE and in the Gol chat —
+  // the presence lane answers a person's tasks and day trail, the
+  // pin_set card stages PIN writes, pay requests are decided in
+  // chat. (Chat parity proven before this cut — fix-list.)
   try {
     const tm = await (await fetch(API + '?team&session=' + encodeURIComponent(SESSION_ID))).json();
     if (tm && Array.isArray(tm.people)) {
-      const tn = (v) => Array.isArray(v) ? v.length : (Number(v) || 0);
-      $('ownerTeam').innerHTML =
-        `<h3 class="ocard-title">Team <small>— tasks, notes, the day's trail</small></h3>` +
-        // PIN setting lives HERE (TASKS 230/231, Nov 2): the panel's one
-        // deliberate exception to the mirror rule — the owner sets every
-        // PIN on this card and hands it out; the same write is staged
-        // from the Gol chat. PINs are never displayed, only their state.
-        `<div class="team-person"><b>Owner</b> <small>admin PIN — the register's master key</small>` +
-        ` <span class="pin-state${tm.admin_has_pin ? '' : ' no'}">${tm.admin_has_pin ? 'PIN set' : 'No PIN yet'}</span>` +
-        `<button type="button" class="pin-set-btn" data-pinset="admin" data-pinname="Owner (admin PIN)">${tm.admin_has_pin ? 'Reset PIN' : 'Set PIN'}</button></div>` +
-        (tm.people.length ? tm.people.map(pp => {
-          const tr = pp.trail || {};
-          return `<div class="team-person"><b>${esc(pp.name)}</b> <small>${esc(pp.role)} · ${pp.tasks_open} open · ${pp.tasks_done} done${pp.notes_unread ? ' · ' + pp.notes_unread + ' unread note(s)' : ''}</small>` +
-            ` <span class="pin-state${pp.has_pin ? '' : ' no'}">${pp.has_pin ? 'PIN set' : 'No PIN yet'}</span>` +
-            `<button type="button" class="pin-set-btn" data-pinset="${esc(pp.email)}" data-pinname="${esc(pp.name)}">${pp.has_pin ? 'Reset PIN' : 'Set PIN'}</button>` +
-            `<div class="sc-line">Din bhari: ${tn(tr.done)} done · ${tn(tr.notes)} note(s) · ${tn(tr.outs)} out report(s) · ${tn(tr.counts)} count(s) · ${tn(tr.questions)} question(s) — the work itself lives in the Gol chat.</div></div>`;
-        }).join('') : '<p class="owner-muted">No employees yet — add one in the Gol chat.</p>') +
-        (() => {
-          // Unassigned (owner inbox) tasks: a tidy summary, never a raw
-          // dump of every task text (owner catch, Oct 31 — the inbox held
-          // 700+ generated tasks and the joined wall read as a data leak).
-          const rt = tm.role_tasks || [];
-          const counts = rt.filter(t => t.kind === 'whatsout_aging');
-          const countNames = counts.map(t => String(t.subject || '').replace(/^count:/, ''))
-            .filter(Boolean).slice(0, 5);
-          const otherOpen = rt.filter(t => t.kind !== 'whatsout_aging')
-            .reduce((n, t) => n + (t.open_count !== undefined ? (Number(t.open_count) || 0)
-              : (t.items || []).filter(i => !i.done).length), 0);
-          let s = '';
-          if (counts.length) {
-            s += `<p class="owner-muted">Stock counts waiting: ${counts.length}</p>` +
-              countNames.map(n => `<div class="sc-line">• ${esc(n)}</div>`).join('') +
-              (counts.length > countNames.length ? `<p class="owner-muted">…and ${counts.length - countNames.length} more — work them in the Gol chat.</p>` : '');
-          }
-          if (otherOpen) {
-            s += `<p class="owner-muted">${otherOpen} more task${otherOpen === 1 ? '' : 's'} waiting in the owner inbox — see them in the Gol chat.</p>`;
-          }
-          return s;
-        })() +
-        ((tm.pay_requests || []).length
-          ? '<h3 class="ocard-title">Pay requests <small>— waiting on you; decide in the Gol chat ("pay requests")</small></h3>' +
-            tm.pay_requests.map(r =>
-              `<div class="team-person"><b>${esc(r.name)}</b> <small>${esc(r.period)} · ${String(Number(r.hours) || 0)} hrs = ${money(r.amount)}</small></div>`
-            ).join('')
-          : '');
-      $('ownerTeam').querySelectorAll('[data-pinset]').forEach(b =>
-        b.addEventListener('click', () => openPinSetSheet(b.dataset.pinset, b.dataset.pinname)));
       $('ownerUnlocks').innerHTML =
         `<h3 class="ocard-title">Unlock feed <small>— who opened the register, and when</small></h3>` +
         ((tm.unlocks || []).length ? tm.unlocks.map(u =>
@@ -2569,8 +2619,8 @@ $('ownerBtn').addEventListener('click', async () => {
         ((tm.counts || []).length
           ? '<h3 class="ocard-title">Counts filed</h3>' + tm.counts.map(c =>
             `<div class="rep-row"><span>${esc(c.name)}</span><b>counted ${esc(String(c.counted))} · system ${c.system === null || c.system === undefined ? '—' : esc(String(c.system))}</b><span>${esc(c.by_name || '')}</span></div>`).join('') : '');
-    } else { teamFail(); }
-  } catch (e) { teamFail(); }
+    }
+  } catch (e) { /* glance mirrors only — a failed read leaves them empty */ }
   await loadSettings(); renderSettingsView();
   renderDayClose();
   showReport('today');
@@ -4454,8 +4504,6 @@ function applyLockState(locked, actor) {
   if (mt) { mt.classList.toggle('hidden', !(lockActor && lockActor.role === 'employee')); }
   const mr = $('smMrstoreRow');
   if (mr) { mr.classList.toggle('hidden', !(lockActor && lockActor.role === 'admin')); }
-  const tr = $('smTeamRow');
-  if (tr) { tr.classList.toggle('hidden', !(lockActor && lockActor.role === 'admin')); }
   // The Owner panel is admin-domain (leak fix, Nov 2): its button is
   // not part of the cashier's till. Hidden only while the session's
   // actor is an employee — admin and the no-actor setup/lock states
@@ -4565,11 +4613,19 @@ async function openCam(mode) {
       showToast('Register Camera is off in MR.STORE Settings — no camera can start on this register.');
       return false;
     }
+    if (camMode === 'barcode') {
+      showToast('Register Camera is off in MR.STORE Settings — camera barcode scanning is off on this register.');
+      return false;
+    }
     if (camMode === 'photo') { $('chatDrawer').classList.remove('hidden'); $('photoInput').click(); }
     return false;
   }
   if (!hasGUM()) {
     // No in-app camera: the native capture input is the same door.
+    if (camMode === 'barcode') {
+      showToast('No camera on this register — a wedge scanner or the barcode box still rings codes.');
+      return false;
+    }
     if (camMode === 'photo') { $('chatDrawer').classList.remove('hidden'); $('photoInput').click(); }
     return false;
   }
@@ -4579,11 +4635,14 @@ async function openCam(mode) {
   $('camLiveBtns').classList.remove('hidden');
   $('camShotBtns').classList.add('hidden');
   $('camUseSense').classList.toggle('hidden', camMode !== 'sense');
-  $('camUsePhoto').classList.toggle('hidden', camMode === 'sense');
-  $('camUseBill').classList.toggle('hidden', camMode === 'sense');
+  $('camUsePhoto').classList.toggle('hidden', camMode === 'sense' || camMode === 'barcode');
+  $('camUseBill').classList.toggle('hidden', camMode === 'sense' || camMode === 'barcode');
+  $('camSnap').classList.toggle('hidden', camMode === 'barcode');
   $('camNote').textContent = camMode === 'sense'
     ? 'Point the camera at the counter, then capture — Gol answers whether a customer is there.'
-    : 'Point the camera, then capture. The photo goes to Gol\'s chat.';
+    : camMode === 'barcode'
+      ? 'Point the camera at a product barcode — it rings into the sale on its own, no capture tap.'
+      : 'Point the camera, then capture. The photo goes to Gol\'s chat.';
   $('camModal').classList.remove('hidden');
   const s = await camStart($('camVideo'));
   if (!s) {
@@ -4591,9 +4650,56 @@ async function openCam(mode) {
     showToast('No camera on this register — pair a phone instead: Settings → Scan with phone.');
     return false;
   }
+  if (camMode === 'barcode') { startBarcodeLoop(); }
   return true;
 }
+// --- camera barcode reading: the register's own eye, live ---------------
+// BarcodeDetector is the browser's built-in reader (Chrome and Edge,
+// phones and desktops). Where the browser ships none, the modal says
+// so in plain words and the wedge + typed roads stay open — no library
+// is vendored for this. A read rings through resolveScannedCode, the
+// same resolver as every other scanner door.
+let barcodeLoopOn = false;
+function startBarcodeLoop() {
+  const note = $('camNote');
+  if (!('BarcodeDetector' in window)) {
+    if (note) { note.textContent = 'This browser cannot read barcodes live — that reader (BarcodeDetector) ships in Chrome and Edge. A wedge scanner or the barcode box still rings codes, or snap a photo instead.'; }
+    $('camSnap').classList.remove('hidden'); // the photo road stays open
+    return;
+  }
+  let detector = null;
+  try {
+    detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'] });
+  } catch (e) {
+    try { detector = new window.BarcodeDetector(); } catch (e2) { detector = null; }
+  }
+  if (!detector) {
+    if (note) { note.textContent = 'Barcode reading could not start in this browser — a wedge scanner or the barcode box still rings codes.'; }
+    $('camSnap').classList.remove('hidden');
+    return;
+  }
+  barcodeLoopOn = true;
+  const video = $('camVideo');
+  const tick = async () => {
+    if (!barcodeLoopOn) { return; }
+    try {
+      if (video && video.readyState >= 2) {
+        const codes = await detector.detect(video);
+        if (codes && codes.length && codes[0].rawValue) {
+          barcodeLoopOn = false;
+          const code = String(codes[0].rawValue);
+          closeCam();
+          resolveScannedCode(code);
+          return;
+        }
+      }
+    } catch (e) { /* a failed frame is not a failed camera — keep looking */ }
+    if (barcodeLoopOn) { setTimeout(tick, 250); }
+  };
+  tick();
+}
 function closeCam() {
+  barcodeLoopOn = false;
   $('camModal').classList.add('hidden');
   camShot = null;
   if (camWanted()) { camStart($('watchVideo')); }
@@ -4774,12 +4880,14 @@ $('smScanBtn').addEventListener('click', () => { closeSettingsMenu(); openScanMo
 function openScanSheet() {
   const canCam = !camMasterHeld() && hasGUM();
   $('ssCamera').classList.toggle('hidden', !canCam);
+  $('ssBarcode').classList.toggle('hidden', !canCam);
   $('scanSheet').classList.remove('hidden');
 }
 function closeScanSheet() { $('scanSheet').classList.add('hidden'); }
 $('ssClose').addEventListener('click', closeScanSheet);
 $('ssPhone').addEventListener('click', () => { closeScanSheet(); openScanModal(); });
 $('ssCamera').addEventListener('click', () => { closeScanSheet(); openCam('photo'); });
+$('ssBarcode').addEventListener('click', () => { closeScanSheet(); openCam('barcode'); });
 $('ssUpload').addEventListener('click', () => {
   closeScanSheet();
   $('chatDrawer').classList.remove('hidden'); $('photoInput').click();
@@ -5126,7 +5234,7 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
     const items = [ringClose].concat(formBtns, chipBtns);
     const SHORT = { 'Photo': 'Photo', 'Voice': 'Voice', 'Speaker': 'Speaker', "What is today's total?": 'Today', 'How much did we sell yesterday?': 'Yesterday', 'How much did we sell this week?': 'This week', "What's out?": "What's out", "This month's report": 'Report', 'What is the top seller?': 'Top seller', 'What is the price of Coke?': 'Price', 'Close': 'Close' };
     items.forEach((b, i) => {
-      const lbl = b.getAttribute('data-chip') || '';
+      const lbl = b.getAttribute('data-chip') || (b.id === 'scanBillChip' ? 'Scan bill' : '');
       b.setAttribute('data-rlabel', SHORT[lbl] || lbl);
       b.style.setProperty('--a', (-90 + i * (360 / items.length)) + 'deg');
       b.style.setProperty('--i', i);
@@ -5269,7 +5377,24 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
     drawer.style.left = p.l + 'px'; drawer.style.top = p.t + 'px';
     drawer.style.width = p.w + 'px'; drawer.style.height = p.h + 'px';
   }
-  function applySavedPos() { const p = loadPos(); if (p) { applyPos(p); } }
+  // -- FLOAT FIRST (owner, Nov 3 16:25 ET: "gol chat ho tyo tah jata
+  // pani kudne scalable hunu paro" — the chat must run anywhere and be
+  // scalable — with the MR.STORE app's Gol panel named as the reference
+  // "yesto huna paro"): the panel OPENS floating, never as the fixed
+  // right dock. A device with a remembered spot keeps it; a fresh
+  // device gets this default float — the dock's own width, most of the
+  // height, a breath off the right and bottom edges — and can drag it
+  // by the head or scale it from any edge from the first second; any
+  // drag/resize lands in the same golpos_chat_pos record as always.
+  // Mobile keeps its full-screen law (applyPos no-ops there).
+  function applyDefaultFloat() {
+    if (mqMobile.matches || drawer.classList.contains('chat-circle')) { return; }
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const w = Math.min(400, vw);
+    const h = Math.round(vh * 0.88);
+    applyPos({ l: vw - w - 16, t: vh - h - 12, w: w, h: h });
+  }
+  function applySavedPos() { const p = loadPos(); if (p) { applyPos(p); } else { applyDefaultFloat(); } }
 
   // -- the circle form (owner, Nov 2 evening: "bhaena golo chat") -------------
   // On desktop the open panel takes Gol's own form: a true circle. It is

@@ -1,17 +1,17 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="midnight">
+<html lang="en" data-theme="clean">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Gol POS — Register</title>
-<script>try{var t=localStorage.getItem('golpos_theme');if(['midnight','clean','bold'].indexOf(t)<0)t='midnight';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='midnight';}</script>
+<script>try{var t=localStorage.getItem('golpos_theme');if(['midnight','clean','bold'].indexOf(t)<0)t='clean';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='clean';}</script>
 <script>try{if(localStorage.getItem('golpos_lock_hint')==='1')document.documentElement.classList.add('boot-lock');}catch(e){}</script>
-<link rel="stylesheet" href="styles.css?v=57c760c">
+<link rel="stylesheet" href="styles.css?v=18c94d8">
 </head>
 <body>
 <header class="topbar">
-  <span class="gol-mark gol-mark-lg"><img class="gol-mark-img" src="assets/gol-ring-white.png" alt="Gol"><i class="gol-mark-dot"></i></span>
-  <div class="brand">Gol POS<small id="themeName">Midnight Register</small></div>
+  <span class="gol-mark gol-mark-lg"><span class="golbot golbot-mark" aria-hidden="true"><span class="gb-shadow"></span><span class="gb-rings gb-rings-back"><span class="gb-ringdisc"></span><span class="gb-orbit"><span class="gb-spin"><i class="gb-sat gb-sat-back"></i></span></span></span><span class="gb-head"><span class="gb-glass"><span class="gb-spec"></span></span><span class="gb-eyes"><i class="gb-eye"></i><i class="gb-eye"></i></span></span><span class="gb-rings gb-rings-front"><span class="gb-ringdisc"></span><span class="gb-orbit"><span class="gb-spin"><i class="gb-sat gb-sat-front"></i></span></span></span></span><i class="gol-mark-dot"></i></span>
+  <div class="brand">Gol POS<small id="themeName">Clean Counter</small></div>
   <div class="store-pill"><span class="status-dot"></span><span id="storeName">Register</span><span class="store-open">&nbsp;· Register open</span></div>
   <div class="top-right">
     <span class="clock" id="clock"></span>
@@ -22,7 +22,7 @@
       <button type="button" data-set-theme="bold"><span class="sw sw-bold"></span>Bold</button>
     </div>
     <span id="camPill" class="cam-pill hidden" role="status"><svg class="ic ic-dot" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="currentColor"/></svg> Camera on</span>
-    <button id="camBtn" type="button" aria-label="Scan bills" title="Scan bills — phone scanner, camera or upload"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+    <button id="camBtn" type="button" aria-label="Scan" title="Scan — bills, receipts and product barcodes"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
     <button id="voiceBtn" type="button" aria-label="Voice — talk to Gol" title="Voice — talk to Gol"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5"/></svg></button>
     <div class="setmenu">
       <button id="settingsBtn" type="button" aria-haspopup="true" aria-expanded="false"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Settings</button>
@@ -67,10 +67,6 @@
         <div class="sm-row hidden" id="smMrstoreRow">
           <div class="sm-main"><span class="sm-label">Login to MR.STORE</span><span class="sm-sub">This store in MR.STORE — books, bills, reports</span></div>
           <button type="button" class="sm-act" id="smMrstoreBtn">Open</button>
-        </div>
-        <div class="sm-row hidden" id="smTeamRow">
-          <div class="sm-main"><span class="sm-label">Team</span><span class="sm-sub">Owner, staff and PINs</span></div>
-          <button type="button" class="sm-act" id="smTeamBtn">Open</button>
         </div>
         <div class="sm-row sm-last">
           <div class="sm-main"><span class="sm-label">Store</span><span class="sm-sub">Closed pauses new sales</span></div>
@@ -166,12 +162,6 @@
     </div>
   </div>
   <div class="owner-card">
-    <div id="ownerVendors"></div>
-  </div>
-  <div class="owner-card">
-    <div id="ownerTeam"></div>
-  </div>
-  <div class="owner-card">
     <div id="ownerUnlocks"></div>
   </div>
   <div class="owner-card">
@@ -200,7 +190,7 @@
 <div id="golRing" class="gol-ring hidden" aria-hidden="true"></div>
 <div class="lock-overlay hidden" id="lockOverlay" role="dialog" aria-label="Register locked">
   <div class="lock-card">
-    <img class="lock-logo" src="assets/gol-ring-white.png" alt="Gol">
+    <span class="golbot golbot-lock" role="img" aria-label="Gol"><span class="gb-shadow"></span><span class="gb-rings gb-rings-back"><span class="gb-ringdisc"></span><span class="gb-orbit"><span class="gb-spin"><i class="gb-sat gb-sat-back"></i></span></span></span><span class="gb-head"><span class="gb-glass"><span class="gb-spec"></span></span><span class="gb-eyes"><i class="gb-eye"></i><i class="gb-eye"></i></span></span><span class="gb-rings gb-rings-front"><span class="gb-ringdisc"></span><span class="gb-orbit"><span class="gb-spin"><i class="gb-sat gb-sat-front"></i></span></span></span></span>
     <h2 class="lock-title">PIN please</h2>
     <p class="lock-sub">The register is locked. Enter your PIN —<br>it opens in your name, with your tasks ready.</p>
     <div id="lockPinPad" class="pin-pad lock-pin-pad" role="group" aria-label="PIN entry">
@@ -214,7 +204,7 @@
       <button id="lockPinGo" type="button" class="pin-pad-go">Unlock</button>
       <p class="lock-pin-msg" id="lockPinMsg" role="alert"></p>
     </div>
-    <button id="lockChatBtn" type="button" class="gol-btn"><svg class="gol-ring" viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path d="M28.6 7.7 A15 15 0 1 0 34.8 22.6" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"/></svg>Talk to Gol</button>
+    <button id="lockChatBtn" type="button" class="gol-btn"><span class="golbot golbot-btn" aria-hidden="true"><span class="gb-shadow"></span><span class="gb-rings gb-rings-back"><span class="gb-ringdisc"></span><span class="gb-orbit"><span class="gb-spin"><i class="gb-sat gb-sat-back"></i></span></span></span><span class="gb-head"><span class="gb-glass"><span class="gb-spec"></span></span><span class="gb-eyes"><i class="gb-eye"></i><i class="gb-eye"></i></span></span><span class="gb-rings gb-rings-front"><span class="gb-ringdisc"></span><span class="gb-orbit"><span class="gb-spin"><i class="gb-sat gb-sat-front"></i></span></span></span></span>Talk to Gol</button>
   </div>
 </div>
 
@@ -426,7 +416,7 @@
 <div class="chat-drawer hidden" id="chatDrawer">
   <div class="chat-head">
     <span class="chat-grip" aria-hidden="true" title="Drag to move"></span>
-    <span class="gol-mark"><img class="gol-mark-img" src="assets/gol-ring-white.png" alt="Gol"><i class="gol-mark-dot"></i></span>
+    <span class="gol-mark"><span class="golbot golbot-mark" aria-hidden="true"><span class="gb-shadow"></span><span class="gb-rings gb-rings-back"><span class="gb-ringdisc"></span><span class="gb-orbit"><span class="gb-spin"><i class="gb-sat gb-sat-back"></i></span></span></span><span class="gb-head"><span class="gb-glass"><span class="gb-spec"></span></span><span class="gb-eyes"><i class="gb-eye"></i><i class="gb-eye"></i></span></span><span class="gb-rings gb-rings-front"><span class="gb-ringdisc"></span><span class="gb-orbit"><span class="gb-spin"><i class="gb-sat gb-sat-front"></i></span></span></span></span><i class="gol-mark-dot"></i></span>
     <span class="golbot golbot-head" aria-hidden="true"><span class="gb-shadow"></span><span class="gb-rings gb-rings-back"><span class="gb-ringdisc"></span><span class="gb-orbit"><span class="gb-spin"><i class="gb-sat gb-sat-back"></i></span></span></span><span class="gb-head"><span class="gb-glass"><span class="gb-spec"></span></span><span class="gb-eyes"><i class="gb-eye"></i><i class="gb-eye"></i></span></span><span class="gb-rings gb-rings-front"><span class="gb-ringdisc"></span><span class="gb-orbit"><span class="gb-spin"><i class="gb-sat gb-sat-front"></i></span></span></span></span>
     <div class="chat-title"><b>Gol</b><small id="chatStatus">Your store brain · online</small></div>
     <button id="chatFaceBtn" type="button" class="chat-face-btn" aria-label="Switch chat view" title="Circle view"></button>
@@ -442,14 +432,15 @@
     <button type="button" data-chip="What's out?"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg> What's out?</button>
     <button type="button" data-chip="This month's report"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4.5a3 3 0 0 1 6 0M9 11h6M9 15h4"/></svg> Monthly report</button>
     <button type="button" data-chip="What is the top seller?"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v4.5a4 4 0 0 1-8 0z"/><path d="M8 5.5H4.5a3.5 3.5 0 0 0 3.6 3.5M16 5.5h3.5a3.5 3.5 0 0 1-3.6 3.5M12 12.5V15M8.5 20h7M10 15h4l.6 5H9.4z"/></svg> Top seller?</button>
+    <button type="button" id="scanBillChip" aria-label="Scan a bill photo"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M3 12h18"/></svg> Scan bill</button>
     <button type="button" data-chip="What is the price of Coke?"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg> Coke price?</button>
   </div>
   <div id="voicePill" class="voice-pill hidden" role="status"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5"/></svg><span class="vp-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span> Listening… speak now</div>
-    <div id="golCenterLogo" class="gol-center-logo hidden" aria-hidden="true"><img src="assets/gol-ring-blue.png" alt=""></div>
+    <div id="golCenterLogo" class="gol-center-logo hidden" aria-hidden="true"><span class="golbot golbot-center" aria-hidden="true"><span class="gb-shadow"></span><span class="gb-rings gb-rings-back"><span class="gb-ringdisc"></span><span class="gb-orbit"><span class="gb-spin"><i class="gb-sat gb-sat-back"></i></span></span></span><span class="gb-head"><span class="gb-glass"><span class="gb-spec"></span></span><span class="gb-eyes"><i class="gb-eye"></i><i class="gb-eye"></i></span></span><span class="gb-rings gb-rings-front"><span class="gb-ringdisc"></span><span class="gb-orbit"><span class="gb-spin"><i class="gb-sat gb-sat-front"></i></span></span></span></span></div>
   <button id="golMenuFab" type="button" class="gol-menu-fab" aria-label="Quick menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="5" r="2.1"/><circle cx="12" cy="5" r="2.1"/><circle cx="19" cy="5" r="2.1"/><circle cx="5" cy="12" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="19" cy="12" r="2.1"/><circle cx="5" cy="19" r="2.1"/><circle cx="12" cy="19" r="2.1"/><circle cx="19" cy="19" r="2.1"/></svg></button>
   <div id="pinPad" class="pin-pad hidden" role="group" aria-label="PIN entry">
-    <div class="pin-pad-title">PIN halnus</div>
-    <p class="pin-pad-sub" id="pinPadSub">Register locked chha — PIN halnus, tapaai kai naam ma khulchha.</p>
+    <div class="pin-pad-title">Enter your PIN</div>
+    <p class="pin-pad-sub" id="pinPadSub">Register is locked — enter your PIN; it opens under your own name.</p>
     <div class="pin-pad-dots" id="pinPadDots" aria-hidden="true"></div>
     <div class="pin-pad-grid" id="pinPadGrid">
       <button type="button" data-pin="1">1</button><button type="button" data-pin="2">2</button><button type="button" data-pin="3">3</button>
@@ -511,13 +502,14 @@
 
 <div class="camview hidden" id="scanSheet"><div class="cam-card">
   <div class="cam-head">
-    <h3>Scan bills</h3>
+    <h3>Scan</h3>
     <button type="button" id="ssClose" class="ghost">Close</button>
   </div>
-  <p class="cam-note">Scan a bill or receipt — Gol reads it right here in this register's chat.</p>
+  <p class="cam-note">Scan a bill, a receipt or a product barcode — Gol reads it right here in this register.</p>
   <div class="ss-rows">
     <button type="button" id="ssPhone" class="ss-row ss-main"><span class="ss-t">Scan bills — with your phone</span><span class="ss-s">Show a QR code; your phone becomes this register's scanner</span></button>
     <button type="button" id="ssCamera" class="ss-row"><span class="ss-t">Use this register's camera</span><span class="ss-s">Take the photo on this screen</span></button>
+    <button type="button" id="ssBarcode" class="ss-row"><span class="ss-t">Scan a product barcode</span><span class="ss-s">Point this register's camera at the barcode — it rings into the sale</span></button>
     <button type="button" id="ssUpload" class="ss-row"><span class="ss-t">Upload a photo</span><span class="ss-s">Pick a photo file from this computer</span></button>
   </div>
 </div></div>
@@ -556,6 +548,6 @@
 <video id="watchVideo" muted playsinline class="watch-video" aria-hidden="true"></video>
 
 <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2e573f7"></script>
+  <script src="app.js?v=b794aed"></script>
 </body>
 </html>
