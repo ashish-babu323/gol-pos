@@ -51,20 +51,51 @@ const IC_CHECK = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="curren
 // button disabled, card dimmed. Called from every chat response that
 // carries a cancelled/stale marker, and directly by the card's own
 // Cancel button.
-function markStagedCancelled(pid, el) {
+// A card whose confirm EXECUTED retires in place (confirm-flow fix,
+// Nov 2): the same marking sendChat applies when the confirm word runs
+// a card. Before this, the Confirm-button path left the executed card
+// standing with live buttons, and every extra tap on it drew the
+// nothing-staged line again.
+// BOTFACE v3.4 (owner live catch, Nov 3 00:52: "confirm bhae pacha
+// card hatena saved status ma ani dherai thulo bhayo"): retirement is
+// now a COLLAPSE, not a paint — the executed or cancelled card's whole
+// working block (badge, price block, Confirm/Cancel buttons) is
+// replaced by a compact receipt: a small state chip (check Entered /
+// Cancelled) + the one-line summary the brain already returned for
+// that turn (or, where no reply line rides along, the card's own
+// heading + the state word). A still-PENDING card keeps the full
+// working form untouched, and a card staged later renders full again.
+function collapseStagedCard(el, state, line) {
+  if (!el || el.classList.contains('sc-retired')) { return; }
+  let summary = (typeof line === 'string' && line.trim()) ? line.trim() : '';
+  if (!summary) {
+    const what = el.querySelector('.sc-what');
+    const whatText = what ? what.textContent.trim().replace(/\s+/g, ' ') : '';
+    summary = whatText ? (whatText + (state === 'entered' ? ' — entered.' : ' — cancelled.'))
+                       : (state === 'entered' ? 'Entered.' : 'Cancelled.');
+  }
+  el.classList.add('sc-retired');
+  if (state === 'cancelled') { el.classList.add('sc-cancelled'); }
+  el.innerHTML = state === 'entered'
+    ? `<span class="sc-done-chip sc-done-in">✓ Entered</span><span class="sc-done-line">${esc(summary)}</span>`
+    : `<span class="sc-done-chip sc-done-out">Cancelled</span><span class="sc-done-line">${esc(summary)}</span>`;
+}
+function markStagedEntered(el, line) {
+  if (!el) { return; }
+  collapseStagedCard(el, 'entered', line);
+  try { botAck(); } catch (e) { /* the face never breaks a confirm */ }
+}
+function markStagedCancelled(pid, el, line) {
   let targets = [];
   if (el) { targets.push(el); }
   if (pid) { targets = targets.concat(Array.from(document.querySelectorAll('[data-pid="' + pid + '"]'))); }
   if (!targets.length) {
-    const live = Array.from(document.querySelectorAll('.msg.card:not(.sc-cancelled)'));
+    const live = Array.from(document.querySelectorAll('.msg.card:not(.sc-cancelled):not(.sc-retired)'));
     if (live.length) { targets = [live[live.length - 1]]; }
   }
   targets.forEach((t) => {
-    if (!t || t.classList.contains('sc-cancelled')) { return; }
-    t.classList.add('sc-cancelled');
-    const badge = t.querySelector('.sc-badge');
-    if (badge) { badge.textContent = 'CANCELLED'; }
-    t.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    if (!t || t.classList.contains('sc-cancelled') || t.classList.contains('sc-retired')) { return; }
+    collapseStagedCard(t, 'cancelled', line);
   });
 }
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -369,6 +400,8 @@ function addToCart(sku, opts) {
   const n = (opts && opts.qty) ? Math.max(1, Math.floor(opts.qty)) : 1;
   cart.set(sku, (cart.get(sku) || 0) + n);
   renderCart();
+  botReactSoft();
+  botGlanceSoft('cart');
 }
 // --- the living shelf, second presentation: Keypad-pane product rows -------
 // The Keypad pane pairs the pad with the same catalog as compact rows, so
@@ -585,6 +618,8 @@ async function tender(kind, tendered) {
     return false;
   }
   await loadSettings();
+  botReact(); // a sale just rang up — the bot glances up (BOTFACE v1)
+  botGlance('cart');
   await loadCatalog(); // the rung units leave the shelf — counts and bars move
   const st = receiptSettings || {};
   taxExempt = false; // the exemption dies with the sale it was set for
@@ -907,6 +942,7 @@ function chatMsg(text, who) {
   // in the circle and the rectangle panel alike.
   d.style.whiteSpace = 'pre-wrap';
   $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
+  if (who === 'gol') { botClearThinking(); botReactSoft(); botGlanceSoft('thread'); }
   return d;
 }
 function chatCard(card) {
@@ -1046,16 +1082,30 @@ function chatCard(card) {
   d.innerHTML = `<span class="sc-badge">STAGED</span>${body}<div class="sc-btns"><button type="button" class="sc-confirm">${IC_CHECK} Confirm — Gol</button><button type="button" class="sc-cancel">Cancel</button></div>`;
   const confirmBtn = d.querySelector('.sc-confirm');
   confirmBtn.addEventListener('click', async () => {
-    const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(brainPayload({ confirm: true, pending_pid: cardPid })) });
-    const r = await res.json();
-    chatMsg(r.reply, 'gol');
-    if (r.stale) { markStagedCancelled(cardPid, d); }
-    try { golSpeak(posSayFor(r, '', null)); } catch (e) {}
-    applyLockState(r.locked, r.actor);
-    notePinState(r);
-    handleChatAction(r);
-    loadCatalog(); loadSettings();
+    // One tap, one request (confirm-flow fix, Nov 2): both buttons rest
+    // while the confirm is in flight — a fast double-tap used to send
+    // two confirms, and the second came back as a full nothing-staged
+    // line stacked under the first.
+    confirmBtn.disabled = true; if (cancelBtn) { cancelBtn.disabled = true; }
+    try {
+      const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(brainPayload({ confirm: true, pending_pid: cardPid })) });
+      const r = await res.json();
+      if (r.reply) { chatMsg(r.reply, 'gol'); }
+      if (r.stale) { markStagedCancelled(cardPid, d, r.reply); }
+      if (r.cancelled_pid) { markStagedCancelled(r.cancelled_pid, null, r.reply); }
+      else if (r.cancelled) { markStagedCancelled(cardPid, d, r.reply); }
+      // The card retires the moment its confirm lands.
+      if (r.done) { markStagedEntered(d, r.reply); }
+      try { golSpeak(posSayFor(r, '', null)); } catch (e) {}
+      applyLockState(r.locked, r.actor);
+      notePinState(r);
+      handleChatAction(r);
+      loadCatalog(); loadSettings();
+    } catch (e) {
+      confirmBtn.disabled = false; if (cancelBtn) { cancelBtn.disabled = false; }
+      chatMsg('Could not reach the brain to confirm — the card is still staged; try again.', 'gol');
+    }
   });
   const cancelBtn = d.querySelector('.sc-cancel');
   if (cancelBtn) {
@@ -1066,8 +1116,8 @@ function chatCard(card) {
           body: JSON.stringify(brainPayload({ cancel_card: true, pending_pid: cardPid })) });
         const r2 = await res2.json();
         if (r2.reply) { chatMsg(r2.reply, 'gol'); }
-        if (r2.cancelled_pid) { markStagedCancelled(r2.cancelled_pid); }
-        else if (r2.cancelled) { markStagedCancelled(cardPid, d); }
+        if (r2.cancelled_pid) { markStagedCancelled(r2.cancelled_pid, null, r2.reply); }
+        else if (r2.cancelled) { markStagedCancelled(cardPid, d, r2.reply); }
         applyLockState(r2.locked, r2.actor);
         notePinState(r2);
         handleChatAction(r2);
@@ -1079,6 +1129,7 @@ function chatCard(card) {
     });
   }
   $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
+  botClearThinking(); botReactSoft(); botGlanceSoft('thread');
   return d;
 }
 // --- visual reports: the graph card -------------------------------------------
@@ -1093,6 +1144,20 @@ function gfmt(v) {
 function graphSvg(g) {
   const vals = g.series.map(p => Number(p.value) || 0);
   const max = Math.max(...vals, 0);
+  if (g.kind === 'spark' && g.series.length <= 7) {
+    // Sparse day series (owner, Nov 3 00:40: "dherai thulo card"): a
+    // month in its first days carries a handful of points, and the
+    // line plot renders as a vast empty field. Draw a per-day strip
+    // sized to the days that exist — same labels, same figures, the
+    // head/total/cash/calendar around it untouched. A full month
+    // (28-31 points) keeps the spark below.
+    const rows = g.series.map(p => {
+      const v = Number(p.value) || 0;
+      const w = max > 0 ? Math.max(0, (v / max) * 100) : 0;
+      return `<div class="gstrip-row${p.highlight ? ' today' : ''}"><span class="gstrip-lbl">${esc(p.label)}</span><span class="gstrip-track"><i style="width:${w.toFixed(1)}%"></i></span><span class="gstrip-val">${gfmt(v)}</span></div>`;
+    }).join('');
+    return `<div class="gstrip">${rows}</div>`;
+  }
   if (g.kind === 'hbars') {
     const W = 336, rowH = 27, nameW = 112, barMax = 130;
     const H = g.series.length * rowH + 4;
@@ -1158,6 +1223,7 @@ function chatGraph(g) {
   if (!g || !Array.isArray(g.series)) { return; }
   const d = document.createElement('div');
   d.className = 'msg gol graph-card';
+  if (g.kind) { d.classList.add('gk-' + g.kind); }
   d.dataset.calStore = g.cal_store || '';
   let inner = `<div class="graph-head"><span class="graph-title">${esc(g.title || '')}</span><span class="graph-total">${money(g.total)}</span></div>`;
   if (g.empty) {
@@ -1409,6 +1475,15 @@ function golStopVoice() {
   if (golAudioEl) { try { golAudioEl.pause(); } catch (e) {} golAudioEl = null; }
 }
 var golSayInflight = 0;
+/* EAR LATENCY (owner live catch, Nov 3 — "listening late open
+   garcha"): when a spoken line ENDS naturally, ping the Call
+   supervisor at once instead of letting its 300ms interval discover
+   the silence — the ear re-opens on the event, not the clock. Inert
+   outside a Call: the hook is only set by the call section, and
+   callEarTick no-ops when no call is live. */
+function golWireAudioEnd(a) {
+  try { a.addEventListener('ended', function () { try { if (window.__golCallTick) { window.__golCallTick(); } } catch (e) {} }); } catch (e) {}
+}
 function golSpeak(say) {
   if (!say || !say.text || !golVoiceOn()) return;
   var text = String(say.text).slice(0, 400);
@@ -1434,6 +1509,7 @@ function golSpeak(say) {
       golStopVoice();
       var url = URL.createObjectURL(b);
       golAudioEl = new Audio(url);
+      golWireAudioEnd(golAudioEl);
       var p = golAudioEl.play();
       if (p && p.catch) p.catch(function () { if (myGen === golSayGen) { golSayPendingUrl = url; } });
     }).catch(function () { sayDone(); });
@@ -1445,7 +1521,7 @@ var golSayPendingUrl = null;
 document.addEventListener('pointerdown', function () {
   if (golSayPendingUrl && golVoiceOn()) {
     var u = golSayPendingUrl; golSayPendingUrl = null;
-    try { golAudioEl = new Audio(u); var pr = golAudioEl.play(); if (pr && pr.catch) pr.catch(function () {}); } catch (e) {}
+    try { golAudioEl = new Audio(u); golWireAudioEnd(golAudioEl); var pr = golAudioEl.play(); if (pr && pr.catch) pr.catch(function () {}); } catch (e) {}
   }
 }, true);
 function leadOfSay(text) {
@@ -1549,6 +1625,11 @@ async function sendPhoto(file, promptText) {
 
 async function sendChat(text, callSeq) {
   noteChatLang(text); // the voice door follows the language of the chat
+  botSetThinking();
+  /* GREETING LAW (Nov 3): using Gol at all completes a first
+     contact - persist it so the Call opener never self-intros
+     this device afterwards. */
+  try { localStorage.setItem('golpos_first_contact_done', '1'); } catch (e) { /* the flag never breaks a turn */ }
   // A counter-sensing ask is a camera errand, not a brain question: the
   // frame goes to the vision lane and its answer comes back as Gol's
   // reply — the message never reaches the brain's catalog lanes.
@@ -1567,8 +1648,8 @@ async function sendChat(text, callSeq) {
   // digits standing in the chat history.
   if (r.pin_mask && mine) { mine.textContent = '••••'; }
   if (r.reply) { chatMsg(r.reply, 'gol'); }
-  if (r.cancelled_pid) { markStagedCancelled(r.cancelled_pid); }
-  else if (r.cancelled) { markStagedCancelled(''); }
+  if (r.cancelled_pid) { markStagedCancelled(r.cancelled_pid, null, r.reply); }
+  else if (r.cancelled) { markStagedCancelled('', null, r.reply); }
   if (r.graph) { chatGraph(r.graph); }
   if (r.who) { chatWho(r.who); }
   if (r.dcard) { chatDCard(r.dcard); }
@@ -1580,14 +1661,161 @@ async function sendChat(text, callSeq) {
   try { golSpeak(posSayFor(r, text, cardEl)); } catch (e) {}
   handleChatAction(r);
   if (r.done) {
-    document.querySelectorAll('#chatBody .msg.card:not(.sc-cancelled)').forEach(function (t) {
-      var badge = t.querySelector('.sc-badge');
-      if (badge) badge.textContent = 'ENTERED';
-      t.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
-    });
+    botAck();
+    document.querySelectorAll('#chatBody .msg.card:not(.sc-cancelled):not(.sc-retired)').forEach(function (t) { markStagedEntered(t, r.reply); });
     loadCatalog(); loadSettings();
   }
+  botClearThinking();
 }
+
+// --- Gol Bot face state (BOTFACE v1) -----------------------------------------
+// Owner, Nov 2 late: "gol bot, and gol" + "always alive". The chat's
+// face is a small premium glass bot head (.golbot in the head + the
+// fab). Its LIFE (blink, breathing halo, drifting glance) is pure CSS;
+// its STATES are driven here from the same signals callPaint paints
+// from: speaking = TTS not idle, listening = a call ear or the push-
+// to-talk mic is open, thinking = a chat turn is in flight. Reactions
+// (a Gol message or card lands, an item rings up, a sale completes)
+// flash one brief brighten + glance. Presentation only — no data path.
+var botThinkStamp = 0;
+var botStateNow = '';
+var botReactTimer = 0;
+var botReactLast = 0;
+// BOTFACE v2: the head's status line is LIVE — it speaks the bot's
+// state in words ("Thinking…", "Listening…", "Speaking…") instead of
+// a frozen "online". botSync writes it outside a call; callPaint owns
+// it while a call runs (its words are the call's own). Write-on-change
+// only, and a missing element is a no-op (the face never breaks chat).
+var chatStatusLast = '';
+function chatStatusSet(t) {
+  if (!t || t === chatStatusLast) { return; }
+  chatStatusLast = t;
+  const el = $('chatStatus'); if (el) { el.textContent = t; }
+}
+function botEls() { return document.querySelectorAll('.golbot'); }
+function botSetThinking() { botThinkStamp = Date.now(); botSync(); }
+function botClearThinking() { if (botThinkStamp) { botThinkStamp = 0; botSync(); } }
+function botReact() {
+  botEls().forEach(function (el) {
+    el.classList.remove('bot-react'); void el.offsetWidth; el.classList.add('bot-react');
+  });
+  clearTimeout(botReactTimer);
+  botReactTimer = setTimeout(function () {
+    botEls().forEach(function (el) { el.classList.remove('bot-react'); });
+  }, 950);
+}
+function botReactSoft() {
+  const n = Date.now();
+  if (n - botReactLast < 1600) { return; }
+  botReactLast = n; botReact();
+}
+function botSync() {
+  let st = 'idle';
+  try {
+    const speaking = (typeof callAudioIdle === 'function') ? !callAudioIdle() : false;
+    const listening = (typeof callActive !== 'undefined' && callActive && typeof callListening !== 'undefined' && callListening)
+      || (typeof voiceOn !== 'undefined' && voiceOn);
+    if (speaking) { st = 'speaking'; }
+    else if (listening) { st = 'listening'; }
+    else if (botThinkStamp && Date.now() - botThinkStamp < 25000) { st = 'thinking'; }
+  } catch (e) { /* the face never breaks the till */ }
+  if (st === botStateNow) { return; }
+  botStateNow = st;
+  botEls().forEach(function (el) {
+    el.classList.toggle('bot-listening', st === 'listening');
+    el.classList.toggle('bot-thinking', st === 'thinking');
+    el.classList.toggle('bot-speaking', st === 'speaking');
+  });
+  // The head's status line follows the same state — except while a
+  // call runs, where callPaint's own words own the line.
+  try {
+    if (!(typeof callActive !== 'undefined' && callActive)) {
+      chatStatusSet(st === 'listening' ? 'Listening\u2026'
+        : st === 'speaking' ? 'Speaking\u2026'
+        : st === 'thinking' ? 'Thinking\u2026'
+        : 'Your store brain \u00b7 online');
+    }
+  } catch (e) { /* the face never breaks the till */ }
+}
+setInterval(botSync, 350);
+// --- BOTFACE v3 life (owner, Nov 3 00:30: "ajhai dami banau na yo bot
+// lai" + 00:32 "saturn jasto banau"): the eyes GLANCE with purpose
+// and ACKNOWLEDGE an executed action. Pure presentation — WAAPI on
+// the eyes (it rides over the CSS idle life for its moment, then the
+// life resumes), throttled twins of the react pair, and a fab-only
+// pointer lean. Every path is guarded: the face never breaks the till.
+var botGlanceLast = 0;
+var botGlanceAnims = [];
+function botGlance(dir) {
+  try {
+    let dx = 0, dy = 0;
+    if (dir === 'cart') { dx = 0.055; dy = -0.035; }
+    else if (dir === 'thread') { dx = -0.02; dy = 0.05; }
+    else { return; }
+    botEls().forEach(function (el) {
+      const eyes = el.querySelector('.gb-eyes');
+      if (!eyes || typeof eyes.animate !== 'function') { return; }
+      botGlanceAnims = botGlanceAnims.filter(function (a) { return a.playState !== 'finished'; });
+      botGlanceAnims.forEach(function (a) { try { a.cancel(); } catch (e) { /* noop */ } });
+      botGlanceAnims = [];
+      const s = el.getBoundingClientRect().width || 52;
+      const x = Math.round(dx * s), y = Math.round(dy * s);
+      const anim = eyes.animate([
+        { transform: 'translate(0px, 0px)' },
+        { transform: 'translate(' + x + 'px, ' + y + 'px)', offset: 0.38 },
+        { transform: 'translate(' + x + 'px, ' + y + 'px)', offset: 0.62 },
+        { transform: 'translate(0px, 0px)' }
+      ], { duration: 980, easing: 'ease-in-out' });
+      if (anim) { botGlanceAnims.push(anim); }
+    });
+  } catch (e) { /* the face never breaks the till */ }
+}
+function botGlanceSoft(dir) {
+  const n = Date.now();
+  if (n - botGlanceLast < 1600) { return; }
+  botGlanceLast = n; botGlance(dir);
+}
+var botAckTimer = 0;
+var botAckLast = 0;
+function botAck() {
+  const n = Date.now();
+  if (n - botAckLast < 1200) { return; }
+  botAckLast = n;
+  botEls().forEach(function (el) {
+    el.classList.remove('bot-ack'); void el.offsetWidth; el.classList.add('bot-ack');
+  });
+  clearTimeout(botAckTimer);
+  botAckTimer = setTimeout(function () {
+    botEls().forEach(function (el) { el.classList.remove('bot-ack'); });
+  }, 860);
+}
+// The fab bot leans a breath toward the pointer (fab only — the head
+// presence stays still); a press or a drag start settles it level.
+(function () {
+  try {
+    const fab = $('golFab');
+    if (!fab) { return; }
+    const bot = fab.querySelector('.golbot');
+    if (!bot) { return; }
+    let raf = 0;
+    fab.addEventListener('pointermove', function (e) {
+      if (e.buttons || raf) { return; }
+      raf = requestAnimationFrame(function () {
+        raf = 0;
+        try {
+          const r = fab.getBoundingClientRect();
+          if (!r.width) { return; }
+          const x = ((e.clientX - r.left) / r.width) - 0.5;
+          const y = ((e.clientY - r.top) / r.height) - 0.5;
+          bot.style.transform = 'rotateX(' + (-y * 7).toFixed(2) + 'deg) rotateY(' + (x * 7).toFixed(2) + 'deg)';
+        } catch (err) { /* noop */ }
+      });
+    });
+    const settle = function () { bot.style.transform = ''; };
+    fab.addEventListener('pointerleave', settle);
+    fab.addEventListener('pointerdown', settle);
+  } catch (e) { /* the face never breaks the till */ }
+})();
 
 // --- wiring -------------------------------------------------------------------
 $('searchInput').addEventListener('input', renderGrid);
@@ -1956,7 +2184,9 @@ function openChatToGol() {
   try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); }
   inp.classList.remove('composer-flash'); void inp.offsetWidth; inp.classList.add('composer-flash');
 }
-$('golBtn').addEventListener('click', openChatToGol);
+// BOTFACE v2: the register top bar no longer carries a "Talk to Gol"
+// button — the bot fab is the ONE entry to the chat (the PIN lock's own
+// Talk button below still opens it, that surface is separate).
 $('chatClose').addEventListener('click', () => { if (window.__golFoldPanel) { window.__golFoldPanel(); } else { if (!(typeof callActive !== 'undefined' && callActive)) { try { golStopVoice(); } catch (e) {} golSayPendingUrl = null; } $('chatDrawer').classList.add('hidden'); } loadCatalog(); });
 // --- quick-ask chips: one tap sends the everyday asks — no typing at the till.
 document.querySelectorAll('[data-chip]').forEach(b =>
@@ -2038,8 +2268,8 @@ async function pinPadSubmit() {
     r = await res.json();
   } catch (e) { chatMsg('Connection hiccup — try the PIN again.', 'gol'); return; }
   if (r.reply) { chatMsg(r.reply, 'gol'); }
-  if (r.cancelled_pid) { markStagedCancelled(r.cancelled_pid); }
-  else if (r.cancelled) { markStagedCancelled(''); }
+  if (r.cancelled_pid) { markStagedCancelled(r.cancelled_pid, null, r.reply); }
+  else if (r.cancelled) { markStagedCancelled('', null, r.reply); }
   if (r.graph) { chatGraph(r.graph); }
   if (r.who) { chatWho(r.who); }
   if (r.dcard) { chatDCard(r.dcard); }
@@ -2050,7 +2280,12 @@ async function pinPadSubmit() {
   try { golSpeak(posSayFor(r, '', cardEl)); } catch (e) {}
   handleChatAction(r);
   notePinState(r);
-  if (r.done) { loadCatalog(); loadSettings(); }
+  if (r.done) {
+    // A confirm replayed through the PIN pad executes the card too —
+    // retire it on screen the same way (confirm-flow fix, Nov 2).
+    document.querySelectorAll('#chatBody .msg.card:not(.sc-cancelled):not(.sc-retired)').forEach(function (t) { markStagedEntered(t, r.reply); });
+    loadCatalog(); loadSettings();
+  }
 }
 $('pinPadGrid').querySelectorAll('button').forEach(b => b.addEventListener('click', () => pinKey(b.dataset.pin)));
 $('pinPadGo').addEventListener('click', pinPadSubmit);
@@ -2085,7 +2320,11 @@ async function lockPinSubmit() {
   if (r.locked) { if (msgEl && r.reply) { msgEl.textContent = r.reply; } return; }
   if (r.unlock_event && r.unlock_event.id) { attachUnlockFrame(r.unlock_event.id); }
   if (r.reply) { chatMsg(r.reply, 'gol'); }
-  if (r.done) { loadCatalog(); loadSettings(); }
+  if (r.done) {
+    // Same replayed-execution retirement on the lock-screen pad.
+    document.querySelectorAll('#chatBody .msg.card:not(.sc-cancelled):not(.sc-retired)').forEach(function (t) { markStagedEntered(t, r.reply); });
+    loadCatalog(); loadSettings();
+  }
 }
 $('lockPinGrid').querySelectorAll('button').forEach(b => b.addEventListener('click', () => lockPinKey(b.dataset.lpin)));
 $('lockPinGo').addEventListener('click', lockPinSubmit);
@@ -3181,6 +3420,7 @@ let callLastActivity = 0;
 let callMinWait = 1200;
 let callTurnSeq = 0;        // stamps every delivered Call turn, newest last
 let callSendBusy = false;   // a Call turn's brain reply is in flight
+let callSendBusyAt = 0;     // when the in-flight reply was sent (ear-latency defer staleness check)
 let callPendingTurn = null; // the ONE queued Call turn — latest wins, replaced whole
 let callPrevVoiceOn = true;
 /* CALL-EAR SUPERVISOR (Oct 29 real-device fix): recognition sessions
@@ -3327,7 +3567,13 @@ function callDeliverTurn(text) {
     return;
   }
   callJustSent = true;
-  callMinWait = 2600;
+  /* EAR LATENCY (Nov 3): was 2600 — a clock wall the ear had to wait
+     out after every turn even when the reply had already been spoken
+     and finished. The reopen gate is now the speech itself (the
+     watcher covers her while she talks, the 'ended' hook reopens
+     the ear the moment she stops); 400ms is just the settle beat
+     for the mic and the room. */
+  callMinWait = 400;
   callLastActivity = Date.now();
   callPaint();
   /* Latest-wins turn queue (owner ear test, Nov 2 — turn crossing):
@@ -3350,6 +3596,7 @@ function callDeliverTurn(text) {
 }
 function callSendTurn(text, seq) {
   callSendBusy = true;
+  callSendBusyAt = Date.now();
   const finish = () => {
     callSendBusy = false;
     if (callPendingTurn) {
@@ -3363,6 +3610,27 @@ function callBargeWorthy(t) {
   const s = String(t || '').trim();
   if (!s) { return false; }
   return s.split(/\s+/).length >= 2 || s.length >= 5;
+}
+/* Seed merge (Nov 3, ear latency): the barge-in watcher hands the
+   turn ear the words it already heard (the seed); the fresh session
+   then hears the REST of the sentence. Delivering only the new
+   session's finals loses the head — the seed and the continuation
+   are joined here, trimmed at their word overlap so a re-heard
+   overlap is not spoken twice. */
+function callMergeSeed(seed, text) {
+  const s = String(seed || '').trim(), t = String(text || '').trim();
+  if (!s) { return t; }
+  if (!t) { return s; }
+  if (t === s || t.indexOf(s) === 0) { return t; }
+  if (s.indexOf(t) === 0) { return s; }
+  const sw = s.split(/\s+/), tw = t.split(/\s+/);
+  let k = 0;
+  const maxK = Math.min(sw.length, tw.length);
+  for (let n = 1; n <= maxK; n++) {
+    if (sw.slice(sw.length - n).join(' ').toLowerCase() === tw.slice(0, n).join(' ').toLowerCase()) { k = n; }
+  }
+  if (k > 0) { return sw.concat(tw.slice(k)).join(' '); }
+  return s + ' ' + t;
 }
 /* --- the barge-in watcher (SR engine): ears open while Gol speaks ---- */
 let callWatchRec = null;
@@ -3394,7 +3662,7 @@ function callOpenWatch() {
     }
     const live = liveText();
     if (!live) { return; }
-    if (golIsSelfEcho(live) || golIsEchoConfirm(live)) { return; } /* Gol hearing itself: no caption, no barge, no turn */
+    if (golIsSelfEcho(live) || golIsEchoConfirm(live)) { wF = ''; wI = ''; return; } /* Gol hearing itself: no caption, no barge, no turn — and her words are FORGOTTEN, not accumulated: left in wF they would poison the human's next line (it would test as "containing" her line and be dropped as echo too), above all now that the watcher rides across the reply's end as the answer's ear */
     callCapShow(live);
     if (!callAudioIdle()) {
       if (callBargeWorthy(live)) {
@@ -3435,7 +3703,7 @@ function callOpenWatch() {
    (20s cap); a failed transcription is an empty turn, never a dead
    call. The mic stream is kept for the whole call so the barge-in
    watch below can listen while Gol speaks. */
-const callHear = { stream: null, ctx: null, an: null, rec: null, chunks: [], wav: null, timer: null, watchTimer: null, speech: false, lastLoud: 0, loudSince: 0, started: 0, busy: false, ext: 'webm' };
+const callHear = { stream: null, ctx: null, an: null, rec: null, chunks: [], wav: null, timer: null, watchTimer: null, speech: false, lastLoud: 0, loudSince: 0, started: 0, busy: false, ext: 'webm', watchRec: null, takeTimes: [], takeAdopted: false };
 function callHearWavBlob(wav) {
   let len = 0, i;
   for (i = 0; i < wav.bufs.length; i++) { len += wav.bufs[i].length; }
@@ -3454,6 +3722,8 @@ function callHearWavBlob(wav) {
 function callHearStopAll() {
   if (callHear.timer) { clearInterval(callHear.timer); callHear.timer = null; }
   callHearWatchStop();
+  if (callHear.watchRec) { try { callHear.watchRec.ondataavailable = null; callHear.watchRec.stop(); } catch (e) { /* noop */ } callHear.watchRec = null; }
+  callHear.takeTimes = []; callHear.takeAdopted = false;
   if (callHear.rec) { try { callHear.rec.stop(); } catch (e) { /* noop */ } callHear.rec = null; }
   if (callHear.wav) { try { callHear.wav.proc.disconnect(); } catch (e) { /* noop */ } callHear.wav = null; }
   if (callHear.stream) { try { callHear.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* noop */ } callHear.stream = null; }
@@ -3523,12 +3793,98 @@ function callHearEnsureAn(stream) {
 function callHearLiveStream() {
   try { return !!(callHear.stream && callHear.stream.active && callHear.stream.getAudioTracks().some(function (t) { return t.readyState === 'live'; })); } catch (e) { return false; }
 }
+/* The capture VAD (extracted Nov 3 so the adopted watch-take runs
+   the very same turn-ending watch as a fresh capture): a ~1.1s
+   pause ends the turn, 20s caps it, 25s of silence discards it. */
+function callHearStartVad() {
+  const data = new Uint8Array(callHear.an ? callHear.an.fftSize : 0);
+  callHear.timer = setInterval(function () {
+    if (!callActive) { callHearStopAll(); return; }
+    let loud = false;
+    if (callHear.an) {
+      callHear.an.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) { const d = data[i] - 128; sum += d * d; }
+      loud = Math.sqrt(sum / Math.max(1, data.length)) > 5.5;
+    }
+    const now = Date.now();
+    if (loud) { callHear.speech = true; callHear.lastLoud = now; }
+    const age = now - callHear.started;
+    if ((callHear.speech && now - callHear.lastLoud > 1100) || age > 20000) { callHearFinish(false); }
+    else if (!callHear.speech && age > 25000) { callHearFinish(true); }
+  }, 120);
+}
+function callHearPickMime() {
+  const cand = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/ogg'];
+  for (let ci = 0; ci < cand.length; ci++) { try { if (MediaRecorder.isTypeSupported(cand[ci])) { return cand[ci]; } } catch (eT) { /* try next */ } }
+  return '';
+}
+/* The watch-take (Nov 3, ear latency): while Gol speaks, the
+   loudness watch only MEASURES — when a barge-in fired, the capture
+   ear started cold, so the human's first ~450ms+ (the whole reason
+   they interrupted) was never recorded. Now the watch also RECORDS
+   a rolling take on the same warm stream. If her line ends with no
+   barge, the take is discarded whole — her voice never reaches a
+   transcript. If the barge fires, the take is adopted as the turn
+   capture (see callHearAdoptTake). Browsers without MediaRecorder
+   (the WAV fallback) simply get no take: their barge still stops
+   the mouth and opens the capture, as before. */
+function callHearStartTake(stream) {
+  if (callHear.watchRec || callHear.rec || callListening || callHear.busy || !window.MediaRecorder) { return; }
+  const mime = callHearPickMime();
+  try {
+    const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    callHear.watchRec = mr;
+    callHear.chunks = []; callHear.takeTimes = []; callHear.takeAdopted = false;
+    callHear.ext = mime.indexOf('mp4') >= 0 ? 'm4a' : (mime.indexOf('ogg') >= 0 ? 'ogg' : 'webm');
+    mr.ondataavailable = function (ev) { if (ev.data && ev.data.size) { callHear.chunks.push(ev.data); callHear.takeTimes.push(Date.now()); } };
+    mr.start(250);
+  } catch (e) { callHear.watchRec = null; }
+}
+function callHearTakeDiscard() {
+  if (callHear.watchRec) {
+    const mr = callHear.watchRec; callHear.watchRec = null;
+    try { mr.ondataavailable = null; mr.stop(); } catch (e) { /* noop */ }
+  }
+  if (!callHear.takeAdopted) { callHear.chunks = []; callHear.takeTimes = []; }
+}
+/* Adopt the watch-take as the turn capture: the SAME recorder keeps
+   running, so the barge's first word — spoken before the mouth even
+   stopped — is already on the take. The take is first trimmed to
+   the loudness start: chunks are ~250ms slices with arrival stamps,
+   and every slice that arrived well before the human began is
+   dropped, so Gol's own line (recorded through the speakers) never
+   rides into the transcript; what little tail remains still passes
+   the self-echo guard at the delivery seam. */
+function callHearAdoptTake(loudSince) {
+  const mr = callHear.watchRec;
+  if (!mr || !callActive) { return false; }
+  callHear.watchRec = null;
+  callHearWatchStop();
+  golStopVoice(); golSayPendingUrl = null;
+  const times = callHear.takeTimes || [];
+  let drop = 0;
+  while (drop < times.length && times[drop] < loudSince - 260) { drop++; }
+  if (drop > 0) { callHear.chunks.splice(0, drop); times.splice(0, drop); }
+  callHear.takeAdopted = true;
+  callHear.rec = mr;
+  callHear.wav = null;
+  callHear.speech = true; /* the sustained loudness that fired IS the speech */
+  callHear.started = Date.now();
+  callHear.lastLoud = Date.now();
+  callListening = true;
+  callPaint();
+  callHearStartVad();
+  return true;
+}
 function callOpenEarHear() {
   if (!callActive || callListening || callHear.busy) { return; }
   callHearWatchStop();
   function begin(stream) {
     if (!callActive) { return; }
     callHearEnsureAn(stream);
+    callHearTakeDiscard();
+    callHear.takeTimes = []; callHear.takeAdopted = false;
     callHear.chunks = []; callHear.wav = null; callHear.speech = false;
     callHear.started = Date.now(); callHear.lastLoud = 0;
     let ext = 'webm';
@@ -3561,22 +3917,7 @@ function callOpenEarHear() {
     callHear.ext = ext;
     callListening = true;
     callPaint();
-    const data = new Uint8Array(callHear.an ? callHear.an.fftSize : 0);
-    callHear.timer = setInterval(function () {
-      if (!callActive) { callHearStopAll(); return; }
-      let loud = false;
-      if (callHear.an) {
-        callHear.an.getByteTimeDomainData(data);
-        let sum = 0;
-        for (let i = 0; i < data.length; i++) { const d = data[i] - 128; sum += d * d; }
-        loud = Math.sqrt(sum / Math.max(1, data.length)) > 5.5;
-      }
-      const now = Date.now();
-      if (loud) { callHear.speech = true; callHear.lastLoud = now; }
-      const age = now - callHear.started;
-      if ((callHear.speech && now - callHear.lastLoud > 1100) || age > 20000) { callHearFinish(false); }
-      else if (!callHear.speech && age > 25000) { callHearFinish(true); }
-    }, 120);
+    callHearStartVad();
   }
   if (callHearLiveStream()) { begin(callHear.stream); }
   else { navigator.mediaDevices.getUserMedia({ audio: true }).then(begin).catch(function () { callHearGiveUp(); }); }
@@ -3592,10 +3933,11 @@ function callHearWatchStart() {
     if (!callActive) { return; }
     callHearEnsureAn(stream);
     if (!callHear.an) { return; }
+    callHearStartTake(stream);
     const data = new Uint8Array(callHear.an.fftSize);
     callHear.loudSince = 0;
     callHear.watchTimer = setInterval(function () {
-      if (!callActive || callListening || callHear.busy || callAudioIdle()) { callHearWatchStop(); return; }
+      if (!callActive || callListening || callHear.busy || callAudioIdle()) { callHearWatchStop(); callHearTakeDiscard(); return; }
       callHear.an.getByteTimeDomainData(data);
       let sum = 0;
       for (let i = 0; i < data.length; i++) { const d = data[i] - 128; sum += d * d; }
@@ -3618,9 +3960,14 @@ function callHearWatchStart() {
       if (rms > 14) { if (!callHear.loudSince) { callHear.loudSince = now; } }
       else { callHear.loudSince = 0; }
       if (callHear.loudSince && now - callHear.loudSince >= 450) {
-        callHearWatchStop();
-        golStopVoice(); golSayPendingUrl = null;
-        callOpenEarHear();
+        /* Adopt the watch-take (it holds the barge's first words);
+           where no take exists (WAV-fallback browsers), fall back
+           to the old cold capture exactly as before. */
+        if (!callHearAdoptTake(callHear.loudSince)) {
+          callHearWatchStop();
+          golStopVoice(); golSayPendingUrl = null;
+          callOpenEarHear();
+        }
       }
     }, 120);
   };
@@ -3673,6 +4020,14 @@ function callPaint() {
         : (callJustSent ? 'Gol is thinking\u2026' : 'Listening\u2026')));
     }
   }
+  // BOTFACE v2: while a call runs, the head's status line speaks the
+  // call's own words (the same text the state strip carries); when the
+  // call ends the line is handed back to the resting/thinking words.
+  try {
+    if (callActive && st) { chatStatusSet(st.textContent); }
+    else if (!callActive) { chatStatusSet((botThinkStamp && Date.now() - botThinkStamp < 25000) ? 'Thinking\u2026' : 'Your store brain \u00b7 online'); }
+  } catch (e) { /* the face never breaks the call */ }
+  try { botSync(); } catch (e) { /* the face never breaks the call */ }
 }
 function callStopRecog() {
   if (callRecog) {
@@ -3682,6 +4037,14 @@ function callStopRecog() {
   }
   callListening = false;
 }
+/* GREETING LAW (Nov 3): the greet word for the spoken business
+   form - the same word family the brain's register greetings
+   use, taken from the store-local clock. */
+function golGreetWord() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : (h < 17 ? 'Good afternoon' : 'Good evening');
+}
+
 function startCall() {
   if (callActive) { return; }
   if (!callSupported()) { showToast('Voice is not available in this browser — typing works as always.'); callPaint(); return; }
@@ -3703,10 +4066,23 @@ function startCall() {
     const first = document.querySelector('#chatBody .msg.gol');
     if (first) { greet = first.textContent || ''; }
   } catch (e) { /* fall through to the standard line */ }
-  if (!greet || !greet.trim()) { greet = "Hi, I'm Gol. Add an item, ask a price, or say \"today's total\"."; } /* greeting (#200 fix, Nov 2): the panel's first Gol bubble IS the brain-composed unlock greeting (store-local clock, greeting law) - speak it as composed. The old validator (prefix must be namaste|hello|hi|welcome, no $, <=200 chars) rejected composed greetings like 'Good evening...' and forced the canned line on every Call. Fallback now only when the panel carries no greeting at all. */
+  /* GREETING LAW (Nov 3): the canned intro below may be spoken
+     only on this device's first contact ever (persisted flag;
+     set by sendChat and by the first spoken opener beneath). A
+     returning device whose panel carries no greeting gets the
+     business form - greet word + the same guidance, no "I'm Gol".
+     Storage failure reads as returning: never repeat an intro. */
+  let firstContact = false;
+  try { firstContact = !localStorage.getItem('golpos_first_contact_done'); } catch (e) { /* no storage - business form */ }
+  if (!greet || !greet.trim()) {
+    greet = firstContact
+      ? "Hi, I'm Gol. Add an item, ask a price, or say \"today's total\"."
+      : golGreetWord() + " — add an item, ask a price, or say \"today's total\".";
+  } /* greeting (#200 fix, Nov 2): the panel's first Gol bubble IS the brain-composed unlock greeting (store-local clock, greeting law) - speak it as composed. The old validator (prefix must be namaste|hello|hi|welcome, no $, <=200 chars) rejected composed greetings like 'Good evening...' and forced the canned line on every Call. Fallback now only when the panel carries no greeting at all. */
   /* greeting law: the spoken intro happens once per page session - a later Call in the same session opens the ear straight to business. */
   if (!window.__golCallIntroDone) {
     window.__golCallIntroDone = true;
+    try { localStorage.setItem('golpos_first_contact_done', '1'); } catch (e) { /* the flag never breaks a call */ }
     try { golSpeak({ text: golCleanSay(greet).slice(0, 200), lang: golPickLang(greet) }); } catch (e) { /* text greeting still stands */ }
   }
   if (callWatcher) { clearInterval(callWatcher); }
@@ -3749,12 +4125,13 @@ function callOpenEar(seed) {
      watcher already heard the start of this turn while Gol was
      speaking; those words are this turn's beginning, not lost. */
   let bufF = '', bufI = seed ? String(seed) : '', delivered = false, errKind = '';
+  const seedText = seed ? String(seed).trim() : '';
   if (bufI) { callCapShow(bufI); }
   const deliver = (text) => {
     delivered = true;
     if (callRecog === rec) { callRecog = null; }
     try { rec.stop(); } catch (e) { /* already ending */ }
-    callDeliverTurn(text);
+    callDeliverTurn(seedText ? callMergeSeed(seedText, text) : text);
   };
   rec.onresult = (ev) => {
     for (let i = ev.resultIndex || 0; i < ev.results.length; i++) {
@@ -3764,11 +4141,12 @@ function callOpenEar(seed) {
       if (r.isFinal) { bufF += tx; } else { bufI = tx; }
     }
     var live = (bufF + ' ' + bufI).trim();
-    if (live && !golIsSelfEcho(live)) { callCapShow(live); }
-    if (live && !callAudioIdle() && !golIsSelfEcho(live) && !golIsEchoConfirm(live)) { golStopVoice(); }
+    if (live && golIsSelfEcho(live)) { bufF = ''; bufI = ''; return; } /* her own line through the speakers: forget it — left in bufF it would swallow the human's real words appended after it */
+    if (live) { callCapShow(live); }
+    if (live && !callAudioIdle() && !golIsEchoConfirm(live)) { golStopVoice(); }
     const finalText = bufF.trim();
     if (!finalText || callHeard || delivered) { return; }
-    if (golIsSelfEcho(finalText)) { return; }
+    if (golIsSelfEcho(finalText)) { bufF = ''; return; }
     deliver(finalText);
   };
   rec.onerror = (ev) => {
@@ -3801,7 +4179,7 @@ function callOpenEar(seed) {
       }
     }
     if (callActive && !callJustSent) { callLastActivity = Date.now(); callMinWait = 800; }
-    if (callJustSent) { callJustSent = false; callLastActivity = Date.now(); callMinWait = 2600; }
+    if (callJustSent) { callJustSent = false; callLastActivity = Date.now(); callMinWait = 400; } /* 400: see callDeliverTurn (ear latency, Nov 3) */
     if (!delivered) { callCapHide(); }
     callPaint();
   };
@@ -3809,7 +4187,6 @@ function callOpenEar(seed) {
   callPaint();
   try { rec.start(); } catch (e) { callListening = false; if (callRecog === rec) { callRecog = null; } callLastActivity = Date.now(); callMinWait = 1200; callCapHide(); callPaint(); }
 }
-let callQuietSince = 0;
 function callEarTick() {
   if (!callActive) { return; }
   callPaint();
@@ -3820,15 +4197,42 @@ function callEarTick() {
        the watcher hears over her voice; her own line is dropped by
        the self-echo guards, a diverging human line stops the mouth
        mid-reply and takes the turn. */
-    callQuietSince = 0;
     if (callEngine === 'sr') { callOpenWatch(); }
     else if (callEngine === 'hear') { callHearWatchStart(); }
     return;
   }
-  if (callWatchRec) { callStopWatch(); }
+  /* Gol has just stopped. EAR LATENCY (owner live catch, Nov 3 —
+     "listening late open garcha hamilai bolna"): the old supervisor
+     demanded 1500ms of measured quiet here, on top of the post-turn
+     minWait (2600ms), so the ear opened ~1.9s after every reply —
+     measured 1852/1901ms in the harness — and words spoken into
+     that window met NO live ear at all: the watcher was stopped at
+     the first quiet tick and the turn ear had not opened, so the
+     owner's first words were clipped, not just delayed. The clock
+     was standing in for echo protection the guards already do by
+     CONTENT (golIsSelfEcho / golIsEchoConfirm filter her own line
+     at every seam). Now:
+     - SR: the watcher that covered her speech RIDES across the
+       boundary as the answer's ear — the same continuous session
+       delivers the next turn, so the dead window is zero. It
+       delivers or ends on its own; when it ends, the gates below
+       open the turn ear.
+     - hear: the capture opens on this tick, and golWireAudioEnd
+       calls this tick the moment her line ends — the mic stream is
+       kept warm for the whole call (callHearLiveStream), so there
+       is no session setup on the reopen path. */
+  if (callWatchRec) {
+    if (callEngine === 'sr') { return; }
+    callStopWatch();
+  }
   callHearWatchStop();
-  if (!callQuietSince) { callQuietSince = Date.now(); }
-  if (Date.now() - callQuietSince < 1500) { return; }
+  callHearTakeDiscard();
+  /* A reply is still being composed: her speech is about to reopen
+     the watcher branch above, and the 'ended' hook reopens the ear
+     the moment it finishes. Opening the capture now would only
+     record her own reply when it lands. A stale flag (>20s) never
+     deafens the call. */
+  if (callSendBusy && Date.now() - callSendBusyAt < 20000) { return; }
   if (Date.now() - callLastActivity < callMinWait) { return; }
   callOpenEar();
 }
@@ -3838,21 +4242,9 @@ function initCallBtn() {
   const voiceBtn = $('chatVoiceBtn');
   const host = head || (voiceBtn && voiceBtn.parentNode);
   if (!host) { return; }
-  if (!document.getElementById('callBtnStyle')) {
-    const st = document.createElement('style');
-    st.id = 'callBtnStyle';
-    st.textContent = '.call-btn{display:inline-flex;align-items:center;gap:6px;margin-left:auto;background:#2563eb;color:#fff;border:none;border-radius:999px;padding:7px 13px;font-size:13px;font-weight:600;cursor:pointer;flex:none}'
-      + '.call-btn .ic{width:16px;height:16px}'
-      + '.call-btn.in-call{background:#dc2626;margin-left:auto}'
-      + '@keyframes callPulse{0%{box-shadow:0 0 0 0 rgba(220,38,38,.55)}70%{box-shadow:0 0 0 9px rgba(220,38,38,0)}100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}}'
-      + '.call-btn.call-listening{animation:callPulse 1.1s ease-out infinite}'
-      + '.call-state{display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:999px;border:1.5px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700;white-space:nowrap;flex:none}'
-      + '.call-state.hidden{display:none}'
-      + '.call-state.tap{background:#2563eb;border-color:#2563eb;color:#fff;cursor:pointer;box-shadow:0 0 0 3px rgba(37,99,235,.25)}'
-      + '.chat-head .call-state{order:10;flex:1 1 100%;justify-content:center;margin-top:2px}'
-      + '.msg.me.live-cap{opacity:.78;border:1.5px dashed rgba(255,255,255,.9);font-style:italic}';
-    document.head.appendChild(st);
-  }
+  // BOTFACE v2: the Call button's styles live in styles.css now (the
+  // .call-btn / .call-state / .live-cap rules) — no JS-injected <style>;
+  // the button and its state strip are created exactly as before.
   const b = document.createElement('button');
   b.id = 'chatCallBtn';
   b.type = 'button';
@@ -3879,6 +4271,7 @@ function initCallBtn() {
   callPaint();
 }
 try { window.__golCall = { start: startCall, end: endCall, tick: callEarTick, state: () => ({ active: callActive, listening: callListening, audioIdle: callAudioIdle(), minWait: callMinWait, engine: callEngine, watching: !!callWatchRec, cap: callCapText(), busy: callSendBusy, queued: !!callPendingTurn, seq: callTurnSeq }) }; } catch (e) { /* harness aid only */ }
+try { window.__golCallTick = function () { try { callEarTick(); } catch (e) {} }; } catch (e) { /* the audio 'ended' hook (golWireAudioEnd) pings this so the ear reopens on the event, not the 300ms clock */ }
 
 // --- the one camera stream ----------------------------------------------------
 let camStream = null;  // the live stream, whoever opened it (watch or modal)
@@ -4485,6 +4878,43 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
   const fab = $('golFab');
   const POS_KEY = 'golpos_chat_pos';
   const FAB_KEY = 'golpos_fab_pos';
+  // -- the chat FACE (BOTFACE v1, owner Nov 2 late: "gol bot, and gol"
+  // + the giant circle rejected): BOT is the default face — a small
+  // living glass bot head over a clean dark messenger panel. The
+  // circle stays in code behind this toggle (the head's face button),
+  // one tap away, never the default again. The PIN-lock globe is a
+  // separate approved surface and is not touched by the face choice.
+  const FACE_KEY = 'golpos_chat_face';
+  const faceBtn = $('chatFaceBtn');
+  const IC_FACE_BOT = '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="currentColor" opacity=".3"/><circle cx="8.7" cy="11.6" r="1.8" fill="currentColor"/><circle cx="15.3" cy="11.6" r="1.8" fill="currentColor"/></svg>';
+  const IC_FACE_CIRCLE = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="2"/></svg>';
+  function chatFace() { try { return localStorage.getItem(FACE_KEY) === 'circle' ? 'circle' : 'bot'; } catch (e) { return 'bot'; } }
+  function applyFace() {
+    const circle = chatFace() === 'circle';
+    drawer.classList.toggle('chat-bot', !circle);
+    if (!circle) { drawer.classList.remove('chat-circle'); }
+    if (faceBtn) {
+      faceBtn.innerHTML = circle ? IC_FACE_BOT : IC_FACE_CIRCLE;
+      faceBtn.title = circle ? 'Bot view' : 'Circle view';
+    }
+  }
+  if (faceBtn) {
+    faceBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const toCircle = chatFace() !== 'circle';
+      try { localStorage.setItem(FACE_KEY, toCircle ? 'circle' : 'bot'); } catch (err) { /* private mode */ }
+      applyFace();
+      if (toCircle) { applyCircle(); }
+      else {
+        // Leave the disc behind cleanly: drop its forced geometry and
+        // give the panel its saved rectangle spot back (or the dock).
+        drawer.style.left = drawer.style.top = drawer.style.width = drawer.style.height = '';
+        applySavedPos();
+        placeMoon();
+      }
+      noteActivity();
+    });
+  }
   const IDLE_MS = 60000;
   const MIN_W = 300, MIN_H = 360;
   const mqMobile = window.matchMedia('(max-width: 820px)');
@@ -4493,6 +4923,24 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
 
   function noteActivity() { lastActivity = Date.now(); }
   function isOpen() { return !drawer.classList.contains('hidden'); }
+  // -- background scroll lock (BOTFACE v3.3, owner Nov 3 00:41: "bg
+  // screen lock chaina, scroll huncha") ------------------------------
+  // While the panel is open, the register behind it must not scroll:
+  // <html>/<body> wear .gol-chat-open (overflow hidden — see the
+  // BOTFACE v3.3 CSS block) and the drawer contains its own
+  // overscroll, so the thread keeps its own smooth scroll and
+  // nothing chains past its ends into the page. The lock follows
+  // the drawer's hidden class via the class observer below, so
+  // EVERY open path locks (fab, barcode miss, photo, voice, PIN)
+  // and every fold releases it the moment the panel hides. The
+  // PIN pad lives inside the drawer and is untouched by the lock.
+  function syncScrollLock() {
+    const locked = isOpen();
+    try {
+      document.documentElement.classList.toggle('gol-chat-open', locked);
+      if (document.body) { document.body.classList.toggle('gol-chat-open', locked); }
+    } catch (e) { /* the lock never breaks the till */ }
+  }
 
   // -- vanish into the circle -------------------------------------------------
   // Owner, Nov 2 (evening): on close the panel must not blink away — it
@@ -4517,6 +4965,7 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
       golSayPendingUrl = null;
     }
     closeRing();
+    botFlyHome();
     drawer.classList.add('chat-vanish');
     vanishTimer = setTimeout(() => {
       vanishTimer = null;
@@ -4525,6 +4974,103 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
       drawer.classList.add('hidden');
       placeMoon();
     }, 300);
+  }
+  // -- the bot TRAVELS (BOTFACE v2, FLIP) -----------------------------------
+  // One being, two places: the fab bot and the header bot are the same
+  // Gol. A tap on the fab flies a clone of the bot head from its corner
+  // seat into the chat head while the panel fades up under it (the
+  // .bot-fly dress swaps the clip-grow for a calm fade); any fold flies
+  // it home over the fade-out. Presentation only — openChatToGol and
+  // foldPanel run exactly as before, and any failure here simply
+  // leaves the ordinary open/close standing.
+  function botFlyOK() {
+    try { if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { return false; } } catch (e) { /* proceed */ }
+    return drawer.classList.contains('chat-bot') && !drawer.classList.contains('chat-circle');
+  }
+  function botFlyClone(fromRect, sizePx) {
+    const src = fab ? fab.querySelector('.golbot') : null;
+    if (!src || !fromRect || !fromRect.width) { return null; }
+    const c = document.createElement('span');
+    c.className = 'golbot golbot-fly';
+    c.setAttribute('aria-hidden', 'true');
+    c.innerHTML = src.innerHTML;
+    c.style.setProperty('--gbs', sizePx + 'px');
+    c.style.left = fromRect.left + 'px';
+    c.style.top = fromRect.top + 'px';
+    document.body.appendChild(c);
+    return c;
+  }
+  function botFlyTo(clone, toRect, ms, done) {
+    const from = clone.getBoundingClientRect();
+    const dx = (toRect.left + toRect.width / 2) - (from.left + from.width / 2);
+    const dy = (toRect.top + toRect.height / 2) - (from.top + from.height / 2);
+    const sc = from.width ? (toRect.width / from.width) : 1;
+    let finished = false;
+    const fin = () => {
+      if (finished) { return; }
+      finished = true;
+      if (clone.parentNode) { clone.parentNode.removeChild(clone); }
+      if (done) { try { done(); } catch (e) { /* noop */ } }
+    };
+    try {
+      const anim = clone.animate([
+        { transform: 'translate(0px, 0px) scale(1)' },
+        { transform: 'translate(' + dx + 'px, ' + dy + 'px) scale(' + sc + ')' }
+      ], { duration: ms, easing: 'cubic-bezier(.21,1.12,.36,1)', fill: 'forwards' });
+      if (anim) { anim.onfinish = fin; anim.oncancel = fin; setTimeout(fin, ms + 250); }
+      else { fin(); }
+    } catch (e) { fin(); }
+  }
+  function botFlyOpen() {
+    let fromRect = null, headBot = null;
+    try {
+      if (botFlyOK() && fab) {
+        const fb = fab.querySelector('.golbot');
+        headBot = drawer.querySelector('.golbot-head');
+        if (fb && headBot) { const r = fb.getBoundingClientRect(); if (r.width) { fromRect = r; } }
+      }
+    } catch (e) { fromRect = null; headBot = null; }
+    openChatToGol();
+    if (!fromRect || !headBot) { return; }
+    // Same-task class add: the panel's first painted frame already
+    // wears the calm fade, never the clip-grow, on a fab opening.
+    drawer.classList.add('bot-fly');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const settle = () => {
+        try { headBot.classList.remove('bot-arrive-hide'); } catch (e) { /* noop */ }
+        try { drawer.classList.remove('bot-fly'); } catch (e) { /* noop */ }
+      };
+      try {
+        if (!isOpen()) { settle(); return; }
+        const toRect = headBot.getBoundingClientRect();
+        if (!toRect.width) { settle(); return; }
+        const clone = botFlyClone(fromRect, Math.round(fromRect.width));
+        if (!clone) { settle(); return; }
+        headBot.classList.add('bot-arrive-hide');
+        botFlyTo(clone, toRect, 380, settle);
+      } catch (e) { settle(); }
+    }));
+  }
+  function botFlyHome() {
+    try {
+      if (!botFlyOK() || !fab) { return; }
+      const headBot = drawer.querySelector('.golbot-head');
+      const fabBot = fab.querySelector('.golbot');
+      if (!headBot || !fabBot) { return; }
+      const fromRect = headBot.getBoundingClientRect();
+      if (!fromRect.width) { return; }
+      // The fab is display:none while the panel is open — borrow its
+      // layout for one synchronous measure, then put it back exactly
+      // (mutation observers cannot run mid-task, so nothing sees it).
+      const wasHidden = fab.classList.contains('hidden');
+      if (wasHidden) { fab.classList.remove('hidden'); fab.style.visibility = 'hidden'; }
+      const toRect = fabBot.getBoundingClientRect();
+      if (wasHidden) { fab.classList.add('hidden'); fab.style.visibility = ''; }
+      if (!toRect.width) { return; }
+      const clone = botFlyClone(fromRect, Math.round(fromRect.width));
+      if (!clone) { return; }
+      botFlyTo(clone, toRect, 300);
+    } catch (e) { /* the fold never breaks on the flight */ }
   }
   // Circle-float extras (owner, Nov 2 evening): ONE float button holds the
   // quick-ask menu inside the circle (hidden until tapped, like the
@@ -4578,7 +5124,7 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
     ringEl.style.top = Math.round(r.top + r.height / 2 - R) + 'px';
     ringEl.style.setProperty('--rr', R + 'px');
     const items = [ringClose].concat(formBtns, chipBtns);
-    const SHORT = { 'Photo': 'Photo', 'Voice': 'Voice', 'Speaker': 'Speaker', "Today's total": 'Today', 'Close the day': 'Close day', 'Batch close': 'Batch', 'Loyalty leaderboard': 'Loyalty', 'Employees list': 'Staff', "This week's sales": 'Week sales', 'Why was today slow?': 'Why slow?', 'What sold best this week?': 'Best sellers', 'How much is a Coke?': 'Stock price', 'Close': 'Close' };
+    const SHORT = { 'Photo': 'Photo', 'Voice': 'Voice', 'Speaker': 'Speaker', "What is today's total?": 'Today', 'How much did we sell yesterday?': 'Yesterday', 'How much did we sell this week?': 'This week', "What's out?": "What's out", "This month's report": 'Report', 'What is the top seller?': 'Top seller', 'What is the price of Coke?': 'Price', 'Close': 'Close' };
     items.forEach((b, i) => {
       const lbl = b.getAttribute('data-chip') || '';
       b.setAttribute('data-rlabel', SHORT[lbl] || lbl);
@@ -4647,25 +5193,12 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
     ['pointerdown', 'keydown', 'input', 'wheel', 'touchstart'].forEach((ev) =>
       ringEl.addEventListener(ev, noteActivity, true));
   }
-  // THE Call (owner, Nov 2 late: "call double bho — gol icon mathi hala,
-  // call circle bahira side ma"): ONE Call only, a blue disc stacked just
-  // above the Gol orb, OUTSIDE the circle on the side strip the circle
-  // can never enter. The header Call hides in circle mode and the ring
-  // no longer carries one. A tap opens the panel if needed, then drives
-  // the very same Call button; in-call it turns red (End).
-  const callSide = $('golCallSide');
-  if (callSide) {
-    const syncSide = () => { document.body.classList.toggle('gol-circle-on', !mqMobile.matches && window.innerWidth >= 1024 && window.innerHeight >= 700); };
-    syncSide();
-    window.addEventListener('resize', syncSide);
-    callSide.addEventListener('click', () => {
-      const cb = $('chatCallBtn'); if (!cb) { return; }
-      if (!isOpen()) { foldOpen(); setTimeout(() => { cb.click(); }, 380); }
-      else { cb.click(); }
-    });
-    const cbEl = $('chatCallBtn');
-    if (cbEl) { new MutationObserver(() => { callSide.classList.toggle('in-call', cbEl.classList.contains('in-call')); }).observe(cbEl, { attributes: true, attributeFilter: ['class'] }); }
-  }
+  // BOTFACE v2: the stacked Call orb (#golCallSide) is GONE — the owner
+  // counted three competing entries (top-bar Talk, the side orb, the
+  // fab) and ordered the extras away. The bot fab is the only floating
+  // entry; the chat head's Call button is the only Call. (The removed
+  // block also carried a latent crash: its click path called a
+  // foldOpen() that was never defined.)
   // Dim the shop while Gol is open (owner, Nov 2 late: "gol khulda bg dim
   // gardeu, ani gol minimize huda wapas"): a scrim under the panel darkens
   // the register; minimizing Gol restores it. A tap on the dim folds Gol.
@@ -4746,6 +5279,11 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
   // keeps the full-screen law: no circle there.
   function circleSize() { return Math.round(Math.min(window.innerWidth * 0.92, window.innerHeight * 0.86, 620)); }
   function applyCircle() {
+    // BOTFACE v1: the circle forms only when the owner has chosen it
+    // (chatFace() === 'circle'); the bot face is the default and the
+    // panel keeps its rectangle geometry untouched.
+    applyFace();
+    if (chatFace() !== 'circle') { placeMoon(); return; }
     // The circle lives on big screens only (owner, Nov 2 late: "phone ma
     // pahila jasatai chodnu — square and flexible"): under 1024x700 the
     // panel keeps its earlier forms untouched. On a big screen the circle
@@ -4820,7 +5358,22 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
     handle.className = spec[1];
     handle.setAttribute('aria-hidden', 'true');
     handle.addEventListener('pointerdown', (e) => {
-      if (mqMobile.matches || !isOpen() || !drawer.classList.contains('chat-free')) { return; }
+      if (mqMobile.matches || !isOpen()) { return; }
+      if (drawer.classList.contains('chat-circle')) { return; }
+      if (!drawer.classList.contains('chat-free')) {
+        // BOTFACE v3.3 (owner, Nov 3 00:41: "chat box height width
+        // scaler chaina — ahile feri chaiyo"): the scaler used to
+        // exist only once the panel floated — on a fresh device the
+        // docked bot panel hid its handles AND refused their
+        // presses, so there was no scaler to find. A press on any
+        // edge now lifts the docked panel into its free rectangle
+        // exactly where it sits (the same in-place lift a head-drag
+        // performs) and the resize runs from there; the geometry
+        // lands in the same golpos_chat_pos record as always, and
+        // the compact dock stays the default for fresh devices.
+        applyPos(currentPos());
+        if (!drawer.classList.contains('chat-free')) { return; }
+      }
       if (e.button !== undefined && e.button !== 0) { return; }
       resizing = { mode: mode, x: e.clientX, y: e.clientY, pos: currentPos(), live: null };
       drawer.classList.add('chat-resizing');
@@ -4927,7 +5480,7 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
     fab.addEventListener('pointercancel', endFabDrag);
     fab.addEventListener('click', () => {
       if (fabMoved) { fabMoved = false; return; }
-      noteActivity(); openChatToGol();
+      noteActivity(); botFlyOpen();
     });
     applySavedFab();
   }
@@ -4935,7 +5488,7 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
   new MutationObserver(() => {
     const open = isOpen();
     if (open && !wasOpen) { noteActivity(); applySavedPos(); applyCircle(); if (window.__golPlaceMoon) { setTimeout(window.__golPlaceMoon, 380); setTimeout(window.__golPlaceMoon, 950); } }
-    wasOpen = open; syncFab();
+    wasOpen = open; syncFab(); syncScrollLock();
   }).observe(drawer, { attributes: true, attributeFilter: ['class'] });
 
   // -- idle fold-back -------------------------------------------------------------
@@ -4955,6 +5508,7 @@ bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); app
     if (Date.now() - lastActivity >= IDLE_MS) { foldPanel(); }
   }, 4000);
 
+  syncScrollLock();
   syncFab();
   applyCircle();
   if (isOpen()) { applySavedPos(); applyCircle(); }

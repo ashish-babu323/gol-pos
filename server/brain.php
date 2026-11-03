@@ -132,12 +132,76 @@ function golpos_verify_out(array $r): void {
     }
 }
 
+// Does $text match one of the brain's fixed templates for $key, in any
+// language? Templates carrying %s placeholders match by their fixed
+// bounds (prefix + suffix), the rest by exact equality.
+function golpos_reply_matches_key(string $text, string $key): bool {
+    global $S;
+    $text = trim($text);
+    if ($text === '' || empty($S[$key]) || !is_array($S[$key])) return false;
+    foreach ($S[$key] as $tpl) {
+        $tpl = trim((string)$tpl);
+        if (strpos($tpl, '%') === false) {
+            if ($text === $tpl) return true;
+            continue;
+        }
+        $parts = preg_split('/%[sdf]/', $tpl);
+        $pre = trim((string)($parts[0] ?? ''));
+        $suf = trim((string)($parts[count($parts) - 1] ?? ''));
+        if ($pre !== '' && strpos($text, $pre) !== 0) continue;
+        if ($suf !== '' && substr($text, -strlen($suf)) !== $suf) continue;
+        return true;
+    }
+    return false;
+}
+
+// META lines: Gol's own instruction lines that merely MENTION the confirm
+// word — the staged-card announcement, the nothing-staged line, the bluff
+// fence, the migration teach. They are instructions, not the spoken
+// substance the confirm echo guard exists to drop, so they are never
+// echo sources (owner live catch, Nov 2 23:25: the staged reply "say
+// \"gol\" to confirm" armed the guard, and the owner's own immediate
+// "gol" was held as if it were Gol's voice — "ani confirm bhaena").
+function golpos_is_meta_line(string $text): bool {
+    global $S;
+    foreach (['no_pending', 'no_pending_again', 'bluff_guard', 'card_staged', 'stage_what'] as $key) {
+        if (golpos_reply_matches_key($text, $key)) return true;
+    }
+    if (golpos_reply_matches_key($text, 'already_staged')) return true;
+    // The ho migration teach rides with the card summary appended after it.
+    $t = trim($text);
+    foreach (($S['ho_teach'] ?? []) as $tpl) {
+        $tpl = trim((string)$tpl);
+        if ($t !== '' && $tpl !== '' && strpos($t, $tpl) === 0) return true;
+    }
+    return false;
+}
+
+// The nothing-staged family (full line + its short repeat form) — the
+// dispatch confirm block's dead-confirm streak keys off these.
+function golpos_is_nopending_line(string $text): bool {
+    return golpos_reply_matches_key($text, 'no_pending')
+        || golpos_reply_matches_key($text, 'no_pending_again');
+}
+
 function golpos_echo_confirm(string $msg, array $in): bool {
     if (!empty($in['confirm'])) return false;
     if (!in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true)) return false;
     if (empty($GLOBALS['golpos_session_id'])) return false;
+    // The guard protects a STAGED card from Gol confirming it with its own
+    // voice. With no card staged there is nothing to protect, and holding
+    // the word can only produce a lie — before this check, a "gol" spoken
+    // after the nothing-staged line (which itself mentions "gol", re-arming
+    // the trap) was answered "The card is still waiting" with NO card
+    // waiting (owner live catch, Nov 2 23:25).
+    if (golpos_pending() === null) return false;
     $ss = golpos_session((string)$GLOBALS['golpos_session_id']);
+    // Meta lines are not echo sources — neither the ones flagged at speak
+    // time (out() sets last_spoken_meta) nor the same lines recognised by
+    // their text (sessions whose last line predates the flag).
+    if (!empty($ss['last_spoken_meta'])) return false;
     $said = (string)($ss['last_spoken'] ?? '');
+    if (golpos_is_meta_line($said)) return false;
     $at = (int)($ss['last_spoken_at'] ?? 0);
     if ($said === '' || $at <= 0) return false;
     if (!preg_match('/\bgol\b|गोल/iu', $said)) return false;
@@ -192,10 +256,18 @@ function out(array $r): void {
     // client masks the typed bubble — the digits never stand in the history.
     if (!empty($GLOBALS['golpos_pin_mask'])) { $r['pin_mask'] = true; }
     golpos_verify_out($r);
-    if (!empty($GLOBALS['golpos_session_id']) && isset($r['reply']) && is_string($r['reply'])) {
+    if (!empty($GLOBALS['golpos_session_id']) && isset($r['reply']) && is_string($r['reply']) && $r['reply'] !== '') {
         $spoken = golpos_session((string)$GLOBALS['golpos_session_id']);
         $spoken['last_spoken'] = $r['reply'];
         $spoken['last_spoken_at'] = time();
+        // Meta flag for the confirm echo guard: a reply carrying a staged
+        // card, or one of the fixed instruction lines, merely MENTIONS the
+        // confirm word — it must never arm the guard against the owner's
+        // own "gol" (golpos_echo_confirm reads this flag).
+        $spoken['last_spoken_meta'] = !empty($r['card']) || golpos_is_meta_line($r['reply']);
+        // The nothing-staged streak (dispatch confirm block) counts
+        // CONSECUTIVE dead confirms; any real answer resets it.
+        if (!golpos_is_nopending_line($r['reply'])) { $spoken['np_streak'] = 0; }
         golpos_save_session((string)$GLOBALS['golpos_session_id'], $spoken);
     }
     // JSON_INVALID_UTF8_SUBSTITUTE (Nov 2, brain-task fix): one bad byte
@@ -265,6 +337,11 @@ $S = [
     'np' => 'Ahile stage ma kehi chhaina — pahile euta card banauchhu, ani "gol" bhannus.',
     'hi' => 'Abhi kuchh stage nahi hai — pehle ek card banata hoon, phir "gol" kahiye.',
     'dev' => 'अहिले स्टेजमा केही छैन — पहिले एउटा कार्ड बनाउँछु, अनि "गोल" भन्नुस्।'],
+  'no_pending_again' => [
+    'en' => 'Still nothing staged — nothing is waiting on a "gol" right now.',
+    'np' => 'Ajhai kehi stage chhaina — ahile kunai card "gol" parkhi rako chhaina.',
+    'hi' => 'Abhi bhi kuchh stage nahi hai — abhi koi card "gol" ka intezaar nahi kar raha.',
+    'dev' => 'अझै केही स्टेज छैन — अहिले कुनै कार्ड "गोल" पर्खिरहेको छैन।'],
   'price_done' => [
     'en' => '%s price changed from %s to %s.',
     'np' => '%s ko mulya %s bata %s bhayo.',
@@ -2738,6 +2815,20 @@ function golpos_amount_price_change(string $msg): bool {
     return golpos_extract_price($msg, null)['status'] === 'ok';
 }
 
+// A price-change STAGE request, whatever the sentence shape: a change
+// verb (change/set/make/update, badal/gara family) + the price word +
+// a target amount the price reader can bind. "Can you change the
+// price of Coca-Cola 20 oz to $4?" is this shape wearing a question's
+// clothes — it is an instruction to stage, not a request for the
+// current price. A past-tense inquiry about a change ("did you
+// change the price...?") is a READ and stays out.
+function golpos_price_stage_intent(string $msg): bool {
+    if (preg_match('/^\s*(did|was|were|has|have)\s+you\b/iu', $msg)) { return false; }
+    if (!preg_match('/(mulya|price|dam|daam|मूल्य|दाम)/iu', $msg)) { return false; }
+    if (!preg_match('/(\bchange\b|\bset\b|\bmake\b|\bupdate\b|badha|badal|badlo|rakha|gara|karo|गर|बदल|बनाउ|राख|बढा)/iu', $msg)) { return false; }
+    return golpos_extract_price($msg, null)['status'] === 'ok';
+}
+
 // The bare form rides the same meaning with no price word and no verb at
 // all: an item that resolves, plus a price SAID as money ($ on either
 // side) or bound to the change word "to". Asking, wanting and receiving
@@ -4242,7 +4333,25 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
     if (golpos_echo_confirm($msg, $in)) { out(['reply' => 'That was my own voice. The card is still waiting. Tap Confirm after I am quiet.']); }
 
     $card = golpos_pending();
-    if (!$card) { out(['reply' => t('no_pending')]); }
+    if (!$card) {
+        // Dead confirm (owner live catch, Nov 2 23:25): his card had
+        // already executed, the un-retired card on screen invited more
+        // taps, and EVERY tap was answered with the full nothing-staged
+        // line, verbatim, back to back. The streak answers in full once,
+        // in short form once, then stays silent — the fact does not
+        // change by being repeated. Any real answer in between resets
+        // the streak (see out()).
+        $sidN = (string)($GLOBALS['golpos_session_id'] ?? '');
+        $ssN = $sidN !== '' ? golpos_session($sidN) : [];
+        $nN = (int)($ssN['np_streak'] ?? 0) + 1;
+        if ($sidN !== '') {
+            $ssN['np_streak'] = $nN;
+            golpos_save_session($sidN, $ssN);
+        }
+        if ($nN === 1) { out(['reply' => t('no_pending')]); }
+        if ($nN === 2) { out(['reply' => t('no_pending_again')]); }
+        out(['reply' => '']);
+    }
     /* a Confirm tap carrying a DIFFERENT card's id is stale
        (audit GOL-04): the live card keeps waiting, nothing runs. */
     if (!empty($in['confirm']) && !empty($in['pending_pid'])
@@ -7834,6 +7943,55 @@ function golpos_reason_layer(string $msg, array $in, array $products, string $se
         }
         $monthRef = $boundM;
     }
+    // A bare SUPERLATIVE measure ask — "Top seller kun ho?", "best day
+    // kun ho?", "sabai bhanda dherai bikne kun ho?" — names a measure
+    // and NO period at all. It is a single-measure scope of this same
+    // month family, and before this binding it had no home: the month
+    // block needs a month referent, the period engine below needs a
+    // period word, so the turn fell to the garble fence ("Bujhina")
+    // or through to the day lane's today frame (owner live catch,
+    // Nov 3 00:51). The period binds the way the tax-fix binding
+    // binds: the month the conversation is standing in (Gol's own
+    // last reply named one, same 900s window), else the last FULL
+    // month that carries sales, else the current month. A turn that
+    // names ANY period of its own is vetoed — period superlatives
+    // keep their own lanes.
+    if ($monthRef === null
+        && !golpos_reason_rangeish($msg)
+        && golpos_weekdays_in($msg) === []
+        && !preg_match('/(week|hapta|\xE0\xA4\xB9\xE0\xA4\xAA\xE0\xA5\x8D\xE0\xA4\xA4\xE0\xA4\xBE|aaja|\xE0\xA4\x86\xE0\xA4\x9C|today|hijo|\xE0\xA4\xB9\xE0\xA4\xBF\xE0\xA4\x9C\xE0\xA5\x8B|yesterday|month|mahina|\xE0\xA4\xAE\xE0\xA4\xB9\xE0\xA4\xBF\xE0\xA4\xA8\xE0\xA4\xBE|year|barsha|\xE0\xA4\xB5\xE0\xA4\xB0\xE0\xA5\x8D\xE0\xA4\xB7|dekhi|since|\b20\d{2}\b)/iu', $msg)
+        && !preg_match('/(last|gata|\xE0\xA4\x97\xE0\xA4\xA4|pichhillo)\s*\d{1,3}\s*(days?|din|\xE0\xA4\xA6\xE0\xA4\xBF\xE0\xA4\xA8)/iu', $msg)) {
+        $topAskS = preg_match('/(bikeko|bikyo|bikne|bikcha|sold|bestseller|best\s*sell|top|sabse)/iu', $msg)
+            && preg_match('/(item|saman|product|bikeko|bikyo|bikne|bikcha|kun|\bke\b|seller)/iu', $msg);
+        $bestAskS = preg_match('/(sabse|sabai\s*bhanda|most|best|biggest|highest|\xE0\xA4\xA7\xE0\xA5\x87\xE0\xA4\xB0\xE0\xA5\x88)/iu', $msg)
+            && preg_match('/(din|day|\xE0\xA4\xAC\xE0\xA4\xBF\xE0\xA4\x95\xE0\xA5\x8D\xE0\xA4\xB0\xE0\xA5\x80|bikri|sales)/iu', $msg)
+            && !preg_match('/(item|saman|product|bikeko|bikyo)/iu', $msg);
+        if ($topAskS || $bestAskS) {
+            $boundS = null;
+            $ssS = golpos_session($sessionId);
+            $saidS = (string)($ssS['last_spoken'] ?? '');
+            $atS = (int)($ssS['last_spoken_at'] ?? 0);
+            if ($saidS !== '' && $atS > 0 && (time() - $atS) < 900) {
+                $boundS = golpos_month_ref($saidS);
+            }
+            if ($boundS === null) {
+                $curS = new DateTime('first day of this month');
+                for ($iS = 1; $iS <= 24 && $boundS === null; $iS++) {
+                    $candS = (clone $curS)->modify('-' . $iS . ' months');
+                    $ymS = $candS->format('Y-m');
+                    if (golpos_month_sales($ymS)['txns'] > 0) {
+                        $boundS = ['ym' => $ymS, 'label' => $candS->format('F Y'), 'bare' => false];
+                    }
+                }
+                if ($boundS === null) {
+                    $boundS = ['ym' => $curS->format('Y-m'), 'label' => $curS->format('F Y'), 'bare' => false];
+                }
+            } else {
+                $boundS['bare'] = false;
+            }
+            $monthRef = $boundS;
+        }
+    }
     // "sabai bhanda badhi" is a SUPERLATIVE (the most), not a comparison
     // between two periods — bhanda only vetoes when it is not sabai's.
     $cmpM = preg_match('/(compar|vs\.?|versus|than|against|difference)/iu', $msg)
@@ -7842,7 +8000,7 @@ function golpos_reason_layer(string $msg, array $in, array $products, string $se
         && !$cmpM
         && !golpos_reason_rangeish($msg)
         && !preg_match('/(price|mulya|dam|दाम)/iu', $msg)
-        && ($monthRef['bare'] || preg_match('/(sales|sale|bikri|total|jamma|purchase|kharid|expense|kharcha|report|hisab|hisaab|how much|kati|revenue|tax|profit|nafa|नाफा|bikeko|sabse|best|biggest|top)/iu', $msg))) {
+        && ($monthRef['bare'] || preg_match('/(sales|sale|bikri|total|jamma|purchase|kharid|expense|kharcha|report|hisab|hisaab|how much|kati|revenue|tax|profit|nafa|नाफा|bikeko|bikne|bikcha|sabse|best|biggest|top)/iu', $msg))) {
         $ym = $monthRef['ym'];
         $lbl = $monthRef['label'];
         $ms = golpos_month_sales($ym);
@@ -7896,8 +8054,8 @@ function golpos_reason_layer(string $msg, array $in, array $products, string $se
             }
         }
         $topLines = [];
-        if (preg_match('/(bikeko|bikyo|sold|bestseller|best\s*sell|top|sabse)/iu', $msg)
-            && preg_match('/(item|saman|product|bikeko|bikyo|kun|\bke\b)/iu', $msg)) {
+        if (preg_match('/(bikeko|bikyo|bikne|bikcha|sold|bestseller|best\s*sell|top|sabse|sabai\s*bhanda)/iu', $msg)
+            && preg_match('/(item|saman|product|bikeko|bikyo|bikne|bikcha|kun|\bke\b|seller)/iu', $msg)) {
             $topM = golpos_reason_top_items(array_flip(array_keys($ms['days'])), 3);
             if ($topM['by_qty']) {
                 $partsM = [];
@@ -8506,6 +8664,15 @@ function golpos_reason_layer(string $msg, array $in, array $products, string $se
         out(['reply' => "I couldn't match that item on this register — name it once more and I'll ring it."]);
         return true;
     }
+
+    // A price CHANGE is a write, not a read — whatever the sentence
+    // shape. The block below reads any price-word question naming one
+    // item as a stock/price ASK, and "Can you change the price of
+    // Coca-Cola 20 oz to $4?" walked straight into it (owner's live
+    // catch, Nov 3): Gol answered the stock card and no card ever
+    // staged. A stage request defers to the deterministic price lane,
+    // which stages it; execution still waits for "gol".
+    if (golpos_price_stage_intent($msg)) { return false; }
 
     // ASK about one item — stock and price travel together, whichever was
     // asked, because at the counter "kati cha" after a name means both.
