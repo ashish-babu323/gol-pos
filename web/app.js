@@ -22,6 +22,23 @@ function brainPayload(obj) {
     const emp = JSON.parse(localStorage.getItem('golpos_employee') || 'null');
     if (emp && emp.email && emp.token) { p.employee = emp; }
   } catch (e) { /* no employee on this device */ }
+  // The open sale rides every chat turn (brain pack, Nov 2): the brain
+  // answers "total" about THIS sale and rings new items into it — it
+  // cannot reason over a cart it cannot see.
+  try {
+    if (typeof cart !== 'undefined' && typeof catalog !== 'undefined' && catalog && catalog.products) {
+      const items = [];
+      cart.forEach((qty, sku) => {
+        const pr = catalog.products.find(x => x.sku === sku);
+        if (pr) { items.push({ sku, name: pr.name, qty, price: Number(pr.price) || 0 }); }
+      });
+      (manualLines || []).forEach(m => items.push({ sku: null, name: 'Manual line', qty: 1, price: Number(m.price) || 0 }));
+      if (items.length) {
+        p.cart = { items, subtotal: cartTotals.subtotal || 0, tax: cartTotals.tax || 0,
+          total: cartTotals.total || 0, count: items.reduce((s, i) => s + (i.qty || 1), 0) };
+      }
+    }
+  } catch (e) { /* the cart simply does not ride this call */ }
   return p;
 }
 const LOYALTY = '../server/loyalty.php';
@@ -29,6 +46,27 @@ const $ = (id) => document.getElementById(id);
 const money = (n) => '$' + Number(n).toFixed(2);
 const IC_CAM = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>';
 const IC_CHECK = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5 9.5 18 20 6.5"/></svg>';
+// --- staged-card death paint (audit GOL-04) ----------------------------------
+// A cancelled or stale card must LOOK dead: badge flipped, every
+// button disabled, card dimmed. Called from every chat response that
+// carries a cancelled/stale marker, and directly by the card's own
+// Cancel button.
+function markStagedCancelled(pid, el) {
+  let targets = [];
+  if (el) { targets.push(el); }
+  if (pid) { targets = targets.concat(Array.from(document.querySelectorAll('[data-pid="' + pid + '"]'))); }
+  if (!targets.length) {
+    const live = Array.from(document.querySelectorAll('.msg.card:not(.sc-cancelled)'));
+    if (live.length) { targets = [live[live.length - 1]]; }
+  }
+  targets.forEach((t) => {
+    if (!t || t.classList.contains('sc-cancelled')) { return; }
+    t.classList.add('sc-cancelled');
+    const badge = t.querySelector('.sc-badge');
+    if (badge) { badge.textContent = 'CANCELLED'; }
+    t.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+  });
+}
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // A surcharge percent as the owner says it: 3, 2.5 — never 3.0.
 const fmtPct = (p) => String(Math.round(Number(p) * 10) / 10);
@@ -143,18 +181,65 @@ async function loadCatalog() {
   catalog = await res.json();
   $('storeName').textContent = catalog.store.name || 'Register';
   renderCats(); renderGrid(); renderKpCats(); renderKpList(); refreshToday();
+  loadWoe();
 }
 // The Out view (owner, Oct 28): every product whose live stock is 0,
 // from the same stockOf() the tiles read — a sale that rings the last
 // unit adds the product here, a receive takes it back out, because the
 // view is re-derived on every render, never snapshotted.
 function outOf(p) { const s = stockOf(p); return s !== null && s <= 0; }
-function outCount() { return catalog.products.filter(outOf).length; }
+// --- What's Out AI Engine (Oct 29): the Out tab reads the ONE engine list.
+// The chip count is the ENGINE's count — the same number Floor, Gol and the
+// owner's morning email read. Till stock-zero stays a tile signal; a product
+// the engine carries also joins the Out view with a REPORTED OUT tag, even
+// if this till has not counted it yet. One truth, every surface.
+let woeList = null;
+const WOE_BY_NAME = { 'Sunrise Mart (demo)': '22af5007-3fa8-4804-ac6a-5cf19e64c697', 'Sunrise Mart': '22af5007-3fa8-4804-ac6a-5cf19e64c697' };
+function woeSquash(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+function woeHit(p) {
+  if (!woeList || !woeList.entries) return false;
+  const sq = woeSquash(p.name);
+  return woeList.entries.some(e =>
+    (e.upc && p.barcode && e.upc === p.barcode) ||
+    (sq.length >= 7 && woeSquash(e.name).length >= 7 && (woeSquash(e.name).includes(sq) || sq.includes(woeSquash(e.name)))));
+}
+async function loadWoe() {
+  try {
+    const sid = (catalog.store && catalog.store.store_id) || WOE_BY_NAME[catalog.store && catalog.store.name] || '';
+    if (!sid) return;
+    const res = await fetch('https://luckymart.biz/store-api/whatsout-engine.php?store=' + encodeURIComponent(sid), { cache: 'no-store' });
+    const j = await res.json();
+    if (j && j.ok) { woeList = j; renderCats(); if (activeCat === 'Out') renderGrid(); }
+  } catch (e) { /* engine unreachable — the tab keeps its stock-only view */ }
+}
+function outCount() {
+  if (woeList && typeof woeList.count === 'number') return woeList.count;
+  return catalog.products.filter(outOf).length;
+}
+// Category tabs are the store's REAL categories now (Oct 30): the
+// MR.STORE projection carries each product's own category (Grocery,
+// Alcohol, Vapes, Tobacco, Drinks, Candy, Snacks…), so the tabs are
+// built from what is actually on this shelf — owner order first, any
+// other category after, each tab carrying its product count. A product
+// with no category gets NO tab; it lives under All only.
+const CAT_ORDER = ['Grocery', 'Alcohol', 'Tobacco', 'Vapes', 'Drinks', 'Snacks', 'Candy'];
+function shelfCats() {
+  const counts = {};
+  catalog.products.forEach(p => { if (p.category) { counts[p.category] = (counts[p.category] || 0) + 1; } });
+  const names = Object.keys(counts).sort((a, b) => {
+    const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
+    if (ia !== -1 || ib !== -1) { return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib); }
+    return a.localeCompare(b);
+  });
+  return names.map(c => ({ name: c, count: counts[c] }));
+}
 function renderCats() {
-  const cats = ['All', ...new Set(catalog.products.map(p => p.category))];
+  const cats = shelfCats();
   const oc = outCount();
-  $('catRow').innerHTML = cats.map(c =>
-    `<button type="button" class="${c === activeCat ? 'on' : ''}" data-cat="${c}">${c}</button>`).join('') +
+  $('catRow').innerHTML =
+    `<button type="button" class="${'All' === activeCat ? 'on' : ''}" data-cat="All">All</button>` +
+    cats.map(c =>
+    `<button type="button" class="${c.name === activeCat ? 'on' : ''}" data-cat="${esc(c.name)}">${esc(c.name)}<span class="cat-count">${c.count}</span></button>`).join('') +
     `<button type="button" class="out-chip${activeCat === 'Out' ? ' on' : ''}" data-cat="Out">Out${oc ? `<span class="out-count">${oc}</span>` : ''}</button>`;
   $('catRow').querySelectorAll('button').forEach(b =>
     b.addEventListener('click', () => { activeCat = b.dataset.cat; renderCats(); renderGrid(); }));
@@ -229,14 +314,34 @@ function animateFills(scopeEl) {
 }
 function renderGrid() {
   const q = $('searchInput').value.trim().toLowerCase();
+  // Search hears the shelf the way customers say it: name, barcode, and
+  // the product's own catalog aliases — the same `aliases` field the Gol
+  // chat brain resolves (fix POS-D2, Oct 30: "coke" / "कोक" / "redbull"
+  // found nothing in this box while the brain answered fine).
+  const aliasHit = (p) => Array.isArray(p.aliases) &&
+    p.aliases.some(a => String(a).toLowerCase().includes(q));
   const items = catalog.products.filter(p =>
-    (activeCat === 'All' || (activeCat === 'Out' ? outOf(p) : p.category === activeCat)) &&
-    (!q || p.name.toLowerCase().includes(q) || p.barcode.includes(q)));
+    (activeCat === 'All' || (activeCat === 'Out' ? (outOf(p) || woeHit(p)) : p.category === activeCat)) &&
+    (!q || p.name.toLowerCase().includes(q) || p.barcode.includes(q) || aliasHit(p)));
+  // Shelf honesty order (owner catch, Oct 30 — "all out?"): on the Lucky
+  // catalog order the register's first screen was a wall of OUT tiles,
+  // because most SKUs carry a recorded 0 from import and only ~1 in 5 has
+  // a shelf count. The store is not empty; the shelf just led with the
+  // dead stock. Order every shelf except the Out view: in-stock first,
+  // then untracked (never counted — no OUT badge, rings normally), then
+  // recorded zeros last. The sort is stable, so catalog order survives
+  // inside each group; search still narrows first and this only orders
+  // what the search already matched. The Out view keeps its own
+  // derivation (engine list + stock zeros) untouched.
+  if (activeCat !== 'Out') {
+    const shelfRank = (p) => { const s = stockOf(p); return s === null ? 1 : (s > 0 ? 0 : 2); };
+    items.sort((a, b) => shelfRank(a) - shelfRank(b));
+  }
   $('grid').innerHTML = items.map(p => {
     const s = stockOf(p);
     const out = s !== null && s <= 0;
     return `<div class="tile${out ? ' is-out' : ''}" data-sku="${p.sku}" role="button" tabindex="0" aria-label="${esc(p.name)} — tap to ring">
-       <span class="tile-media"><span class="tile-art ${artClass(p)}">${(p.name || 'G').trim().charAt(0).toUpperCase()}</span>${p.img ? `<img class="tile-img" src="${esc(p.img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}${out ? '<span class="tile-out-tag">OUT</span>' : ''}</span>
+       <span class="tile-media"><span class="tile-art ${artClass(p)}">${(p.name || 'G').trim().charAt(0).toUpperCase()}</span>${p.img ? `<img class="tile-img" src="${esc(p.img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}${out ? '<span class="tile-out-tag">OUT</span>' : (woeHit(p) ? '<span class="tile-out-tag" style="background:#b45309">REPORTED OUT</span>' : '')}</span>
        <span class="tile-name">${p.name}</span>${stockHtml(p)}<span class="tile-foot"><span class="tile-price">${money(p.price)}</span><button type="button" class="tile-stock-add${out ? ' rescue' : ''}" data-stock-sku="${p.sku}" aria-label="Add stock to ${esc(p.name)}">＋ Stock</button></span>
      </div>`;
   }).join('') || `<p class="empty">${activeCat === 'Out' && !q ? 'Nothing is out right now.' : 'No products match.'}</p>`;
@@ -275,9 +380,9 @@ function addToCart(sku, opts) {
 // chips filter the list only; the Products tab keeps its own filter.
 let kpCat = 'All';
 function renderKpCats() {
-  const cats = ['All', ...new Set(catalog.products.map(p => p.category))];
+  const cats = [{ name: 'All', count: 0 }, ...shelfCats()];
   $('kpCatRow').innerHTML = cats.map(c =>
-    `<button type="button" class="${c === kpCat ? 'on' : ''}" data-kcat="${c}">${c}</button>`).join('');
+    `<button type="button" class="${c.name === kpCat ? 'on' : ''}" data-kcat="${esc(c.name)}">${esc(c.name)}${c.count ? `<span class="cat-count">${c.count}</span>` : ''}</button>`).join('');
   $('kpCatRow').querySelectorAll('button').forEach(b =>
     b.addEventListener('click', () => { kpCat = b.dataset.kcat; renderKpCats(); renderKpList(); }));
 }
@@ -795,6 +900,12 @@ async function gatedApiPost(body) {
 function chatMsg(text, who) {
   const d = document.createElement('div');
   d.className = 'msg ' + who; d.textContent = text;
+  // Replies are authored with real line breaks (lists, reports, sale
+  // lines); with the default white-space the browser collapses them
+  // into one wrapped paragraph — the wall of text the owner hit on
+  // the open-tasks answer (Nov 2, 20:40). Honour the authored breaks
+  // in the circle and the rectangle panel alike.
+  d.style.whiteSpace = 'pre-wrap';
   $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
   return d;
 }
@@ -875,6 +986,9 @@ function chatCard(card) {
       `<div class="sc-line">By ${esc(card.by_name || 'Register')} · confirming files the count — the shelf stock does not change.</div>`;
   } else if (card.type === 'employee_remove') {
     body = `<div class="sc-what">Remove employee — ${esc(card.name ? card.name + ' · ' : '')}${esc(card.email)}</div>`;
+  } else if (card.type === 'pin_set') {
+    body = `<div class="sc-what">PIN — ${esc(card.name || '')}</div>` +
+      `<div class="sc-line">A new PIN the owner hands out in person. The digits are never shown here — confirm lands it and the old PIN stops working.</div>`;
   } else if (card.type === 'new_item') {
     body = `<div class="sc-what">New item — ${esc(card.name)} · ${money(card.price)}</div>` +
       (card.barcode ? `<div class="sc-line">Barcode ${esc(card.barcode)}</div>` : '');
@@ -910,6 +1024,14 @@ function chatCard(card) {
     const field = card.field === 'delivery_day' ? 'Delivery day' : 'Rep day';
     body = `<div class="sc-what">${card.create ? 'New vendor' : 'Vendor'} — ${esc(card.vendor_name)}</div>` +
       `<div class="sc-prices"><span class="sc-old">${field}: ${esc(val(card.old))}</span><span class="sc-arrow">→</span><span class="sc-new">${esc(val(card.new))}</span></div>`;
+  } else if (card.type === 'gol_stage') {
+    // A card staged by the store's REAL Gol brain (routed here by the
+    // brain.php bridge): its title + its own lines — the same card the
+    // MR.STORE chat shows for the same turn. The Confirm button below
+    // posts {confirm:true}, which the bridge carries to the big brain's
+    // confirm — one staged-card law on every surface.
+    const gl = (card.lines || []).map(l => `<div class="sc-line">${esc(l)}</div>`).join('');
+    body = `<div class="sc-what">${esc(card.title || 'Staged — Gol')}</div>${gl}`;
   } else if (card.type === 'photo_read') {
     const found = card.regions === null || card.regions === undefined
       ? 'SAM gave no read on this photo'
@@ -919,17 +1041,45 @@ function chatCard(card) {
   } else {
     body = `<div class="sc-what">New item — ${card.name} · ${money(card.price)}</div>`;
   }
-  d.innerHTML = `<span class="sc-badge">STAGED</span>${body}<button type="button">${IC_CHECK} Confirm — Gol</button>`;
-  d.querySelector('button').addEventListener('click', async () => {
+  const cardPid = card.pid || card.id || '';
+  if (cardPid) { d.dataset.pid = cardPid; }
+  d.innerHTML = `<span class="sc-badge">STAGED</span>${body}<div class="sc-btns"><button type="button" class="sc-confirm">${IC_CHECK} Confirm — Gol</button><button type="button" class="sc-cancel">Cancel</button></div>`;
+  const confirmBtn = d.querySelector('.sc-confirm');
+  confirmBtn.addEventListener('click', async () => {
     const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(brainPayload({ confirm: true })) });
+      body: JSON.stringify(brainPayload({ confirm: true, pending_pid: cardPid })) });
     const r = await res.json();
     chatMsg(r.reply, 'gol');
+    if (r.stale) { markStagedCancelled(cardPid, d); }
+    try { golSpeak(posSayFor(r, '', null)); } catch (e) {}
     applyLockState(r.locked, r.actor);
+    notePinState(r);
     handleChatAction(r);
     loadCatalog(); loadSettings();
   });
+  const cancelBtn = d.querySelector('.sc-cancel');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', async () => {
+      cancelBtn.disabled = true; confirmBtn.disabled = true;
+      try {
+        const res2 = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(brainPayload({ cancel_card: true, pending_pid: cardPid })) });
+        const r2 = await res2.json();
+        if (r2.reply) { chatMsg(r2.reply, 'gol'); }
+        if (r2.cancelled_pid) { markStagedCancelled(r2.cancelled_pid); }
+        else if (r2.cancelled) { markStagedCancelled(cardPid, d); }
+        applyLockState(r2.locked, r2.actor);
+        notePinState(r2);
+        handleChatAction(r2);
+        if (r2.done) { loadCatalog(); loadSettings(); }
+      } catch (e) {
+        cancelBtn.disabled = false; confirmBtn.disabled = false;
+        chatMsg('Could not reach the brain to cancel — the card is still staged; try again.', 'gol');
+      }
+    });
+  }
   $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
+  return d;
 }
 // --- visual reports: the graph card -------------------------------------------
 // Pure renderer: brain payload -> inline SVG, no other data source. The
@@ -952,7 +1102,7 @@ function graphSvg(g) {
       const w = max > 0 ? Math.max(2, (Number(p.value) / max) * barMax) : 2;
       const name = p.label.length > 16 ? p.label.slice(0, 15).trimEnd() + '…' : p.label;
       s += `<text x="0" y="${y + 13}" font-size="11.5" fill="#334155">${esc(name)}</text>`;
-      s += `<rect x="${nameW}" y="${y + 2}" width="${w.toFixed(1)}" height="13" rx="3" fill="#2563eb"></rect>`;
+      s += `<rect class="gbar-h" style="animation-delay:${i * 70}ms" x="${nameW}" y="${y + 2}" width="${w.toFixed(1)}" height="13" rx="3" fill="#2563eb"></rect>`;
       s += `<text x="${(nameW + w + 6).toFixed(1)}" y="${y + 13}" font-size="11.5" font-weight="700" fill="#0f172a">${gfmt(p.value)}${p.sub ? `<tspan fill="#64748b" font-weight="400"> ${esc(p.sub)}</tspan>` : ''}</text>`;
     });
     return s + '</svg>';
@@ -966,8 +1116,8 @@ function graphSvg(g) {
     const Y = (v) => base - ((v - min) / span) * (base - top);
     const pts = g.series.map((p, i) => `${X(i).toFixed(1)},${Y(Number(p.value) || 0).toFixed(1)}`).join(' ');
     let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(g.title || '')}">`;
-    s += `<polygon points="${padX},${base} ${pts} ${W - padX},${base}" fill="#2563eb" opacity="0.12"></polygon>`;
-    s += `<polyline points="${pts}" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"></polyline>`;
+    s += `<polygon class="gsparkfill" points="${padX},${base} ${pts} ${W - padX},${base}" fill="#2563eb" opacity="0.12"></polygon>`;
+    s += `<polyline class="gspark" pathLength="1" points="${pts}" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"></polyline>`;
     const peak = vals.indexOf(max);
     const seen = new Set();
     [[0, g.series[0]], [peak, g.series[peak]], [n - 1, g.series[n - 1]]].forEach(([i, p]) => {
@@ -996,7 +1146,7 @@ function graphSvg(g) {
     const h = Math.max(2, (Math.abs(v) / span) * (base - top));
     const y = v >= 0 ? zeroY - h : zeroY;
     const fill = v === 0 ? '#cbd5e1' : (p.highlight ? '#2563eb' : '#93c5fd');
-    s += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${fill}"></rect>`;
+    s += `<rect class="gbar${v < 0 ? ' gbar-neg' : ''}" style="animation-delay:${i * 70}ms" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${fill}"></rect>`;
     s += `<text x="${(x + barW / 2).toFixed(1)}" y="${(v >= 0 ? y - 5 : y + h + 12).toFixed(1)}" font-size="11" font-weight="700" fill="#0f172a" text-anchor="middle">${gfmt(v)}</text>`;
     const maxLbl = g.kind === 'compare' ? 20 : 12;
     const lbl = p.label.length > maxLbl ? p.label.slice(0, maxLbl - 1).trimEnd() + '…' : p.label;
@@ -1008,6 +1158,7 @@ function chatGraph(g) {
   if (!g || !Array.isArray(g.series)) { return; }
   const d = document.createElement('div');
   d.className = 'msg gol graph-card';
+  d.dataset.calStore = g.cal_store || '';
   let inner = `<div class="graph-head"><span class="graph-title">${esc(g.title || '')}</span><span class="graph-total">${money(g.total)}</span></div>`;
   if (g.empty) {
     inner += `<div class="graph-empty">${esc(g.empty_text || 'No sales in this range yet.')}</div>`;
@@ -1026,11 +1177,17 @@ function chatGraph(g) {
         `<span><b>${esc(c.card_lbl || 'Card')}</b> ${money(c.card)}</span>` +
         (c.credit ? `<span><b>${esc(c.credit_lbl || 'Credit')}</b> ${money(c.credit)}</span>` : '') + `</div>`;
     }
+    // Tender reconciliation line (audit GOL-07): composed server-side
+    // from the same closes as the bars — expected cash tying to the
+    // total, counted cash and recorded over/short beside it.
+    if (c.recon && c.txns > 0) {
+      inner += `<p class="cash-note">${esc(c.recon)}</p>`;
+    }
   }
   // Calendar card (owner, Oct 28): the register's own month. Days with
-  // sales are buttons — a tap asks for that day's report through the
-  // same chat path a typed question takes; days without sales are
-  // plain text, and today is ringed.
+  // sales are buttons — a tap silently peeks that day's compact card
+  // in place (dayDetailTap below; never a chat turn, Oct 31 fix);
+  // days without sales are plain text, and today is ringed.
   if (g.calendar && Array.isArray(g.calendar.days)) {
     const cal = g.calendar;
     const dows = (cal.dows || []).map(x => `<span class="cal-dow">${esc(x)}</span>`).join('');
@@ -1044,10 +1201,332 @@ function chatGraph(g) {
     inner += `<div class="graph-foot">${esc(g.focus.label)} — <b>${money(g.focus.value)}</b></div>`;
   }
   d.innerHTML = inner;
+  const gtEl = d.querySelector('.graph-total');
+  if (gtEl && Number(g.total) > 0) {
+    const target = Number(g.total); const t0 = performance.now();
+    const countStep = (t) => { const k = Math.min(1, (t - t0) / 900); gtEl.textContent = money(target * (1 - Math.pow(1 - k, 3))); if (k < 1) { requestAnimationFrame(countStep); } };
+    requestAnimationFrame(countStep);
+  }
   d.querySelectorAll('.cal-day.has').forEach(b => b.addEventListener('click', () => {
-    sendChat(b.dataset.ymd + ' report');
+    dayDetailTap(b, d);
   }));
   $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
+}
+
+// --- Who is on this register: a designed info card, never a staged card -----
+// The brain's who payload (live session record at answer time) renders
+// as its own card — no STAGED badge, no Confirm button: nothing is
+// staged by a question. Since-times arrive as ISO and render in the
+// register's own local time; a null since is stated honestly (the
+// session record carries no unlock timestamp and sheet-gate unlocks
+// are not journaled).
+// --- Designed display cards (Lane 4, Oct 31) --------------------------------
+// Read answers (price / overview / stock / vendor profile) arrive as a
+// 'dcard' payload — the same structured envelope the backend Gol chat
+// renders — and paint as designed cards under the reply text. Display
+// only: no STAGED badge, no Confirm button; staged cards keep chatCard.
+function chatDCard(c) {
+  if (!c || !c.type) { return; }
+  const d = document.createElement('div');
+  d.className = 'msg gol graph-card dcard';
+  const row = (k, v) => `<div class="cash-row" style="justify-content:space-between"><span>${esc(k)}</span><span><b>${esc(v)}</b></span></div>`;
+  const m = (v) => v === null || v === undefined ? 'not set' : money(v);
+  let inner = '';
+  if (c.type === 'price') {
+    const st = c.stock_state || (c.onHand === null || c.onHand === undefined ? '' : (Number(c.onHand) <= 0 ? 'Out of stock' : (Number(c.onHand) <= 2 ? 'Low · ' + c.onHand + ' left' : 'In stock · ' + c.onHand)));
+    inner = `<div class="graph-head"><span class="graph-title">${esc(c.name || 'Price')}</span><span class="graph-total">${m(c.price)}</span></div>`
+      + (st || c.store ? `<div class="cash-row"><span>${esc(st)}</span>${c.store ? `<span>${esc(c.store)}</span>` : ''}</div>` : '');
+  } else if (c.type === 'price_list') {
+    inner = `<div class="graph-head"><span class="graph-title">Prices${c.store ? ' — ' + esc(c.store) : ''}</span></div>`
+      + (c.items || []).map(it => row(it.name + (it.stock_state ? ' · ' + it.stock_state : ''), m(it.price))).join('')
+      + (c.more ? `<p class="cash-note">+ ${esc(String(c.more))} more</p>` : '');
+  } else if (c.type === 'overview') {
+    inner = `<div class="graph-head"><span class="graph-title">${esc(c.label || 'Overview')}</span><span class="graph-total">${money(c.profit)}</span></div>`
+      + row('Sales', money(c.sales)) + row('Purchases', money(c.purchases)) + row('Expenses', money(c.expenses))
+      + row('Pay (inside Expenses)', money(c.pay))
+      + (c.tax === null || c.tax === undefined ? row('Tax', '—') : row('Tax', money(c.tax)))
+      + (c.tax_note ? `<p class="cash-note">${esc(c.tax_note)}</p>` : '')
+      + row('Profit', money(c.profit))
+      + ((c.exp_top && (c.exp_top.lines || []).length) ? c.exp_top.lines.map(ln => row(ln.date + ' · ' + ln.label, money(ln.amount))).join('') : '');
+  } else if (c.type === 'stock_list') {
+    inner = `<div class="graph-head"><span class="graph-title">${esc(c.title || 'Stock')}</span></div>`
+      + (c.items || []).map(it => row(it.name, (it.qty === null || it.qty === undefined) ? (it.stock_state || 'not tracked') : (String(it.qty) + (it.stock_state ? ' · ' + it.stock_state : '')))).join('')
+      + (c.more ? `<p class="cash-note">+ ${esc(String(c.more))} more</p>` : '');
+  } else if (c.type === 'vendor_profile') {
+    inner = `<div class="graph-head"><span class="graph-title">${esc(c.vendor || 'Vendor')}</span><span class="graph-total">${c.median_visit !== null && c.median_visit !== undefined ? money(c.median_visit) : ''}</span></div>`
+      + (c.kind ? row('Vendor', c.kind) : '') + row('Learned from', String(c.bills || 0) + ' bills')
+      + (c.last_bill ? row('Last bill', c.last_bill + (c.next_expected ? ' · next ' + c.next_expected : '')) : '')
+      + (c.total_learned !== null && c.total_learned !== undefined ? row('Total learned', money(c.total_learned)) : '')
+      + (c.status_line ? `<p class="cash-note">${esc(c.status_line)}</p>` : '');
+  } else { return; }
+  d.innerHTML = inner;
+  $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
+}
+function chatWho(list) {
+  const d = document.createElement('div');
+  d.className = 'msg gol who-card';
+  const rows = (list || []).map(w => {
+    const since = w.since ? new Date(w.since).toLocaleString() : 'time not recorded';
+    return `<div class="who-line"><b>${esc(w.name || '')}</b> · ${esc(w.role || '')}${w.you ? ' · this session' : ''}<span class="who-since">since ${esc(since)}</span></div>`;
+  }).join('');
+  d.innerHTML = `<div class="who-title">On this register now</div>${rows || '<div class="who-line">Nobody is logged in.</div>'}`;
+  $('chatBody').appendChild(d); $('chatBody').scrollTop = 1e6;
+}
+
+// --- Calendar day tap: a silent peek, never a chat turn ------------------------
+// Owner catch, Oct 31: a tap used to send "YYYY-MM-DD report" through
+// sendChat, so every tap added a 'me' bubble AND a whole new report
+// stack. Now the tap fetches ONE compact day payload from the brain's
+// day_detail action and swaps a single day card in place under the
+// report it belongs to — no bubble, no new stack, nothing journaled.
+async function dayDetailTap(btn, graphEl) {
+  const ymd = btn.dataset.ymd || '';
+  if (!ymd) { return; }
+  graphEl.querySelectorAll('.cal-day.has').forEach((b) => b.classList.toggle('sel', b === btn));
+  try {
+    const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(brainPayload({ action: 'day_detail', ymd, store_id: graphEl.dataset.calStore || '' })) });
+    const r = await res.json();
+    if (r && r.day_detail) { renderDayDetail(r.day_detail, graphEl); }
+  } catch (e) { /* a peek that cannot load leaves the report untouched */ }
+}
+function renderDayDetail(dd, graphEl) {
+  let el = document.getElementById('dayDetailCard');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'dayDetailCard';
+    el.className = 'msg gol day-card';
+  }
+  let meta = '';
+  if (dd.tax !== null && dd.tax !== undefined) { meta += `<span>Tax <b>${money(dd.tax)}</b></span>`; }
+  if (dd.result) { meta += `<span>Result <b>${esc(dd.result)}</b></span>`; }
+  if (dd.counted !== null && dd.counted !== undefined && Math.abs(dd.counted - dd.cash) >= 0.01) {
+    meta += `<span>Counted cash <b>${money(dd.counted)}</b></span>`;
+  }
+  if (dd.cash_derived) { meta += `<span>Cash split was not recorded that night — cash shown is gross minus card.</span>`; }
+  el.innerHTML =
+    `<div class="graph-head"><span class="graph-title">${esc(dd.label)}${dd.store ? ' — ' + esc(dd.store) : ''}</span><span class="graph-total">${money(dd.gross)}</span></div>` +
+    `<div class="cash-row"><span>💵 Cash <b>${money(dd.cash)}</b></span><span>💳 Card <b>${money(dd.card)}</b></span></div>` +
+    (meta ? `<div class="day-meta">${meta}</div>` : '');
+  graphEl.insertAdjacentElement('afterend', el);
+  el.scrollIntoView({ block: 'nearest' });
+}
+
+// --- Gol's mouth: ONE natural server voice (Oct 29) -----------------------------
+// The ears live further down (press-to-talk mic -> voiceFinal -> sendChat).
+// The mouth is the SAME natural server voice every Gol surface speaks with:
+// store-api/gol-say.php renders a SHORT say payload to a cached MP3 (voice
+// "nova", gpt-4o-mini-tts). Say-payload discipline, same as the desk chat:
+// a staged card speaks its visible summary (the card's own headline +
+// prices, read off the rendered card so voice and screen can never drift)
+// plus the "gol" confirm line; a plain reply speaks its first line only.
+// NO SpeechSynthesis on this surface — if the voice service fails, the
+// turn stays text-only. Silence beats robot. The speaker toggle in the
+// chat composer (localStorage golpos_speech, default on) governs; turning
+// it off stops any playback already running.
+function golDetectLang(s) {
+  s = String(s || '');
+  if (/[\u0900-\u097F]/.test(s)) {
+    if (/(है|हैं|नहीं|क्या|चाहिए|क्यों|रुपये|लिए)/.test(s)) return 'hi';
+    return 'ne';
+  }
+  var w = ' ' + s.toLowerCase().replace(/[^a-z\s]/g, ' ') + ' ';
+  if (/ (hai|karo|karna|chahiye|kitna|kitne|rupaye|kya|nahi|mera|mujhe) /.test(w)) return 'hi';
+  if (/ (chha|cha|gara|garna|bhannus|bhanne|kati|rupiya|paisa|bhayo|aayo|gayo|dine|huncha|chaina) /.test(w)) return 'ne';
+  return 'en';
+}
+function golCleanSay(s) {
+  return String(s || '')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu, '')
+    .replace(/[*_`#>|]/g, '')
+    .replace(/\bgol\b/ig, 'confirm')
+    .replace(/गोल/g, 'confirm')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+let golSpokeGolAt = 0;
+function golNoteSpoken(text) {
+  if (/\bgol\b|गोल/i.test(String(text || ''))) golSpokeGolAt = Date.now();
+}
+function golIsEchoConfirm(text) {
+  var t = String(text || '').trim().toLowerCase();
+  if (t !== 'gol' && t !== 'गोल') return false;
+  return golSpokeGolAt > 0 && (Date.now() - golSpokeGolAt) < 8000;
+}
+let golLastSpoken = '';
+function golIsSelfEcho(text) {
+  var h = String(text || '').toLowerCase().replace(/[^a-z0-9\u0900-\u097f ]/g, '').replace(/\s+/g, ' ').trim();
+  var s = String(golLastSpoken || '').toLowerCase().replace(/[^a-z0-9\u0900-\u097f ]/g, '').replace(/\s+/g, ' ').trim();
+  if (!h || !s) return false;
+  if (s.indexOf(h) >= 0 || h.indexOf(s) >= 0) return true;
+  var hw = h.split(' ').filter(Boolean);
+  var sw = {};
+  s.split(' ').forEach(function (w) { sw[w] = 1; });
+  var hit = hw.filter(function (w) { return sw[w]; }).length;
+  return hw.length > 0 && hit / hw.length >= 0.75;
+}
+function golConfirmLine(lang) {
+  // The mouth must not say the confirm word. The call ear sends whatever it
+  // hears, and a heard "gol" is an execute. The card on screen still says Confirm.
+  return lang === 'ne' ? 'कार्ड स्क्रिनमा छ। म चुप लागेपछि Confirm थिच्नुहोस्।'
+    : (lang === 'hi' ? 'कार्ड स्क्रीन पर है। मैं चुप होने के बाद Confirm दबाइए।'
+    : 'The card is on screen. Tap Confirm after I stop talking.');
+}
+/* Mirror language: the first text (Gol's own reply first — it mirrors
+   the conversation) that reads as Nepali/Hindi wins; else English. */
+function golPickLang() {
+  for (var i = 0; i < arguments.length; i++) {
+    var l = golDetectLang(arguments[i] || '');
+    if (l !== 'en') return l;
+  }
+  return 'en';
+}
+function golVoiceOn() {
+  try { return localStorage.getItem('golpos_speech') !== '0'; } catch (e) { return true; }
+}
+function golSetVoiceOn(on) {
+  try { localStorage.setItem('golpos_speech', on ? '1' : '0'); } catch (e) {}
+  if (!on) golStopVoice();
+  syncVoiceBtn();
+}
+function syncVoiceBtn() {
+  var b = null;
+  try { b = $('chatVoiceBtn'); } catch (e) {}
+  if (!b) return;
+  var on = golVoiceOn();
+  b.style.opacity = on ? '1' : '0.45';
+  b.title = on ? 'Gol voice on — tap to mute' : 'Gol voice off — tap to unmute';
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+var golAudioEl = null;
+var golSayGen = 0; /* speech generation: stopping the mouth (barge-in,
+   mute, end call) bumps it, and a gol-say fetch that resolves afterwards
+   must NOT start playing — the mouth stays stopped until a NEW line is
+   spoken. Without this, a barge-in could be undone a beat later by the
+   very fetch it interrupted. */
+function golStopVoice() {
+  golSayGen++;
+  if (golAudioEl) { try { golAudioEl.pause(); } catch (e) {} golAudioEl = null; }
+}
+var golSayInflight = 0;
+function golSpeak(say) {
+  if (!say || !say.text || !golVoiceOn()) return;
+  var text = String(say.text).slice(0, 400);
+  golLastSpoken = text;
+  golNoteSpoken(text);
+  var lang = say.lang || 'en';
+  golSayInflight++;
+  var myGen = golSayGen;
+  var saySettled = false;
+  var sayDone = function () { if (!saySettled) { saySettled = true; golSayInflight--; } };
+  try {
+    fetch('/store-api/gol-say.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text, lang: lang })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('say');
+      return r.blob();
+    }).then(function (b) {
+      sayDone();
+      if (myGen !== golSayGen) return; /* the mouth was stopped while this line rendered — stay stopped */
+      if (!golVoiceOn() || !b || !b.size) return;
+      golStopVoice();
+      var url = URL.createObjectURL(b);
+      golAudioEl = new Audio(url);
+      var p = golAudioEl.play();
+      if (p && p.catch) p.catch(function () { if (myGen === golSayGen) { golSayPendingUrl = url; } });
+    }).catch(function () { sayDone(); });
+  } catch (e) { sayDone(); }
+}
+/* If a play() is ever rejected (autoplay policy), the line is queued and
+   spoken on the very next tap instead of vanishing silently. */
+var golSayPendingUrl = null;
+document.addEventListener('pointerdown', function () {
+  if (golSayPendingUrl && golVoiceOn()) {
+    var u = golSayPendingUrl; golSayPendingUrl = null;
+    try { golAudioEl = new Audio(u); var pr = golAudioEl.play(); if (pr && pr.catch) pr.catch(function () {}); } catch (e) {}
+  }
+}, true);
+function leadOfSay(text) {
+  var t = String(text || '');
+  var i = t.indexOf('\n');
+  return i > 0 ? t.slice(0, i) : t;
+}
+/* The staged card's spoken summary, read off the RENDERED card: its
+   headline (.sc-what) plus its price line (.sc-prices) when it has one —
+   exactly what the cashier sees, never a second, drifting copy. */
+function posCardSayText(cardEl) {
+  if (!cardEl) return '';
+  var what = cardEl.querySelector('.sc-what');
+  var prices = cardEl.querySelector('.sc-prices');
+  var t;
+  if (what) { t = what.textContent + (prices ? ' ' + prices.textContent : ''); }
+  else { t = cardEl.textContent || ''; }
+  t = String(t || '').replace(/→/g, ' to ').replace(/\s+/g, ' ').trim();
+  t = t.replace(/^STAGED\s*/, '').replace(/\s*Confirm — Gol\s*$/, '');
+  if (t.length > 220) t = t.slice(0, 220);
+  return t;
+}
+/* Spoken discipline for LONG replies (Oct 29 real-device fix): a
+   list/report answer is never read out line by line — the mouth gets
+   header + total + top line + an on-screen pointer. */
+function posShortSay(t, lang) {
+  var raw = String(t || '');
+  var lines = raw.split('\n');
+  var kept = [];
+  for (var i = 0; i < lines.length; i++) { if (lines[i].trim()) kept.push(lines[i].trim()); }
+  var cleanAll = golCleanSay(raw);
+  var isList = kept.length >= 5;
+  if (!isList && cleanAll.length <= 320) {
+    var lead = leadOfSay(raw);
+    if (lead.length > 200) lead = lead.slice(0, 200);
+    return golCleanSay(lead) || null;
+  }
+  var head = golCleanSay(kept[0] || '');
+  if (head.length > 90) head = head.slice(0, 90);
+  var parts = [];
+  if (head) parts.push(head.replace(/[:.]$/, '') + '.');
+  var total = '';
+  for (var a = 0; a < kept.length; a++) {
+    var tm = kept[a].match(/total[^$]*(\$[\d,]+(?:\.\d{2})?)/i);
+    if (tm) { total = tm[1]; break; }
+  }
+  if (total) parts.push('Total ' + total + '.');
+  for (var b = 0; b < kept.length; b++) {
+    if (/^[\u2022\-*]/.test(kept[b])) {
+      var bl = golCleanSay(kept[b].replace(/^[\u2022\-*]\s*/, ''));
+      var bm = bl.match(/^(.*?)[\s\u2014-]*(\$[\d,]+(?:\.\d{2})?)/);
+      var top = bm ? (bm[1].replace(/[\s\u2014-]+$/, '') + ', ' + bm[2]) : bl.slice(0, 60);
+      if (top) parts.push('Top: ' + top + '.');
+      break;
+    }
+  }
+  parts.push(lang === 'ne' ? 'Pura suchi screen ma chha.' : (lang === 'hi' ? 'Poori list screen par hai.' : 'Full list is on screen.'));
+  var out = parts.join(' ');
+  return out.length > 260 ? out.slice(0, 260) : out;
+}
+/* Build the SHORT say payload for one fresh server response. */
+function posSayFor(r, sentText, cardEl) {
+  if (!r) return null;
+  // PIN waits are SILENT (owner lock, TASKS 229): while the server is
+  // waiting for a PIN (r.pin_ask — register locked or a gate armed),
+  // Gol never speaks. The pad asks with its dots, not with a voice.
+  if (r.pin_ask) return null;
+  if (r.card) {
+    var sum = posCardSayText(cardEl);
+    if (sum) {
+      var langS = golPickLang(r.reply, sentText, sum);
+      var cleanS = golCleanSay(sum);
+      if (cleanS) return { text: cleanS + '. ' + golConfirmLine(langS), lang: langS };
+    }
+  }
+  var t = r.reply || '';
+  if (!t) return null;
+  var langP = golPickLang(t, sentText);
+  var short = posShortSay(t, langP);
+  if (!short) return null;
+  return { text: short, lang: langP };
 }
 
 // --- photo lane: upload -> SAM reads it -> staged card ------------------------
@@ -1063,10 +1542,12 @@ async function sendPhoto(file, promptText) {
   const res = await fetch('../server/photo.php', { method: 'POST', body: fd });
   const r = await res.json();
   if (r.reply) { chatMsg(r.reply, 'gol'); }
-  if (r.card) { chatCard(r.card); }
+  let photoCardEl = null;
+  if (r.card) { photoCardEl = chatCard(r.card); }
+  try { golSpeak(posSayFor(r, promptText, photoCardEl)); } catch (e) {}
 }
 
-async function sendChat(text) {
+async function sendChat(text, callSeq) {
   noteChatLang(text); // the voice door follows the language of the chat
   // A counter-sensing ask is a camera errand, not a brain question: the
   // frame goes to the vision lane and its answer comes back as Gol's
@@ -1076,16 +1557,36 @@ async function sendChat(text) {
   const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(brainPayload({ message: text })) });
   const r = await res.json();
+  /* Call turn crossing (Nov 2): a newer Call turn was delivered while
+     this one was in flight (or the call has ended) — this reply
+     belongs to a superseded transcript and is dropped WHOLE: no
+     bubble, no card, no cart action, no speech. The user's own bubble
+     above stays — it is the transcript of what was actually said. */
+  if (typeof callSeq === 'number' && (callSeq < callTurnSeq || !callActive)) { return; }
   // The server consumed that message as a PIN entry — never leave the
   // digits standing in the chat history.
   if (r.pin_mask && mine) { mine.textContent = '••••'; }
   if (r.reply) { chatMsg(r.reply, 'gol'); }
+  if (r.cancelled_pid) { markStagedCancelled(r.cancelled_pid); }
+  else if (r.cancelled) { markStagedCancelled(''); }
   if (r.graph) { chatGraph(r.graph); }
+  if (r.who) { chatWho(r.who); }
+  if (r.dcard) { chatDCard(r.dcard); }
   applyLockState(r.locked, r.actor);
+  notePinState(r);
   if (r.unlock_event && r.unlock_event.id) { attachUnlockFrame(r.unlock_event.id); }
-  if (r.card) { chatCard(r.card); }
+  let cardEl = null;
+  if (r.card) { cardEl = chatCard(r.card); }
+  try { golSpeak(posSayFor(r, text, cardEl)); } catch (e) {}
   handleChatAction(r);
-  if (r.done) { loadCatalog(); loadSettings(); }
+  if (r.done) {
+    document.querySelectorAll('#chatBody .msg.card:not(.sc-cancelled)').forEach(function (t) {
+      var badge = t.querySelector('.sc-badge');
+      if (badge) badge.textContent = 'ENTERED';
+      t.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+    });
+    loadCatalog(); loadSettings();
+  }
 }
 
 // --- wiring -------------------------------------------------------------------
@@ -1416,7 +1917,7 @@ function orderSheetText(rec) {
 }
 async function openOrderSheet(id) {
   try {
-    const rec = await (await fetch(API + '?order_sheet=' + encodeURIComponent(id))).json();
+    const rec = await (await fetch(API + '?order_sheet=' + encodeURIComponent(id) + '&session=' + encodeURIComponent(SESSION_ID))).json();
     if (!rec || !rec.id) { showToast('That order sheet is gone.'); return; }
     orderSheetRec = rec;
     $('orderSheetTitle').textContent = 'Order — ' + rec.vendor;
@@ -1440,12 +1941,41 @@ $('orderSheetShare').addEventListener('click', async () => {
   catch (e) { showToast('Copy did not work here — the sheet is on screen to photograph.'); }
   ta.remove();
 });
-$('golBtn').addEventListener('click', () => { $('chatDrawer').classList.remove('hidden'); $('chatInput').focus(); });
-$('chatClose').addEventListener('click', () => { $('chatDrawer').classList.add('hidden'); loadCatalog(); });
+// Opening the chat must be something the owner can SEE (Oct 30 catch:
+// the lock modal's "Talk to Gol" looked dead because the panel was
+// already open and nothing moved). Open the drawer, bring the latest
+// line into view, and land the cursor — in the PIN pad when the
+// register is locked, else in the composer with a visible flash.
+function openChatToGol() {
+  $('chatDrawer').classList.remove('chat-vanish');
+  $('chatDrawer').classList.remove('hidden');
+  const cb = $('chatBody'); if (cb) { cb.scrollTop = 1e9; }
+  const pad = $('pinPad');
+  if (pad && !pad.classList.contains('hidden')) { focusPinPad(); return; }
+  const inp = $('chatInput');
+  try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); }
+  inp.classList.remove('composer-flash'); void inp.offsetWidth; inp.classList.add('composer-flash');
+}
+$('golBtn').addEventListener('click', openChatToGol);
+$('chatClose').addEventListener('click', () => { if (window.__golFoldPanel) { window.__golFoldPanel(); } else { if (!(typeof callActive !== 'undefined' && callActive)) { try { golStopVoice(); } catch (e) {} golSayPendingUrl = null; } $('chatDrawer').classList.add('hidden'); } loadCatalog(); });
 // --- quick-ask chips: one tap sends the everyday asks — no typing at the till.
 document.querySelectorAll('[data-chip]').forEach(b =>
   b.addEventListener('click', () => sendChat(b.dataset.chip)));
 $('chatForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = $('chatInput').value.trim();
+  if (v) { $('chatInput').value = ''; sendChat(v); }
+});
+// Enter sends (owner, Nov 2): the composer owns its Enter instead of
+// leaning on the form's implicit submission, which the skinned
+// panel/circle forms do not fire reliably. Same send path as the button
+// (the submit handler above): preventDefault stops the implicit submit,
+// and if a submit still slips through it reads the already-cleared box
+// and no-ops — one send, always. An IME composition (Nepali input) is
+// never a send: Enter mid-word just picks the composed word.
+$('chatInput').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.shiftKey) { return; }
+  if (e.isComposing || e.keyCode === 229) { return; }
   e.preventDefault();
   const v = $('chatInput').value.trim();
   if (v) { $('chatInput').value = ''; sendChat(v); }
@@ -1460,7 +1990,171 @@ $('photoInput').addEventListener('change', (e) => {
   sendPhoto(f, hint);
   e.target.value = '';
 });
-$('lockChatBtn').addEventListener('click', () => { $('chatDrawer').classList.remove('hidden'); $('chatInput').focus(); });
+$('lockChatBtn').addEventListener('click', openChatToGol);
+// ---- The chat's PIN state (Oct 30) ----------------------------------
+// When the register is locked — or a gated ask demands the admin PIN —
+// Gol ASKS in the chat: a masked pad inside the drawer. Digits live
+// only in the pad: never in the message box, never as a chat bubble,
+// never in the transcript or history. The brain drives the state via
+// r.pin_ask on every reply (true exactly while it waits for a PIN);
+// typed composer digits still work and stay masked by the brain's
+// pin_mask, but the pad is the front door. One PIN story: the pad
+// submits to the same brain.php turn the chat uses, so the chat-made
+// admin PIN is the register unlock.
+let pinDigits = '';
+function renderPinDots() {
+  const el = $('pinPadDots'); if (el) { el.textContent = '•'.repeat(pinDigits.length); }
+  const go = $('pinPadGo'); if (go) { go.disabled = pinDigits.length < 4; }
+}
+function focusPinPad() { const p = $('pinPad'); if (p) { p.tabIndex = -1; try { p.focus({ preventScroll: true }); } catch (e) { p.focus(); } } }
+function openPinPad() {
+  const p = $('pinPad'); if (!p) { return; }
+  const wasHidden = p.classList.contains('hidden');
+  p.classList.remove('hidden'); renderPinDots();
+  // PIN LOCK TAKEOVER (owner, Nov 2 late): while Gol waits for a PIN the
+  // pad owns the WHOLE chat surface — chat, chips and composer hide, the
+  // pad fills the disc/panel on the globe. closePinPad hands it back.
+  const dr = $('chatDrawer'); if (dr) { dr.classList.add('chat-locked'); }
+  if (wasHidden && !$('chatDrawer').classList.contains('hidden')) { focusPinPad(); }
+  if (window.__golPlaceMoon) { window.__golPlaceMoon(); }
+}
+function closePinPad() { const p = $('pinPad'); if (p) { p.classList.add('hidden'); } const dr = $('chatDrawer'); if (dr) { dr.classList.remove('chat-locked'); } pinDigits = ''; renderPinDots(); if (window.__golPlaceMoon) { window.__golPlaceMoon(); } }
+function notePinState(r) {
+  if (!r) { return; }
+  if (typeof r.pin_ask === 'boolean') { if (r.pin_ask) { openPinPad(); } else { closePinPad(); } }
+}
+function pinKey(k) {
+  if (k === 'clear') { pinDigits = ''; }
+  else if (k === 'back') { pinDigits = pinDigits.slice(0, -1); }
+  else if (/^[0-9]$/.test(k) && pinDigits.length < 6) { pinDigits += k; }
+  renderPinDots();
+}
+async function pinPadSubmit() {
+  if (pinDigits.length < 4) { return; }
+  const digits = pinDigits; pinDigits = ''; renderPinDots();
+  let r = null;
+  try {
+    const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(brainPayload({ message: digits })) });
+    r = await res.json();
+  } catch (e) { chatMsg('Connection hiccup — try the PIN again.', 'gol'); return; }
+  if (r.reply) { chatMsg(r.reply, 'gol'); }
+  if (r.cancelled_pid) { markStagedCancelled(r.cancelled_pid); }
+  else if (r.cancelled) { markStagedCancelled(''); }
+  if (r.graph) { chatGraph(r.graph); }
+  if (r.who) { chatWho(r.who); }
+  if (r.dcard) { chatDCard(r.dcard); }
+  applyLockState(r.locked, r.actor);
+  if (r.unlock_event && r.unlock_event.id) { attachUnlockFrame(r.unlock_event.id); }
+  let cardEl = null;
+  if (r.card) { cardEl = chatCard(r.card); }
+  try { golSpeak(posSayFor(r, '', cardEl)); } catch (e) {}
+  handleChatAction(r);
+  notePinState(r);
+  if (r.done) { loadCatalog(); loadSettings(); }
+}
+$('pinPadGrid').querySelectorAll('button').forEach(b => b.addEventListener('click', () => pinKey(b.dataset.pin)));
+$('pinPadGo').addEventListener('click', pinPadSubmit);
+// --- the lock screen's own pad (TASKS 229, Nov 2) ----------------------------
+// The PIN screen is the register's STARTING screen: the pad sits on the
+// lock card itself, silent — Gol never asks for a PIN aloud (posSayFor
+// returns null while the server waits for one). Digits ride the same
+// brain turn as the chat pad; a failed try answers as TEXT on the lock
+// card only — never a chat bubble, never a voice.
+let lockPinDigits = '';
+function renderLockPinDots() {
+  const el = $('lockPinDots'); if (el) { el.textContent = '•'.repeat(lockPinDigits.length); }
+  const go = $('lockPinGo'); if (go) { go.disabled = lockPinDigits.length < 4; }
+}
+function lockPinKey(k) {
+  if (k === 'clear') { lockPinDigits = ''; }
+  else if (k === 'back') { lockPinDigits = lockPinDigits.slice(0, -1); }
+  else if (/^[0-9]$/.test(k) && lockPinDigits.length < 6) { lockPinDigits += k; }
+  renderLockPinDots();
+}
+async function lockPinSubmit() {
+  if (lockPinDigits.length < 4) { return; }
+  const digits = lockPinDigits; lockPinDigits = ''; renderLockPinDots();
+  const msgEl = $('lockPinMsg'); if (msgEl) { msgEl.textContent = ''; }
+  let r = null;
+  try {
+    const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(brainPayload({ message: digits })) });
+    r = await res.json();
+  } catch (e) { if (msgEl) { msgEl.textContent = 'Connection hiccup — try the PIN again.'; } return; }
+  applyLockState(r.locked, r.actor);
+  notePinState(r);
+  if (r.locked) { if (msgEl && r.reply) { msgEl.textContent = r.reply; } return; }
+  if (r.unlock_event && r.unlock_event.id) { attachUnlockFrame(r.unlock_event.id); }
+  if (r.reply) { chatMsg(r.reply, 'gol'); }
+  if (r.done) { loadCatalog(); loadSettings(); }
+}
+$('lockPinGrid').querySelectorAll('button').forEach(b => b.addEventListener('click', () => lockPinKey(b.dataset.lpin)));
+$('lockPinGo').addEventListener('click', lockPinSubmit);
+document.addEventListener('keydown', (e) => {
+  const ov = $('lockOverlay');
+  if (!ov || ov.classList.contains('hidden')) { return; }
+  // When the chat drawer is open its own pad owns the keyboard.
+  if (!$('chatDrawer').classList.contains('hidden')) { return; }
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') { return; }
+  if (/^[0-9]$/.test(e.key)) { lockPinKey(e.key); e.preventDefault(); }
+  else if (e.key === 'Backspace') { lockPinKey('back'); e.preventDefault(); }
+  else if (e.key === 'Enter') { lockPinSubmit(); e.preventDefault(); }
+});
+renderLockPinDots();
+// --- owner PIN setting sheet (TASKS 230/231, Nov 2) ---------------------------
+// The manual door to the same write the Gol chat stages as a card: the
+// owner sets every PIN here (Owner panel → Team) or by chat; an
+// employee session never reaches it — the Team card is owner-domain and
+// the endpoint re-checks the admin session server-side.
+let pinSetTarget = null;
+function pinSetError(text) {
+  const e = $('pinSetError');
+  if (!e) { return; }
+  e.textContent = text || '';
+  e.classList.toggle('hidden', !text);
+}
+function openPinSetSheet(target, name) {
+  pinSetTarget = target;
+  $('pinSetTitle').textContent = target === 'admin' ? 'Reset the admin PIN' : 'Set PIN — ' + name;
+  $('pinSetInput').value = ''; $('pinSetInput2').value = '';
+  pinSetError('');
+  $('pinSetModal').classList.remove('hidden');
+  try { $('pinSetInput').focus({ preventScroll: true }); } catch (e) {}
+}
+function closePinSetSheet() { $('pinSetModal').classList.add('hidden'); pinSetTarget = null; }
+async function pinSetSave() {
+  const p1 = $('pinSetInput').value.trim(), p2 = $('pinSetInput2').value.trim();
+  if (!/^\d{4,6}$/.test(p1)) { pinSetError('The PIN must be 4–6 digits.'); return; }
+  if (p1 !== p2) { pinSetError("Those two PINs don't match — try again."); return; }
+  let r = null;
+  try {
+    const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin_set: { target: pinSetTarget, pin: p1 }, session: SESSION_ID }) });
+    r = await res.json();
+  } catch (e) { pinSetError('Connection hiccup — nothing was saved. Try again.'); return; }
+  if (!r || !r.ok) {
+    pinSetError(r && r.error === 'pin_required'
+      ? 'That needs the admin PIN first — unlock as owner, then set PINs.'
+      : ((r && r.error) || 'Could not save that PIN.'));
+    return;
+  }
+  const who = pinSetTarget === 'admin' ? 'Admin PIN' : (r.name || 'PIN');
+  closePinSetSheet();
+  showToast(who + ' updated — hand it over yourself; it is not shown again.');
+  $('ownerBtn').click();
+}
+$('pinSetCancel').addEventListener('click', closePinSetSheet);
+$('pinSetSave').addEventListener('click', pinSetSave);
+document.addEventListener('keydown', (e) => {
+  const p = $('pinPad');
+  if (!p || p.classList.contains('hidden') || $('chatDrawer').classList.contains('hidden')) { return; }
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') { return; }
+  if (/^[0-9]$/.test(e.key)) { pinKey(e.key); e.preventDefault(); }
+  else if (e.key === 'Backspace') { pinKey('back'); e.preventDefault(); }
+  else if (e.key === 'Enter') { pinPadSubmit(); e.preventDefault(); }
+});
+renderPinDots();
 $('myTasksBtn').addEventListener('click', openMyTasks);
 $('tasksClose').addEventListener('click', () => $('tasksModal').classList.add('hidden'));
 $('taskNoteSend').addEventListener('click', () => {
@@ -1472,12 +2166,37 @@ $('taskNoteSend').addEventListener('click', () => {
   sendChat('boss lai bhandeu: ' + v);
 });
 { const lb = $('smLockBtn'); if (lb) { lb.addEventListener('click', () => { $('settingsPop').classList.add('hidden'); sendChat('lock'); }); } }
+{ const mb = $('smMrstoreBtn'); if (mb) { mb.addEventListener('click', () => { $('settingsPop').classList.add('hidden'); openMrstoreDoor(); }); } }
+{ const tb = $('smTeamBtn'); if (tb) { tb.addEventListener('click', () => { $('settingsPop').classList.add('hidden'); openOwnerAtTeam(); }); } }
+{ const ac = $('actorChip'); if (ac) { ac.addEventListener('click', () => { if (lockActor && lockActor.role === 'admin') { $('ownerBtn').click(); } }); } }
+// Team lives in the Owner panel, and the owner kept looking for it in
+// the Settings gear menu (Nov 2 late, twice: "Team aaena"). Two extra
+// doors now lead to the same panel: the Settings → Team row (wired
+// just above, rendered admin-only like the MR.STORE row) and the
+// "Owner · admin" chip, which read as a button but was a status label
+// — it opens the panel for an admin and stays a plain label for an
+// employee (the leak rules keep every team door admin-only).
+// openOwnerAtTeam runs the one panel load, then walks the view down
+// to the Team card once its content lands (or its retry fallback does).
+function openOwnerAtTeam() {
+  $('ownerBtn').click();
+  const card = $('ownerTeam');
+  if (!card || !card.scrollIntoView) { return; }
+  let tries = 0;
+  const iv = setInterval(() => {
+    tries++;
+    if (card.querySelector('.team-person, #teamRetryBtn') || tries >= 30) {
+      clearInterval(iv);
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, 100);
+}
 $('ownerBtn').addEventListener('click', async () => {
   $('ownerPanel').classList.remove('hidden');
   $('ownerStoreName').textContent = $('storeName').textContent;
   const res = await fetch(API + '?summary'); const s = await res.json();
   const pres = await fetch(API + '?pending'); const p = await pres.json();
-  const fres = await fetch(API + '?feed'); const feed = await fres.json();
+  const fres = await fetch(API + '?feed&session=' + encodeURIComponent(SESSION_ID)); const feed = await fres.json();
   const feedHtml = Array.isArray(feed) && feed.length
     ? `<h3 class="ocard-title">Demo feed <span class="ocard-count">${feed.length}</span></h3>` + feed.slice().reverse().map(f =>
         `<p class="feed-line">🖼️ ${f.caption || (f.name + ' — ' + money(f.price))}</p>`).join('')
@@ -1508,7 +2227,7 @@ $('ownerBtn').addEventListener('click', async () => {
   // The sheet button opens the confirmed order to print or share for the
   // rep; staging and confirming themselves live in the Gol chat.
   try {
-    const od = await (await fetch(API + '?orders')).json();
+    const od = await (await fetch(API + '?orders&session=' + encodeURIComponent(SESSION_ID))).json();
     const stWord = { prepared: 'Prepared — waiting for "gol"', confirmed: 'Confirmed — sheet ready', given: 'Given to the rep', none: 'Not prepared yet' };
     const dayName = (k) => ({ sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' }[k] || k);
     const due = (od.visits || []).filter(v => v.due_today);
@@ -1528,33 +2247,73 @@ $('ownerBtn').addEventListener('click', async () => {
   // Team card + unlock feed + What's Out: the employee lane's owner
   // side, from the one ?team read (owner session — the endpoint 403s
   // an unelevated session and the cards simply stay empty).
+  // LIGHT MIRROR (leak fix, Nov 2): the payload now carries counts,
+  // names and statuses only — no task item texts (the price-gap items
+  // name cost work), no note texts, no trail texts — so this card
+  // renders the counts and points at the Gol chat for the detail.
+  // A failed team read (a mid-deploy blip, a 403 from a session whose
+  // admin flag lagged the unlock) used to leave this card SILENTLY
+  // empty — the owner saw "Team is gone" with no trace and no way back
+  // (owner catch, Nov 2 late). The card now says so and offers a retry
+  // (a plain re-run of this panel load). The fallback carries no team
+  // data at all — the light-mirror leak fix stays closed.
+  const teamFail = () => {
+    $('ownerTeam').innerHTML =
+      `<h3 class="ocard-title">Team <small>— tasks, notes, the day's trail</small></h3>` +
+      `<p class="owner-muted">Team couldn't load just now. <button type="button" class="pin-set-btn" id="teamRetryBtn">Retry</button></p>`;
+    const rb = $('teamRetryBtn');
+    if (rb) { rb.addEventListener('click', () => $('ownerBtn').click()); }
+  };
   try {
     const tm = await (await fetch(API + '?team&session=' + encodeURIComponent(SESSION_ID))).json();
     if (tm && Array.isArray(tm.people)) {
-      const srcTag = (t) => t.source === 'gol' ? ' <small>(Gol)</small>' : ' <small>(owner)</small>';
+      const tn = (v) => Array.isArray(v) ? v.length : (Number(v) || 0);
       $('ownerTeam').innerHTML =
         `<h3 class="ocard-title">Team <small>— tasks, notes, the day's trail</small></h3>` +
+        // PIN setting lives HERE (TASKS 230/231, Nov 2): the panel's one
+        // deliberate exception to the mirror rule — the owner sets every
+        // PIN on this card and hands it out; the same write is staged
+        // from the Gol chat. PINs are never displayed, only their state.
+        `<div class="team-person"><b>Owner</b> <small>admin PIN — the register's master key</small>` +
+        ` <span class="pin-state${tm.admin_has_pin ? '' : ' no'}">${tm.admin_has_pin ? 'PIN set' : 'No PIN yet'}</span>` +
+        `<button type="button" class="pin-set-btn" data-pinset="admin" data-pinname="Owner (admin PIN)">${tm.admin_has_pin ? 'Reset PIN' : 'Set PIN'}</button></div>` +
         (tm.people.length ? tm.people.map(pp => {
           const tr = pp.trail || {};
-          const myTasks = (tm.tasks || []).filter(t => t.employee_email === pp.email && t.status !== 'superseded');
-          const openLines = myTasks.flatMap(t => (t.items || []).filter(i => !i.done)
-            .map(i => `<div class="sc-line">• ${esc(i.text)}${srcTag(t)}</div>`)).join('');
-          const noteLines = (pp.notes || []).map(n =>
-            `<div class="sc-line">${n.read ? '' : '🔵 '}"${esc(n.text)}" — ${esc(new Date(n.at).toLocaleString())}</div>`).join('');
           return `<div class="team-person"><b>${esc(pp.name)}</b> <small>${esc(pp.role)} · ${pp.tasks_open} open · ${pp.tasks_done} done${pp.notes_unread ? ' · ' + pp.notes_unread + ' unread note(s)' : ''}</small>` +
-            (openLines || '') + (noteLines || '') +
-            `<div class="sc-line">Din bhari: ${(tr.done || []).length} done · ${(tr.notes || []).length} note(s) · ${(tr.outs || []).length} out report(s) · ${(tr.counts || []).length} count(s) · ${(tr.questions || []).length} question(s)</div></div>`;
+            ` <span class="pin-state${pp.has_pin ? '' : ' no'}">${pp.has_pin ? 'PIN set' : 'No PIN yet'}</span>` +
+            `<button type="button" class="pin-set-btn" data-pinset="${esc(pp.email)}" data-pinname="${esc(pp.name)}">${pp.has_pin ? 'Reset PIN' : 'Set PIN'}</button>` +
+            `<div class="sc-line">Din bhari: ${tn(tr.done)} done · ${tn(tr.notes)} note(s) · ${tn(tr.outs)} out report(s) · ${tn(tr.counts)} count(s) · ${tn(tr.questions)} question(s) — the work itself lives in the Gol chat.</div></div>`;
         }).join('') : '<p class="owner-muted">No employees yet — add one in the Gol chat.</p>') +
-        ((tm.role_tasks || []).length
-          ? '<p class="owner-muted">Unassigned (role) tasks: ' + tm.role_tasks.flatMap(t => (t.items || []).filter(i => !i.done).map(i => esc(i.text))).join(' · ') + '</p>' : '') +
+        (() => {
+          // Unassigned (owner inbox) tasks: a tidy summary, never a raw
+          // dump of every task text (owner catch, Oct 31 — the inbox held
+          // 700+ generated tasks and the joined wall read as a data leak).
+          const rt = tm.role_tasks || [];
+          const counts = rt.filter(t => t.kind === 'whatsout_aging');
+          const countNames = counts.map(t => String(t.subject || '').replace(/^count:/, ''))
+            .filter(Boolean).slice(0, 5);
+          const otherOpen = rt.filter(t => t.kind !== 'whatsout_aging')
+            .reduce((n, t) => n + (t.open_count !== undefined ? (Number(t.open_count) || 0)
+              : (t.items || []).filter(i => !i.done).length), 0);
+          let s = '';
+          if (counts.length) {
+            s += `<p class="owner-muted">Stock counts waiting: ${counts.length}</p>` +
+              countNames.map(n => `<div class="sc-line">• ${esc(n)}</div>`).join('') +
+              (counts.length > countNames.length ? `<p class="owner-muted">…and ${counts.length - countNames.length} more — work them in the Gol chat.</p>` : '');
+          }
+          if (otherOpen) {
+            s += `<p class="owner-muted">${otherOpen} more task${otherOpen === 1 ? '' : 's'} waiting in the owner inbox — see them in the Gol chat.</p>`;
+          }
+          return s;
+        })() +
         ((tm.pay_requests || []).length
           ? '<h3 class="ocard-title">Pay requests <small>— waiting on you; decide in the Gol chat ("pay requests")</small></h3>' +
-            tm.pay_requests.map(r => {
-              const segs = (r.segments || []).map(s => `${String(Number(s.hours) || 0)} hrs × ${money(s.rate)}`).join(' + ');
-              const corr = (r.corrections || []).map(c => `<div class="sc-line">Her words: "${esc(c)}"</div>`).join('');
-              return `<div class="team-person"><b>${esc(r.name)}</b> <small>${esc(r.period)} · ${segs} = ${money(r.amount)}</small>${corr}</div>`;
-            }).join('')
+            tm.pay_requests.map(r =>
+              `<div class="team-person"><b>${esc(r.name)}</b> <small>${esc(r.period)} · ${String(Number(r.hours) || 0)} hrs = ${money(r.amount)}</small></div>`
+            ).join('')
           : '');
+      $('ownerTeam').querySelectorAll('[data-pinset]').forEach(b =>
+        b.addEventListener('click', () => openPinSetSheet(b.dataset.pinset, b.dataset.pinname)));
       $('ownerUnlocks').innerHTML =
         `<h3 class="ocard-title">Unlock feed <small>— who opened the register, and when</small></h3>` +
         ((tm.unlocks || []).length ? tm.unlocks.map(u =>
@@ -1571,8 +2330,8 @@ $('ownerBtn').addEventListener('click', async () => {
         ((tm.counts || []).length
           ? '<h3 class="ocard-title">Counts filed</h3>' + tm.counts.map(c =>
             `<div class="rep-row"><span>${esc(c.name)}</span><b>counted ${esc(String(c.counted))} · system ${c.system === null || c.system === undefined ? '—' : esc(String(c.system))}</b><span>${esc(c.by_name || '')}</span></div>`).join('') : '');
-    }
-  } catch (e) { /* team read is owner-domain; an unelevated panel just skips it */ }
+    } else { teamFail(); }
+  } catch (e) { teamFail(); }
   await loadSettings(); renderSettingsView();
   renderDayClose();
   showReport('today');
@@ -1634,7 +2393,7 @@ async function renderDayClose() {
   btn.classList.remove('armed');
   try {
     const sum = await (await fetch(API + '?summary')).json(); // sum.date = today
-    const r = await (await fetch(API + '?report&date=' + sum.date)).json();
+    const r = await (await fetch(API + '?report&date=' + sum.date + '&session=' + encodeURIComponent(SESSION_ID))).json();
     if (r.close) {
       btn.textContent = 'Re-close today (refresh the record)';
       const nb = (r.close.batches || []).length;
@@ -1670,12 +2429,13 @@ async function showReport(mode, dateVal) {
     b.classList.toggle('on', b.dataset.report === mode));
   const body = $('reportBody');
   if (mode === 'week') {
-    const r = await (await fetch(API + '?report&week=1')).json();
+    const r = await (await fetch(API + '?report&week=1&session=' + encodeURIComponent(SESSION_ID))).json();
+    const wkTxns = r.days.every(d => d.txns != null) ? r.totals.txns + ' sales · ' : '';
     body.innerHTML = r.days.map(d =>
       `<div class="rep-row"><span>${d.date}</span><b>${money(d.gross)}</b>` +
-      `<span>${d.txns} sales · cash ${money(d.cash)} · card ${money(d.card)}${d.closed ? ' · <em class="rep-closed">Closed</em>' : ''}</span></div>`).join('') +
+      `<span>${d.txns != null ? d.txns + ' sales · ' : ''}cash ${money(d.cash)} · card ${money(d.card)}${d.closed ? ' · <em class="rep-closed">Closed</em>' : ''}</span></div>`).join('') +
       `<div class="rep-row rep-total"><span>This week</span><b>${money(r.totals.gross)}</b>` +
-      `<span>${r.totals.txns} sales · cash ${money(r.totals.cash)} · card ${money(r.totals.card)}</span></div>`;
+      `<span>${wkTxns}cash ${money(r.totals.cash)} · card ${money(r.totals.card)}</span></div>`;
     return;
   }
   const sum = await (await fetch(API + '?summary')).json(); // sum.date = the register's today
@@ -1685,11 +2445,11 @@ async function showReport(mode, dateVal) {
     date = d.toISOString().slice(0, 10);
   }
   if (mode === 'custom' && dateVal) { date = dateVal; }
-  const r = await (await fetch(API + '?report&date=' + date)).json();
+  const r = await (await fetch(API + '?report&date=' + date + '&session=' + encodeURIComponent(SESSION_ID))).json();
   const src = r.close || r.summary;
   body.innerHTML =
     `<div class="rep-row rep-total"><span>${date}${r.close ? ' · <em class="rep-closed">Closed</em>' : ''}</span>` +
-    `<b>${money(src.gross)}</b><span>${src.txns} sales · cash ${money(src.cash)} · card ${money(src.card)}</span></div>`;
+    `<b>${money(src.gross)}</b><span>${src.txns != null ? src.txns + ' sales · ' : ''}cash ${money(src.cash)} · card ${money(src.card)}</span></div>`;
 }
 document.querySelectorAll('[data-report]').forEach(b =>
   b.addEventListener('click', () => showReport(b.dataset.report)));
@@ -2369,7 +3129,7 @@ function startVoice() {
       const s = (r[0] && r[0].transcript) || '';
       if (r.isFinal) { finalText += s; } else { interim += s; }
     }
-    if (interim) { $('chatInput').value = interim; }
+    if (interim) { callCapShow(interim); } /* display-only caption (TASKS 215): interim words never become the input value */
     if (finalText.trim()) { voiceFinal(finalText.trim()); }
   };
   recog.onerror = (ev) => {
@@ -2383,7 +3143,7 @@ function startVoice() {
       showToast('Voice stumbled — typing works as always.');
     }
   };
-  recog.onend = () => setVoiceUi(false);
+  recog.onend = () => { setVoiceUi(false); callCapHide(); };
   setVoiceUi(true);
   try { recog.start(); } catch (e) { setVoiceUi(false); }
 }
@@ -2391,9 +3151,734 @@ function startVoice() {
 // sendChat a typed message takes — same session, same brain, same card.
 function voiceFinal(text) {
   setVoiceUi(false);
+  callCapHide();
   $('chatInput').value = '';
+  if (golIsEchoConfirm(text)) {
+    chatMsg('Ignored my own voice. The card is still waiting — tap Confirm, or say gol after I am quiet.', 'gol');
+    return;
+  }
   sendChat(text);
 }
+
+// --- Gol CALL: the phone-metaphor voice loop (owner lock, Oct 29) ------------
+// The Call button in the Gol panel header turns the panel into a call:
+// tap Call -> Gol speaks her greeting -> the ear opens only once her
+// voice has finished -> whatever is heard rides the SAME sendChat a
+// typed message takes (staged cards, spoken "gol" confirms, spoken
+// entered summaries all come from that untouched path) -> the ear
+// re-opens for the next turn -> End call (or a stop word) hangs up:
+// recognition stops, audio stops, the pre-call voice pref is restored.
+// The composer/panel press-to-talk mic above is unchanged.
+const IC_PHONE = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+const IC_PHONE_DOWN = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g transform="rotate(135 12 12)"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></g></svg>';
+let callActive = false;
+let callListening = false;
+let callRecog = null;
+let callHeard = false;
+let callJustSent = false;
+let callWatcher = null;
+let callLastActivity = 0;
+let callMinWait = 1200;
+let callTurnSeq = 0;        // stamps every delivered Call turn, newest last
+let callSendBusy = false;   // a Call turn's brain reply is in flight
+let callPendingTurn = null; // the ONE queued Call turn — latest wins, replaced whole
+let callPrevVoiceOn = true;
+/* CALL-EAR SUPERVISOR (Oct 29 real-device fix): recognition sessions
+   that end without a delivered turn are counted; after 3 the ear
+   stops auto-retrying and the state pill offers "Tap to talk". */
+let callEarFails = 0;
+let callEarTap = false;
+let callEngine = '';
+let callTriedHear = false;
+let callTriedSR = false;
+/* --- TRUE BARGE-IN + LIVE CAPTION + SERVER-STT EAR (owner order Nov 2,
+   TASKS 215 — the Muse-call benchmark behaviours) ---------------------
+   The old loop was WINDOWED: the ear opened only after Gol's voice
+   ended + 1.5s of quiet, so the owner had to talk over a reply that
+   never stopped (TASKS 195 live catch). Now the ear stays OPEN while
+   Gol speaks:
+   - SR engine: a continuous WATCHER recognition runs during speech.
+     Its words type live into the chat as a display-only caption; a
+     transcript matching Gol's own spoken line is self-hearing and is
+     dropped by the Nov 2 guards (golIsSelfEcho / golIsEchoConfirm);
+     a DIVERGING human line stops the mouth mid-reply and takes the
+     turn — the watcher hands the words it already heard to the turn
+     ear as a seed, so nothing the human said is lost.
+   - hear engine (Safari / no usable SR): the mic stream stays open
+     during speech behind a voice-activity watch; sustained human
+     loudness stops the mouth and the capture ear takes the turn, its
+     transcript passing the same self-echo guard before it can send.
+   The caption NEVER touches the composer: the Oct 29 buffered-send
+   discipline is unchanged — interim words are display only, and a
+   turn sends only through callDeliverTurn -> sendChat, exactly as a
+   typed message sends. */
+function callEarLang() {
+  /* The cold-Call ear bug (owner live catch, Nov 2 morning): the
+     recognizer defaulted to en-US and only learned Nepali AFTER a
+     Nepali chat turn, so a cold Call garbled "Coke" into "Google
+     stock price". The Call ear now opens in the conversation's mix:
+     a stored preference wins; otherwise ne-NP — Chrome's Nepali
+     recognizer carries English words acceptably, while en-US wrecks
+     Nepali. The fleet server ear (gol-hear, lang=ne) is built on the
+     same finding. The press-to-talk mic keeps voiceLangPref(). */
+  const p = voiceLangPref();
+  return p && p !== 'en-US' ? p : 'ne-NP';
+}
+function callHearSupported() {
+  try { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && (window.MediaRecorder || window.AudioContext || window.webkitAudioContext)); } catch (e) { return false; }
+}
+function callSupported() { return voiceSupported() || callHearSupported(); }
+function callPickEngine() {
+  /* EAR FIX (Nov 2, TASKS 215 slice 2 — owner: "majja le timro jasto
+     banau", the Muse-call benchmark): the SERVER ear is now the
+     PRIMARY Call ear on every browser that can capture mic audio.
+     Browser SpeechRecognition garbles the Nepali+English mix (the
+     Nov 2 morning "Coke" -> "Google stock price" failure: a word
+     never spoken, invented by the recognizer), while gol-hear with
+     lang=ne runs gpt-4o-mini-transcribe first and transcribes the
+     mix faithfully — measured Nov 2 on fleet-TTS lines through the
+     live endpoint: "Red Bull ko stock kati cha" came back
+     near-verbatim and the English control perfect, where the
+     no-hint whisper-first road returned Hindi-flavoured nonsense.
+     SR survives as the FALLBACK only: it is the pick when capture
+     is unavailable, and a failing hear ear hands the call to it
+     (callEarSwitchToSR). Apple-vendor browsers were already
+     hear-only — their SR cannot be trusted (fleet finding). */
+  if (callHearSupported()) { return 'hear'; }
+  if (voiceSupported()) { return 'sr'; }
+  return '';
+}
+function callEarSwitchToHear() {
+  if (callEngine === 'sr' && !callTriedHear && callHearSupported()) {
+    callTriedHear = true; callEngine = 'hear'; callEarFails = 0; callEarTap = false;
+    return true;
+  }
+  return false;
+}
+function callEarSwitchToSR() {
+  if (callEngine === 'hear' && !callTriedSR && voiceSupported()) {
+    callTriedSR = true; callEngine = 'sr'; callEarFails = 0; callEarTap = false;
+    return true;
+  }
+  return false;
+}
+/* --- the live caption: the human's words typing in the chat ---------- */
+function callCapShow(text) {
+  const t = String(text || '').trim();
+  if (!t) { return; }
+  const body = $('chatBody');
+  if (!body) { return; }
+  let cap = document.getElementById('chatLiveCap');
+  if (!cap) {
+    cap = document.createElement('div');
+    cap.id = 'chatLiveCap';
+    cap.className = 'msg me live-cap';
+    cap.setAttribute('aria-hidden', 'true');
+  }
+  if (cap.parentNode !== body) { body.appendChild(cap); }
+  if (cap.textContent !== t) { cap.textContent = t; }
+  body.scrollTop = 1e6;
+}
+function callCapHide() {
+  const cap = document.getElementById('chatLiveCap');
+  if (cap && cap.parentNode) { cap.parentNode.removeChild(cap); }
+}
+function callCapText() {
+  const cap = document.getElementById('chatLiveCap');
+  return cap ? cap.textContent : null;
+}
+/* --- the ONE delivery seam for a heard turn (every ear engine) ------- */
+/* Fragment gate (owner ear test, Nov 2): cross-talk blips and mic
+   noise transcribe as 1–2 letter scraps ("bu?") and were DELIVERED as
+   turns — Gol answered "I didn't catch that" to nobody, and the
+   spoken reply fed the loop. A sub-threshold fragment is dropped
+   silently at this seam: no bubble, no brain call, the call stays
+   live and the ear re-opens on the next tick. Real short turns are
+   never fragments: the confirm word, yes/no words and greetings
+   (which carry meaning at the till — a bare greeting cancels an
+   armed card) always pass, as does anything carrying a digit. The
+   honest "didn't catch that" still answers real FULL utterances the
+   brain cannot resolve — those are sentences, not scraps. */
+function callIsFragment(text) {
+  const core = String(text || '').replace(/[^\p{L}\p{N}]+/gu, '');
+  if (core.length === 0) { return true; }
+  if (core.length > 2) { return false; }
+  if (/\p{N}/u.test(core)) { return false; }
+  return !/^(ho|ok|no|hi|हो)$/iu.test(core);
+}
+function callDeliverTurn(text) {
+  callCapHide();
+  if (callIsFragment(text)) {
+    /* dropped silently — no turn, no reply; the ear re-opens. The
+       turn ear's state is closed exactly as for a delivered turn, so
+       nothing waits on a recognizer end-event that may never come. */
+    callHeard = true;
+    callListening = false;
+    callLastActivity = Date.now(); callMinWait = 400; callPaint();
+    return;
+  }
+  callEarFails = 0; callEarTap = false;
+  callHeard = true;
+  callListening = false;
+  if (/^(bas|बस|stop|end call|hang up|रोक)\b/i.test(text)) { endCall(); return; }
+  if (golIsEchoConfirm(text)) {
+    chatMsg('Ignored my own voice. The card is still waiting — tap Confirm, or say gol after I am quiet.', 'gol');
+    callLastActivity = Date.now(); callMinWait = 800; callPaint();
+    return;
+  }
+  callJustSent = true;
+  callMinWait = 2600;
+  callLastActivity = Date.now();
+  callPaint();
+  /* Latest-wins turn queue (owner ear test, Nov 2 — turn crossing):
+     while a brain reply is in flight the ear can already deliver the
+     next transcript. Turns used to fire independent fetches whose
+     replies rendered in COMPLETION order, so a slow reply to an older
+     cross-talk sentence landed as the "answer" under the newest
+     question (the M&M's sentence answered a stock question). Now a
+     turn delivered mid-flight takes the single queue slot — replacing
+     any turn already queued, which is thereby superseded BEFORE its
+     processing began and is never sent — and the in-flight reply is
+     dropped on arrival by sendChat's sequence check. Only the latest
+     user intent is ever answered. */
+  const seq = ++callTurnSeq;
+  if (callSendBusy) {
+    callPendingTurn = { text: text, seq: seq };
+    return;
+  }
+  callSendTurn(text, seq);
+}
+function callSendTurn(text, seq) {
+  callSendBusy = true;
+  const finish = () => {
+    callSendBusy = false;
+    if (callPendingTurn) {
+      const nx = callPendingTurn; callPendingTurn = null;
+      if (callActive) { callSendTurn(nx.text, nx.seq); }
+    }
+  };
+  sendChat(text, seq).then(finish, finish);
+}
+function callBargeWorthy(t) {
+  const s = String(t || '').trim();
+  if (!s) { return false; }
+  return s.split(/\s+/).length >= 2 || s.length >= 5;
+}
+/* --- the barge-in watcher (SR engine): ears open while Gol speaks ---- */
+let callWatchRec = null;
+function callStopWatch() {
+  if (callWatchRec) {
+    const r = callWatchRec; callWatchRec = null;
+    try { r.onresult = null; r.onerror = null; r.onend = null; } catch (e) { /* noop */ }
+    try { r.stop(); } catch (e) { try { r.abort(); } catch (e2) { /* noop */ } }
+  }
+}
+function callOpenWatch() {
+  if (!callActive || callWatchRec || callListening || callEngine !== 'sr' || !voiceSupported()) { return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec;
+  try { rec = new SR(); } catch (e) { return; }
+  callWatchRec = rec;
+  rec.lang = callEarLang();
+  rec.interimResults = true;
+  rec.continuous = true;
+  let wF = '', wI = '', acted = false;
+  const liveText = () => (wF + ' ' + wI).trim();
+  rec.onresult = (ev) => {
+    if (callWatchRec !== rec || acted) { return; }
+    for (let i = ev.resultIndex || 0; i < ev.results.length; i++) {
+      const r = ev.results[i];
+      if (!r) { continue; }
+      const tx = (r[0] && r[0].transcript) || '';
+      if (r.isFinal) { wF += tx; } else { wI = tx; }
+    }
+    const live = liveText();
+    if (!live) { return; }
+    if (golIsSelfEcho(live) || golIsEchoConfirm(live)) { return; } /* Gol hearing itself: no caption, no barge, no turn */
+    callCapShow(live);
+    if (!callAudioIdle()) {
+      if (callBargeWorthy(live)) {
+        acted = true;
+        callStopWatch();
+        golStopVoice(); golSayPendingUrl = null;
+        callOpenEar(live);
+      }
+    } else if (wF.trim()) {
+      acted = true;
+      const said = wF.trim();
+      callStopWatch();
+      callDeliverTurn(said);
+    }
+  };
+  rec.onerror = () => { if (callWatchRec === rec) { callStopWatch(); } };
+  rec.onend = () => {
+    if (callWatchRec === rec) { callWatchRec = null; }
+    if (acted || !callActive) { return; }
+    const heard = liveText();
+    if (!heard || golIsSelfEcho(heard) || golIsEchoConfirm(heard)) { return; }
+    if (!callAudioIdle()) {
+      if (callBargeWorthy(heard)) { golStopVoice(); golSayPendingUrl = null; callOpenEar(heard); }
+    } else {
+      callDeliverTurn(heard);
+    }
+  };
+  try { rec.start(); } catch (e) { if (callWatchRec === rec) { callWatchRec = null; } }
+}
+/* --- the server-STT ear (hear engine): mic audio -> gol-hear.php -----
+   Ported from the fleet storefront ear (Oct 30) to this register: the
+   browser captures the mic itself (MediaRecorder, else a WebAudio WAV
+   recorder) and posts each turn to /store-api/gol-hear.php with
+   lang=ne — gpt-4o-mini-transcribe goes first there and carries the
+   Nepali+English mix (English transcribes cleanly under the Nepali
+   hint; measured on the fleet lane). The returned text rides
+   callDeliverTurn, the ONE send path. A ~1.1s pause ends the turn
+   (20s cap); a failed transcription is an empty turn, never a dead
+   call. The mic stream is kept for the whole call so the barge-in
+   watch below can listen while Gol speaks. */
+const callHear = { stream: null, ctx: null, an: null, rec: null, chunks: [], wav: null, timer: null, watchTimer: null, speech: false, lastLoud: 0, loudSince: 0, started: 0, busy: false, ext: 'webm' };
+function callHearWavBlob(wav) {
+  let len = 0, i;
+  for (i = 0; i < wav.bufs.length; i++) { len += wav.bufs[i].length; }
+  const pcm = new Float32Array(len); let off = 0;
+  for (i = 0; i < wav.bufs.length; i++) { pcm.set(wav.bufs[i], off); off += wav.bufs[i].length; }
+  const buf = new ArrayBuffer(44 + len * 2), v = new DataView(buf);
+  function ws(o, s) { for (let j = 0; j < s.length; j++) { v.setUint8(o + j, s.charCodeAt(j)); } }
+  ws(0, 'RIFF'); v.setUint32(4, 36 + len * 2, true); ws(8, 'WAVEfmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, wav.sr, true); v.setUint32(28, wav.sr * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  ws(36, 'data'); v.setUint32(40, len * 2, true);
+  for (i = 0; i < len; i++) { const s = Math.max(-1, Math.min(1, pcm[i])); v.setInt16(44 + i * 2, s < 0 ? s * 32768 : s * 32767, true); }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+function callHearStopAll() {
+  if (callHear.timer) { clearInterval(callHear.timer); callHear.timer = null; }
+  callHearWatchStop();
+  if (callHear.rec) { try { callHear.rec.stop(); } catch (e) { /* noop */ } callHear.rec = null; }
+  if (callHear.wav) { try { callHear.wav.proc.disconnect(); } catch (e) { /* noop */ } callHear.wav = null; }
+  if (callHear.stream) { try { callHear.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* noop */ } callHear.stream = null; }
+  if (callHear.ctx) { try { callHear.ctx.close(); } catch (e) { /* noop */ } callHear.ctx = null; callHear.an = null; }
+  callHear.busy = false;
+}
+function callHearGiveUp() {
+  callListening = false;
+  callEarFails++;
+  if (callEarFails >= 3 && !callEarSwitchToSR()) { callEarTap = true; }
+  callLastActivity = Date.now(); callMinWait = 1200;
+  callPaint();
+}
+function callHearFinish(discard) {
+  if (callHear.timer) { clearInterval(callHear.timer); callHear.timer = null; }
+  const rec = callHear.rec, wav = callHear.wav;
+  callHear.rec = null; callHear.wav = null;
+  callListening = false;
+  function got(blob) {
+    if (!callActive) { return; }
+    if (discard || !blob || !callHear.speech) { callLastActivity = Date.now(); callMinWait = 400; callPaint(); return; }
+    callHear.busy = true; callPaint();
+    const fd = new FormData();
+    fd.append('audio', blob, 'hear.' + (callHear.ext || 'webm'));
+    fd.append('lang', 'ne');
+    fetch('/store-api/gol-hear.php', { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        callHear.busy = false;
+        if (!callActive) { callPaint(); return; }
+        const said = (j && j.ok && j.text ? String(j.text) : '').trim();
+        if (said && !golIsSelfEcho(said)) { callDeliverTurn(said); }
+        else { callLastActivity = Date.now(); callMinWait = 400; }
+        callPaint();
+      })
+      .catch(function () {
+        callHear.busy = false;
+        if (!callActive) { return; }
+        callHearGiveUp();
+      });
+  }
+  if (rec) {
+    let done = false;
+    rec.onstop = function () { if (done) { return; } done = true; got(new Blob(callHear.chunks, { type: rec.mimeType || 'audio/webm' })); };
+    try { rec.stop(); } catch (e) { if (!done) { done = true; got(new Blob(callHear.chunks, { type: 'audio/webm' })); } }
+  } else if (wav) {
+    try { wav.proc.disconnect(); } catch (e) { /* noop */ }
+    got(callHearWavBlob(wav));
+  } else {
+    got(null);
+  }
+  callPaint();
+}
+function callHearEnsureAn(stream) {
+  callHear.stream = stream;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!callHear.ctx && AC) { callHear.ctx = new AC(); }
+    if (callHear.ctx && callHear.ctx.state === 'suspended') { callHear.ctx.resume(); }
+    if (callHear.ctx && !callHear.an) {
+      callHear.an = callHear.ctx.createAnalyser();
+      callHear.an.fftSize = 512;
+      callHear.ctx.createMediaStreamSource(stream).connect(callHear.an);
+    }
+  } catch (e) { callHear.an = null; }
+}
+function callHearLiveStream() {
+  try { return !!(callHear.stream && callHear.stream.active && callHear.stream.getAudioTracks().some(function (t) { return t.readyState === 'live'; })); } catch (e) { return false; }
+}
+function callOpenEarHear() {
+  if (!callActive || callListening || callHear.busy) { return; }
+  callHearWatchStop();
+  function begin(stream) {
+    if (!callActive) { return; }
+    callHearEnsureAn(stream);
+    callHear.chunks = []; callHear.wav = null; callHear.speech = false;
+    callHear.started = Date.now(); callHear.lastLoud = 0;
+    let ext = 'webm';
+    if (window.MediaRecorder) {
+      let mime = '';
+      const cand = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/ogg'];
+      for (let ci = 0; ci < cand.length; ci++) { try { if (MediaRecorder.isTypeSupported(cand[ci])) { mime = cand[ci]; break; } } catch (eT) { /* try next */ } }
+      try {
+        const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+        callHear.rec = mr;
+        ext = mime.indexOf('mp4') >= 0 ? 'm4a' : (mime.indexOf('ogg') >= 0 ? 'ogg' : 'webm');
+        mr.ondataavailable = function (ev) { if (ev.data && ev.data.size) { callHear.chunks.push(ev.data); } };
+        mr.start(250);
+      } catch (eR) { callHear.rec = null; }
+    }
+    if (!callHear.rec && callHear.ctx) {
+      /* WAV fallback for browsers without MediaRecorder. */
+      try {
+        const src = callHear.ctx.createMediaStreamSource(stream);
+        const proc = callHear.ctx.createScriptProcessor(4096, 1, 1);
+        const gain = callHear.ctx.createGain(); gain.gain.value = 0;
+        const wv = { bufs: [], sr: callHear.ctx.sampleRate, proc: proc };
+        proc.onaudioprocess = function (ev) { try { wv.bufs.push(new Float32Array(ev.inputBuffer.getChannelData(0))); } catch (eP) { /* keep recording */ } };
+        src.connect(proc); proc.connect(gain); gain.connect(callHear.ctx.destination);
+        callHear.wav = wv;
+        ext = 'wav';
+      } catch (eW) { callHear.wav = null; }
+    }
+    if (!callHear.rec && !callHear.wav) { callHearGiveUp(); return; }
+    callHear.ext = ext;
+    callListening = true;
+    callPaint();
+    const data = new Uint8Array(callHear.an ? callHear.an.fftSize : 0);
+    callHear.timer = setInterval(function () {
+      if (!callActive) { callHearStopAll(); return; }
+      let loud = false;
+      if (callHear.an) {
+        callHear.an.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) { const d = data[i] - 128; sum += d * d; }
+        loud = Math.sqrt(sum / Math.max(1, data.length)) > 5.5;
+      }
+      const now = Date.now();
+      if (loud) { callHear.speech = true; callHear.lastLoud = now; }
+      const age = now - callHear.started;
+      if ((callHear.speech && now - callHear.lastLoud > 1100) || age > 20000) { callHearFinish(false); }
+      else if (!callHear.speech && age > 25000) { callHearFinish(true); }
+    }, 120);
+  }
+  if (callHearLiveStream()) { begin(callHear.stream); }
+  else { navigator.mediaDevices.getUserMedia({ audio: true }).then(begin).catch(function () { callHearGiveUp(); }); }
+}
+/* --- the barge-in watch (hear engine): loudness while Gol speaks ---- */
+function callHearWatchStop() {
+  if (callHear.watchTimer) { clearInterval(callHear.watchTimer); callHear.watchTimer = null; }
+  callHear.loudSince = 0;
+}
+function callHearWatchStart() {
+  if (callHear.watchTimer || callListening || callHear.busy) { return; }
+  const beginWatch = function (stream) {
+    if (!callActive) { return; }
+    callHearEnsureAn(stream);
+    if (!callHear.an) { return; }
+    const data = new Uint8Array(callHear.an.fftSize);
+    callHear.loudSince = 0;
+    callHear.watchTimer = setInterval(function () {
+      if (!callActive || callListening || callHear.busy || callAudioIdle()) { callHearWatchStop(); return; }
+      callHear.an.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) { const d = data[i] - 128; sum += d * d; }
+      const rms = Math.sqrt(sum / Math.max(1, data.length));
+      const now = Date.now();
+      /* Louder + longer than the turn VAD: Gol's own speaker output
+         feeds this mic too, so the barge bar sits above her voice's
+         typical bleed; the transcript still passes the self-echo
+         guard before anything can send. THRESHOLD TUNED Nov 2 (ear
+         fix): 9 -> 14, sustain unchanged at 450 ms. Measured on
+         Gol's own TTS line in the watch's byte-RMS units (120 ms
+         windows): at FULL level her voice sustains >9 for 720 ms —
+         a self-barge waiting to happen through a loud speaker —
+         but never sustains >14 past 240 ms; at a plausible -6 dB
+         bleed nothing crosses either bar for 450 ms. Close human
+         speech clears 14 easily on vowels, so a real interruption
+         still barges. Device AGC varies, so this is a better
+         first cut, not a calibration — the owner's ear test is
+         the final word. */
+      if (rms > 14) { if (!callHear.loudSince) { callHear.loudSince = now; } }
+      else { callHear.loudSince = 0; }
+      if (callHear.loudSince && now - callHear.loudSince >= 450) {
+        callHearWatchStop();
+        golStopVoice(); golSayPendingUrl = null;
+        callOpenEarHear();
+      }
+    }, 120);
+  };
+  if (callHearLiveStream()) { beginWatch(callHear.stream); }
+  else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(beginWatch).catch(function () { /* the turn ear surfaces a blocked mic once Gol goes quiet */ });
+  }
+}
+function callAudioIdle() {
+  if (golSayPendingUrl) { return false; }
+  if (typeof golSayInflight !== 'undefined' && golSayInflight > 0) { return false; }
+  const a = golAudioEl;
+  if (!a) { return true; }
+  if (a.ended) { return true; }
+  return !!a.paused;
+}
+function callPaint() {
+  const b = $('chatCallBtn');
+  if (b) {
+    const supported = callSupported();
+    b.style.display = supported ? '' : 'none';
+    b.classList.toggle('in-call', callActive);
+    b.classList.toggle('call-listening', callActive && callListening);
+    b.setAttribute('aria-pressed', callActive ? 'true' : 'false');
+    b.title = callActive ? 'End call with Gol' : 'Call Gol — talk hands-free';
+    b.innerHTML = callActive
+      ? IC_PHONE_DOWN + '<span>End call</span>'
+      : IC_PHONE + '<span>Call</span>';
+  }
+  const pill = $('voicePill');
+  if (pill && callActive) {
+    // Listening face (owner, Nov 2 late: "listening style babal
+    // banau"): in the CIRCLE the breathing centre ring + the caption
+    // carry the state, so the pill stays down; in the rectangle the
+    // pill shows — in its blue glass dress (CIRCLE v42), never red.
+    const drw = $('chatDrawer');
+    const circle = !!(drw && drw.classList.contains('chat-circle'));
+    pill.classList.toggle('hidden', !callListening || circle);
+  }
+  const drwEl = $('chatDrawer');
+  if (drwEl) { drwEl.classList.toggle('gol-listening', !!(callActive && callListening)); }
+  const st = $('chatCallState');
+  if (st) {
+    st.classList.toggle('hidden', !callActive);
+    if (callActive) {
+      st.classList.toggle('tap', !!callEarTap);
+      st.textContent = callEarTap ? 'Tap to talk'
+        : (callListening ? 'Listening\u2026'
+        : (!callAudioIdle() ? 'Gol is speaking\u2026'
+        : (callJustSent ? 'Gol is thinking\u2026' : 'Listening\u2026')));
+    }
+  }
+}
+function callStopRecog() {
+  if (callRecog) {
+    const r = callRecog; callRecog = null;
+    try { r.onresult = null; r.onerror = null; r.onend = null; } catch (e) { /* noop */ }
+    try { r.stop(); } catch (e) { try { r.abort(); } catch (e2) { /* noop */ } }
+  }
+  callListening = false;
+}
+function startCall() {
+  if (callActive) { return; }
+  if (!callSupported()) { showToast('Voice is not available in this browser — typing works as always.'); callPaint(); return; }
+  callEngine = callPickEngine();
+  callTriedHear = callEngine === 'hear';
+  callTriedSR = callEngine === 'sr';
+  callPrevVoiceOn = golVoiceOn();
+  if (!callPrevVoiceOn) { golSetVoiceOn(true); }
+  callEarFails = 0; callEarTap = false;
+  callActive = true;
+  callJustSent = false;
+  callMinWait = 1200;
+  callLastActivity = Date.now();
+  const drawer = $('chatDrawer'); if (drawer) { drawer.classList.remove('hidden'); }
+  // Greeting: the first Gol bubble rendered in the panel (the panel's
+  // own greeting line), spoken through the same golSpeak mouth.
+  let greet = '';
+  try {
+    const first = document.querySelector('#chatBody .msg.gol');
+    if (first) { greet = first.textContent || ''; }
+  } catch (e) { /* fall through to the standard line */ }
+  if (!greet || !greet.trim()) { greet = "Hi, I'm Gol. Add an item, ask a price, or say \"today's total\"."; } /* greeting (#200 fix, Nov 2): the panel's first Gol bubble IS the brain-composed unlock greeting (store-local clock, greeting law) - speak it as composed. The old validator (prefix must be namaste|hello|hi|welcome, no $, <=200 chars) rejected composed greetings like 'Good evening...' and forced the canned line on every Call. Fallback now only when the panel carries no greeting at all. */
+  /* greeting law: the spoken intro happens once per page session - a later Call in the same session opens the ear straight to business. */
+  if (!window.__golCallIntroDone) {
+    window.__golCallIntroDone = true;
+    try { golSpeak({ text: golCleanSay(greet).slice(0, 200), lang: golPickLang(greet) }); } catch (e) { /* text greeting still stands */ }
+  }
+  if (callWatcher) { clearInterval(callWatcher); }
+  callWatcher = setInterval(callEarTick, 300);
+  callPaint();
+}
+function endCall() {
+  if (!callActive && !callListening && !callRecog) { callPaint(); return; }
+  callActive = false;
+  callJustSent = false;
+  callPendingTurn = null; // a queued turn dies with the call — never sent after hangup
+  if (callWatcher) { clearInterval(callWatcher); callWatcher = null; }
+  callStopRecog();
+  callStopWatch();
+  callHearStopAll();
+  callCapHide();
+  golStopVoice();
+  golSayPendingUrl = null;
+  if (golVoiceOn() !== callPrevVoiceOn) { golSetVoiceOn(callPrevVoiceOn); }
+  const pill = $('voicePill'); if (pill) { pill.classList.add('hidden'); }
+  callPaint();
+}
+function callOpenEar(seed) {
+  if (!callActive || callListening) { return; }
+  callStopWatch();
+  if (!callEngine) { callEngine = callPickEngine(); }
+  if (callEngine === 'hear') { callOpenEarHear(); return; }
+  if (!voiceSupported()) { return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  callHeard = false;
+  const rec = new SR();
+  callRecog = rec;
+  rec.lang = callEarLang();
+  rec.interimResults = true;
+  rec.continuous = false;
+  /* Buffered speech (Oct 29 fix) + the live caption (Nov 2, TASKS 215):
+     interim words type into the caption bubble only — never the
+     composer — and a final sends through callDeliverTurn, the same
+     seam a typed message takes. A seed arrives when the barge-in
+     watcher already heard the start of this turn while Gol was
+     speaking; those words are this turn's beginning, not lost. */
+  let bufF = '', bufI = seed ? String(seed) : '', delivered = false, errKind = '';
+  if (bufI) { callCapShow(bufI); }
+  const deliver = (text) => {
+    delivered = true;
+    if (callRecog === rec) { callRecog = null; }
+    try { rec.stop(); } catch (e) { /* already ending */ }
+    callDeliverTurn(text);
+  };
+  rec.onresult = (ev) => {
+    for (let i = ev.resultIndex || 0; i < ev.results.length; i++) {
+      const r = ev.results[i];
+      if (!r) { continue; }
+      const tx = (r[0] && r[0].transcript) || '';
+      if (r.isFinal) { bufF += tx; } else { bufI = tx; }
+    }
+    var live = (bufF + ' ' + bufI).trim();
+    if (live && !golIsSelfEcho(live)) { callCapShow(live); }
+    if (live && !callAudioIdle() && !golIsSelfEcho(live) && !golIsEchoConfirm(live)) { golStopVoice(); }
+    const finalText = bufF.trim();
+    if (!finalText || callHeard || delivered) { return; }
+    if (golIsSelfEcho(finalText)) { return; }
+    deliver(finalText);
+  };
+  rec.onerror = (ev) => {
+    if (callRecog === rec) { callRecog = null; }
+    callListening = false;
+    const kind = ev && ev.error;
+    errKind = kind || 'error';
+    if (kind === 'not-allowed' || kind === 'service-not-allowed') {
+      showToast('Microphone is blocked — allow the mic in the browser, then try again.');
+      endCall();
+      return;
+    }
+    if (callActive && kind !== 'aborted') {
+      callEarFails++;
+      if (callEarFails >= 3 && !callEarSwitchToHear()) { callEarTap = true; }
+      callLastActivity = Date.now(); callMinWait = 1200;
+    }
+    callCapHide();
+    callPaint();
+  };
+  rec.onend = () => {
+    if (callRecog === rec) { callRecog = null; }
+    callListening = false;
+    if (callActive && !delivered && !callHeard) {
+      const heard = (bufF || bufI || '').trim();
+      if (heard && !golIsSelfEcho(heard)) { deliver(heard); return; }
+      if (!errKind) {
+        callEarFails++;
+        if (callEarFails >= 3 && !callEarSwitchToHear()) { callEarTap = true; }
+      }
+    }
+    if (callActive && !callJustSent) { callLastActivity = Date.now(); callMinWait = 800; }
+    if (callJustSent) { callJustSent = false; callLastActivity = Date.now(); callMinWait = 2600; }
+    if (!delivered) { callCapHide(); }
+    callPaint();
+  };
+  callListening = true;
+  callPaint();
+  try { rec.start(); } catch (e) { callListening = false; if (callRecog === rec) { callRecog = null; } callLastActivity = Date.now(); callMinWait = 1200; callCapHide(); callPaint(); }
+}
+let callQuietSince = 0;
+function callEarTick() {
+  if (!callActive) { return; }
+  callPaint();
+  if (callEarTap) { return; }
+  if (callListening || callHear.busy) { return; }
+  if (!callAudioIdle()) {
+    /* Gol is speaking — the ear stays OPEN (true barge-in, TASKS 215):
+       the watcher hears over her voice; her own line is dropped by
+       the self-echo guards, a diverging human line stops the mouth
+       mid-reply and takes the turn. */
+    callQuietSince = 0;
+    if (callEngine === 'sr') { callOpenWatch(); }
+    else if (callEngine === 'hear') { callHearWatchStart(); }
+    return;
+  }
+  if (callWatchRec) { callStopWatch(); }
+  callHearWatchStop();
+  if (!callQuietSince) { callQuietSince = Date.now(); }
+  if (Date.now() - callQuietSince < 1500) { return; }
+  if (Date.now() - callLastActivity < callMinWait) { return; }
+  callOpenEar();
+}
+function initCallBtn() {
+  if ($('chatCallBtn')) { callPaint(); return; }
+  const head = document.querySelector('.chat-head');
+  const voiceBtn = $('chatVoiceBtn');
+  const host = head || (voiceBtn && voiceBtn.parentNode);
+  if (!host) { return; }
+  if (!document.getElementById('callBtnStyle')) {
+    const st = document.createElement('style');
+    st.id = 'callBtnStyle';
+    st.textContent = '.call-btn{display:inline-flex;align-items:center;gap:6px;margin-left:auto;background:#2563eb;color:#fff;border:none;border-radius:999px;padding:7px 13px;font-size:13px;font-weight:600;cursor:pointer;flex:none}'
+      + '.call-btn .ic{width:16px;height:16px}'
+      + '.call-btn.in-call{background:#dc2626;margin-left:auto}'
+      + '@keyframes callPulse{0%{box-shadow:0 0 0 0 rgba(220,38,38,.55)}70%{box-shadow:0 0 0 9px rgba(220,38,38,0)}100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}}'
+      + '.call-btn.call-listening{animation:callPulse 1.1s ease-out infinite}'
+      + '.call-state{display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:999px;border:1.5px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700;white-space:nowrap;flex:none}'
+      + '.call-state.hidden{display:none}'
+      + '.call-state.tap{background:#2563eb;border-color:#2563eb;color:#fff;cursor:pointer;box-shadow:0 0 0 3px rgba(37,99,235,.25)}'
+      + '.chat-head .call-state{order:10;flex:1 1 100%;justify-content:center;margin-top:2px}'
+      + '.msg.me.live-cap{opacity:.78;border:1.5px dashed rgba(255,255,255,.9);font-style:italic}';
+    document.head.appendChild(st);
+  }
+  const b = document.createElement('button');
+  b.id = 'chatCallBtn';
+  b.type = 'button';
+  b.className = 'call-btn';
+  b.setAttribute('aria-label', 'Call Gol');
+  b.addEventListener('click', () => { if (callActive) { endCall(); } else { startCall(); } });
+  const closeBtn = $('chatClose');
+  if (head && closeBtn && closeBtn.parentNode === head) { head.insertBefore(b, closeBtn); }
+  else { host.appendChild(b); }
+  if (!$('chatCallState')) {
+    const st = document.createElement('button');
+    st.id = 'chatCallState';
+    st.type = 'button';
+    st.className = 'call-state hidden';
+    st.addEventListener('click', () => {
+      if (!callActive || !callEarTap) { return; }
+      callEarFails = 0; callEarTap = false;
+      callLastActivity = 0; callMinWait = 0;
+      callPaint();
+      callEarTick();
+    });
+    if (b.parentNode) { b.parentNode.insertBefore(st, b.nextSibling); }
+  }
+  callPaint();
+}
+try { window.__golCall = { start: startCall, end: endCall, tick: callEarTick, state: () => ({ active: callActive, listening: callListening, audioIdle: callAudioIdle(), minWait: callMinWait, engine: callEngine, watching: !!callWatchRec, cap: callCapText(), busy: callSendBusy, queued: !!callPendingTurn, seq: callTurnSeq }) }; } catch (e) { /* harness aid only */ }
 
 // --- the one camera stream ----------------------------------------------------
 let camStream = null;  // the live stream, whoever opened it (watch or modal)
@@ -2548,22 +4033,76 @@ function applyLockState(locked, actor) {
   if (actor !== undefined) { lockActor = actor || null; }
   const ov = $('lockOverlay');
   if (ov && locked !== undefined && locked !== null) { ov.classList.toggle('hidden', !locked); }
+  if (locked !== undefined && locked !== null) {
+    // Cold-start hint: the head script pre-shows the round PIN disc when
+    // this device locked last time, so a fresh load never flashes the
+    // register (or the old white card) before the lock state lands.
+    try { localStorage.setItem('golpos_lock_hint', locked ? '1' : '0'); } catch (e) {}
+    document.documentElement.classList.remove('boot-lock');
+  }
+  if (locked === false) {
+    lockPinDigits = ''; renderLockPinDots();
+    const lm = $('lockPinMsg'); if (lm) { lm.textContent = ''; }
+  }
   const chip = $('actorChip');
   if (chip) {
     if (lockActor && lockActor.name) {
       chip.textContent = lockActor.role === 'admin' ? 'Owner · admin' : lockActor.name;
       chip.classList.remove('hidden');
     } else { chip.classList.add('hidden'); }
+    // For an admin the chip is also a door to the Owner panel (it sits
+    // beside the Owner button and reads like one); for an employee it
+    // stays the plain name label it has always been — no affordance.
+    const chipDoor = !!(lockActor && lockActor.role === 'admin');
+    chip.style.cursor = chipDoor ? 'pointer' : '';
+    chip.title = chipDoor ? 'Open the Owner panel' : '';
   }
   const mt = $('myTasksBtn');
   if (mt) { mt.classList.toggle('hidden', !(lockActor && lockActor.role === 'employee')); }
+  const mr = $('smMrstoreRow');
+  if (mr) { mr.classList.toggle('hidden', !(lockActor && lockActor.role === 'admin')); }
+  const tr = $('smTeamRow');
+  if (tr) { tr.classList.toggle('hidden', !(lockActor && lockActor.role === 'admin')); }
+  // The Owner panel is admin-domain (leak fix, Nov 2): its button is
+  // not part of the cashier's till. Hidden only while the session's
+  // actor is an employee — admin and the no-actor setup/lock states
+  // keep it (the data layer gates the reads regardless).
+  const ob = $('ownerBtn');
+  if (ob) { ob.classList.toggle('hidden', !!(lockActor && lockActor.role === 'employee')); }
 }
 async function refreshLockState() {
   try {
     const r = await (await fetch(API + '?lock&session=' + encodeURIComponent(SESSION_ID))).json();
     applyLockState(r.locked, r.actor);
+    // Armed at boot: a locked register means the chat wears its PIN
+    // state from the first open — Gol asks, nobody guesses.
+    if (r.locked) { openPinPad(); } else { closePinPad(); }
   } catch (e) { /* the register never stops for a state read */ }
 }
+
+// Auto-lock (owner, Nov 2 night: "lock screen after 5 min inactivity"):
+// five quiet minutes on the till and the register returns to its PIN
+// screen, through the same 'lock' conversation the Settings button
+// uses. Any touch or key counts as life; a live Gol Call counts too —
+// talking to Gol is working, not idling.
+const LOCK_IDLE_MS = 5 * 60 * 1000;
+let lastTillActivity = Date.now();
+['pointerdown', 'keydown', 'touchstart'].forEach((ev) => {
+  document.addEventListener(ev, () => { lastTillActivity = Date.now(); }, { capture: true, passive: true });
+});
+setInterval(() => {
+  if (Date.now() - lastTillActivity < LOCK_IDLE_MS) { return; }
+  const ov = $('lockOverlay');
+  if (ov && !ov.classList.contains('hidden')) { return; }
+  const pad = $('pinPad');
+  if (pad && !pad.classList.contains('hidden')) { return; }
+  try {
+    const st = window.__golCall && window.__golCall.state ? window.__golCall.state() : null;
+    if (st && st.active) { lastTillActivity = Date.now(); return; }
+  } catch (e) { /* no call state, no problem */ }
+  lastTillActivity = Date.now();
+  sendChat('lock');
+}, 20000);
 // The unlock stamp (spec §3b): one frame from the live watch stream —
 // or a one-shot capture when the camera can start — rides to frame.php
 // against the unlock event's id. No camera -> the event simply stands
@@ -2712,6 +4251,7 @@ async function sendSensePhoto(file) {
     const res = await fetch('../server/photo.php', { method: 'POST', body: fd });
     const r = await res.json();
     if (r.reply) { chatMsg(r.reply, 'gol'); }
+    try { golSpeak(posSayFor(r, '', null)); } catch (e) {}
   } catch (e) { chatMsg('The counter photo could not be sent just now.', 'gol'); }
 }
 
@@ -2753,7 +4293,9 @@ async function fetchInbox() {
     if (!entries.length) { return; }
     entries.forEach(e => {
       if (e.reply) { chatMsg(e.reply, 'gol'); }
-      if (e.card) { chatCard(e.card); }
+      let inboxCardEl = null;
+      if (e.card) { inboxCardEl = chatCard(e.card); }
+      try { golSpeak(posSayFor(e, '', inboxCardEl)); } catch (err) {}
     });
     $('chatDrawer').classList.remove('hidden');
     showToast('📷 A phone scan landed in Gol chat.');
@@ -2783,9 +4325,24 @@ async function fetchGap() {
 }
 setInterval(fetchGap, 15000);
 
-$('camBtn').addEventListener('click', () => openCam('photo'));
+// Lock-state self-heal (Oct 31): the overlay used to move ONLY when a
+// brain reply was applied in this page (or at boot). A successful PIN
+// unlock that landed while a reply was missed — or on an older cached
+// build whose PIN-pad handler never applied the state — left the till
+// showing "PIN please" while the server already stood open (owner hit
+// exactly this: server unlock recorded, screen still locked). Poll the
+// server's truth and converge; also re-check the moment the window is
+// seen again. The poll is read-only and never locks a till the server
+// says is open, nor opens one the server says is locked.
+setInterval(refreshLockState, 5000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { refreshLockState(); } });
+window.addEventListener('focus', () => { refreshLockState(); });
+
+$('camBtn').addEventListener('click', () => openScanSheet());
 $('voiceBtn').addEventListener('click', () => { $('chatDrawer').classList.remove('hidden'); startVoice(); });
 $('chatMicBtn').addEventListener('click', () => startVoice());
+initCallBtn();
+{ const vb = $('chatVoiceBtn'); if (vb) { vb.addEventListener('click', () => golSetVoiceOn(!golVoiceOn())); } syncVoiceBtn(); }
 $('camCancel').addEventListener('click', closeCam);
 $('camSnap').addEventListener('click', camSnapNow);
 $('camRetake').addEventListener('click', () => {
@@ -2816,6 +4373,24 @@ $('clipClose').addEventListener('click', () => {
   $('clipModal').classList.add('hidden');
 });
 $('smScanBtn').addEventListener('click', () => { closeSettingsMenu(); openScanModal(); });
+
+// --- the Scan bills sheet: the top-bar camera button's home (owner order,
+// Oct 31) — phone pairing is the headline, the register camera and the
+// plain file upload stay inside as the other two doors. openCam keeps its
+// own fallbacks for its other callers (counter sensing, chat asks).
+function openScanSheet() {
+  const canCam = !camMasterHeld() && hasGUM();
+  $('ssCamera').classList.toggle('hidden', !canCam);
+  $('scanSheet').classList.remove('hidden');
+}
+function closeScanSheet() { $('scanSheet').classList.add('hidden'); }
+$('ssClose').addEventListener('click', closeScanSheet);
+$('ssPhone').addEventListener('click', () => { closeScanSheet(); openScanModal(); });
+$('ssCamera').addEventListener('click', () => { closeScanSheet(); openCam('photo'); });
+$('ssUpload').addEventListener('click', () => {
+  closeScanSheet();
+  $('chatDrawer').classList.remove('hidden'); $('photoInput').click();
+});
 $('scanClose').addEventListener('click', () => $('scanModal').classList.add('hidden'));
 $('scanNew').addEventListener('click', openScanModal);
 $('scanCopy').addEventListener('click', async () => {
@@ -2835,6 +4410,24 @@ $('scanSend').addEventListener('click', async () => {
   }
   $('scanShare').classList.toggle('hidden');
 });
+
+// --- the MR.STORE door (owner, Oct 31): the Settings panel carries the
+// owner from this register into this store's full MR.STORE view. The
+// store is resolved exactly as the What's Out lane resolves it — the
+// linked store id on the catalog, else the demo store by name — and
+// app.html itself honors ?store= at boot (its desk painter reads the
+// param before its own last-store fallback), so the door always lands
+// on THIS register's store, never another. Same origin: a browser
+// already signed into MR.STORE opens recognized; otherwise MR.STORE's
+// own sign-in answers, with the store already in hand. Admin sessions
+// only — the settings row is hidden for everyone else, and this guard
+// refuses honestly if it is ever reached without one.
+function openMrstoreDoor() {
+  if (!(lockActor && lockActor.role === 'admin')) { showToast('Owner only — MR.STORE opens for the admin session.'); return; }
+  const sid = (catalog.store && catalog.store.store_id) || WOE_BY_NAME[catalog.store && catalog.store.name] || '';
+  const url = 'https://luckymart.biz/app.html' + (sid ? '?store=' + encodeURIComponent(sid) : '');
+  window.open(url, '_blank');
+}
 
 // --- launch binding: MR.STORE's settings link opens this register with
 // ?store=<id>&name=<name>&unlock=1 — the same contract MR.STORE's own
@@ -2867,3 +4460,502 @@ async function applyLinkMode() {
   } catch (e) { /* standalone until proven linked */ }
 }
 bindLaunch().then(() => { loadCatalog(); loadSettings(); refreshLockState(); applyLinkMode(); clearTillSearch(); setTimeout(clearTillSearch, 600); });
+
+// --- Gol panel: a companion that lives around the register -------------------
+// Owner, Nov 2: "like a conscious chat around" + "float icon click ma
+// khulne ani afai banda hune". Three behaviours, layout only — no data
+// path, no Call logic, no brain change:
+//  1. Collapsed, Gol is the floating icon (#golFab) — a solid Gol-blue
+//     disc with the white open-ring mark — present on every view. The
+//     circle itself is free-style: drag it anywhere and the spot is
+//     remembered; a tap that is not a drag opens the panel.
+//  2. The open panel can be dragged by its head anywhere on screen and
+//     resized free-style from either side edge, the bottom edge, or the
+//     bottom corners (desktop; mobile stays full-screen by law). The
+//     spot and size are saved on this device and restored on every
+//     open and every reload.
+//  3. When the conversation has been quiet for IDLE_MS the panel folds
+//     itself back to the icon — NEVER while a Call is live, never while
+//     a staged card waits for the owner's "gol", never while the PIN
+//     pad or the voice pill waits on him. Folding only hides the panel;
+//     the chat itself is untouched, so reopening shows the same thread.
+(function initGolPanel() {
+  const drawer = $('chatDrawer'); if (!drawer) { return; }
+  const head = drawer.querySelector('.chat-head');
+  const fab = $('golFab');
+  const POS_KEY = 'golpos_chat_pos';
+  const FAB_KEY = 'golpos_fab_pos';
+  const IDLE_MS = 60000;
+  const MIN_W = 300, MIN_H = 360;
+  const mqMobile = window.matchMedia('(max-width: 820px)');
+  let lastActivity = Date.now();
+  let dragging = null;
+
+  function noteActivity() { lastActivity = Date.now(); }
+  function isOpen() { return !drawer.classList.contains('hidden'); }
+
+  // -- vanish into the circle -------------------------------------------------
+  // Owner, Nov 2 (evening): on close the panel must not blink away — it
+  // folds back into the round Gol shape (the CSS .chat-vanish animation
+  // shrinks it to a circle at its bottom-right corner) and only then
+  // hides, leaving the circular orb. Any touch on the panel mid-fold, or
+  // reopening, cancels the fold.
+  let vanishTimer = null;
+  function foldPanel() {
+    if (!isOpen() || drawer.classList.contains('chat-vanish')) { return; }
+    // Owner, Nov 2 late: "close garda bolna chodena" — closing the chat
+    // silences the mouth in the same tap. golStopVoice() cuts the line
+    // playing right now, generation-stops any TTS fetch still rendering
+    // (it can never start after the fold), and the autoplay-queued line
+    // is dropped — nothing speaks into a closed window, and reopening
+    // never resumes what was killed; the thread itself is untouched.
+    // A live Call is the one exception: the Call owns the mouth while
+    // it runs and its own End stops both, so a mid-call fold leaves
+    // call speech and call state exactly as they were.
+    if (!(typeof callActive !== 'undefined' && callActive)) {
+      try { golStopVoice(); } catch (e) {}
+      golSayPendingUrl = null;
+    }
+    closeRing();
+    drawer.classList.add('chat-vanish');
+    vanishTimer = setTimeout(() => {
+      vanishTimer = null;
+      if (!drawer.classList.contains('chat-vanish')) { return; }
+      drawer.classList.remove('chat-vanish');
+      drawer.classList.add('hidden');
+      placeMoon();
+    }, 300);
+  }
+  // Circle-float extras (owner, Nov 2 evening): ONE float button holds the
+  // quick-ask menu inside the circle (hidden until tapped, like the
+  // MR.STORE menu float), and a glowing Call orb is the circle's idle
+  // hero — it drives the very same Call as the head button and steps
+  // aside once the chat is working, the pad is up, or a call is live.
+  // Circle float, flower menu (owner, Nov 2 evening): the circle stays
+  // EMPTY — header, chat bubbles and the typing form are the only
+  // furniture, the Gol logo glows at the centre, and ONE float button
+  // blooms every action (quick asks + Call) into a RING around the
+  // circle, like a flower opening. A ring tap runs the action in the
+  // centre and the ring STAYS (owner correction, Nov 2 late) — the
+  // flower folds, and the buttons go home to their strip, only via
+  // its ✕, the Moon toggle, or the panel's own fold.
+  const menuFab = $('golMenuFab');
+  const chipsEl = $('chatChips');
+  const chipBtns = chipsEl ? Array.prototype.slice.call(chipsEl.querySelectorAll('button')) : [];
+  // Cam + voice join the ring too (owner, Nov 2 late): inside the circle
+  // only the typing field and the send button stay — photo, mic and
+  // speaker bloom OUTSIDE with the flower and come home to the form
+  // when it folds (in circle mode the form hides them; see styles v12).
+  const formEl = $('chatForm');
+  const photoEl = formEl ? formEl.querySelector('.photo-btn') : null;
+  const micEl = $('chatMicBtn');
+  const voiceEl = $('chatVoiceBtn');
+  const formBtns = [photoEl, micEl, voiceEl].filter(Boolean);
+  formBtns.forEach((b) => { b.classList.add('gol-ring-el'); });
+  if (photoEl) { photoEl.setAttribute('data-chip', 'Photo'); }
+  if (micEl) { micEl.setAttribute('data-chip', 'Voice'); }
+  if (voiceEl) { voiceEl.setAttribute('data-chip', 'Speaker'); }
+  const ringEl = $('golRing');
+  const ringCall = document.createElement('button');
+  ringCall.type = 'button';
+  ringCall.className = 'gol-ring-call';
+  ringCall.setAttribute('aria-label', 'Call Gol');
+  ringCall.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>';
+  ringCall.addEventListener('click', () => { const cb = $('chatCallBtn'); if (cb) { cb.click(); } });
+  const ringClose = document.createElement('button');
+  ringClose.type = 'button';
+  ringClose.className = 'gol-ring-close';
+  ringClose.setAttribute('aria-label', 'Close chat');
+  ringClose.setAttribute('data-chip', 'Close');
+  ringClose.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>';
+  ringClose.addEventListener('click', () => { foldPanel(); });
+  function openRing() {
+    if (!ringEl || !chipBtns.length) { return; }
+    const r = drawer.getBoundingClientRect();
+    const R = Math.round(r.width / 2) + 46;
+    ringEl.style.width = (R * 2) + 'px'; ringEl.style.height = (R * 2) + 'px';
+    ringEl.style.left = Math.round(r.left + r.width / 2 - R) + 'px';
+    ringEl.style.top = Math.round(r.top + r.height / 2 - R) + 'px';
+    ringEl.style.setProperty('--rr', R + 'px');
+    const items = [ringClose].concat(formBtns, chipBtns);
+    const SHORT = { 'Photo': 'Photo', 'Voice': 'Voice', 'Speaker': 'Speaker', "Today's total": 'Today', 'Close the day': 'Close day', 'Batch close': 'Batch', 'Loyalty leaderboard': 'Loyalty', 'Employees list': 'Staff', "This week's sales": 'Week sales', 'Why was today slow?': 'Why slow?', 'What sold best this week?': 'Best sellers', 'How much is a Coke?': 'Stock price', 'Close': 'Close' };
+    items.forEach((b, i) => {
+      const lbl = b.getAttribute('data-chip') || '';
+      b.setAttribute('data-rlabel', SHORT[lbl] || lbl);
+      b.style.setProperty('--a', (-90 + i * (360 / items.length)) + 'deg');
+      b.style.setProperty('--i', i);
+      ringEl.appendChild(b);
+    });
+    ringEl.classList.remove('hidden');
+    drawer.classList.add('menu-open');
+    placeMoon();
+  }
+  function closeRing() {
+    if (chipsEl) { chipBtns.forEach((b) => { chipsEl.appendChild(b); }); }
+    if (formEl) { const inp = $('chatInput'); formBtns.forEach((b) => { formEl.insertBefore(b, inp); }); }
+    if (ringCall.parentNode) { ringCall.parentNode.removeChild(ringCall); }
+    if (ringClose.parentNode) { ringClose.parentNode.removeChild(ringClose); }
+    if (ringEl) { ringEl.classList.add('hidden'); }
+    drawer.classList.remove('menu-open');
+    placeMoon();
+  }
+  if (menuFab) { menuFab.addEventListener('click', () => { if (drawer.classList.contains('menu-open')) { closeRing(); } else { openRing(); } }); }
+  // The Moon (owner, Nov 2 late: "Earth-Moon, bahira moon jasari"): in
+  // circle mode the menu button leaves the drawer and orbits the circle
+  // just off its upper-right rim. v27: NO observer (v26's subtree
+  // observer wedged the page) — placeMoon is called only from the
+  // explicit moments that can move it: circle apply, fold, ring
+  // open/close, drag/resize end, PIN pad open/close.
+  let moonBusy = false;
+  function placeMoon() {
+    if (!menuFab || moonBusy) { return; }
+    moonBusy = true;
+    try {
+      const circle = drawer.classList.contains('chat-circle') && isOpen();
+      if (circle) {
+        if (menuFab.parentNode !== document.body) { document.body.appendChild(menuFab); }
+        menuFab.classList.add('gol-moon');
+        menuFab.classList.toggle('moon-hide', !!drawer.querySelector('.pin-pad:not(.hidden)'));
+        menuFab.classList.toggle('moon-open', drawer.classList.contains('menu-open'));
+        const r = drawer.getBoundingClientRect();
+        const ang = -21 * Math.PI / 180;
+        const dist = r.width / 2 + 34;
+        const cx = r.left + r.width / 2, chy = r.top + r.height / 2;
+        menuFab.style.left = Math.round(cx + dist * Math.cos(ang) - 23) + 'px';
+        menuFab.style.top = Math.round(chy + dist * Math.sin(ang) - 23) + 'px';
+      } else {
+        menuFab.classList.remove('gol-moon'); menuFab.classList.remove('moon-hide'); menuFab.classList.remove('moon-open');
+        menuFab.style.left = ''; menuFab.style.top = '';
+        if (menuFab.parentNode !== drawer) { drawer.appendChild(menuFab); }
+      }
+    } catch (e) { /* the moon never breaks the till */ }
+    moonBusy = false;
+  }
+  window.__golPlaceMoon = placeMoon;
+  placeMoon();
+  // The ring STAYS (owner correction, Nov 2 late: "click garda harayo
+  // menu"): a tap on a ring item runs its action in the circle's centre
+  // and the flower stays open — it folds only via its own ✕ (ringClose),
+  // the Moon toggle, or the panel's fold. Until now ANY click bubbling
+  // up to the ring closed it 60ms later, so using one item dismissed
+  // the whole menu. Ring taps are also ACTIVITY: the ring lives OUTSIDE
+  // the drawer, so the drawer's idle listeners never see them — count
+  // them here with the same events typing uses, or the idle fold would
+  // take the panel mid-menu (Photo's file picker and the Speaker toggle
+  // append no chat line, so nothing else resets their clock).
+  if (ringEl) {
+    ['pointerdown', 'keydown', 'input', 'wheel', 'touchstart'].forEach((ev) =>
+      ringEl.addEventListener(ev, noteActivity, true));
+  }
+  // THE Call (owner, Nov 2 late: "call double bho — gol icon mathi hala,
+  // call circle bahira side ma"): ONE Call only, a blue disc stacked just
+  // above the Gol orb, OUTSIDE the circle on the side strip the circle
+  // can never enter. The header Call hides in circle mode and the ring
+  // no longer carries one. A tap opens the panel if needed, then drives
+  // the very same Call button; in-call it turns red (End).
+  const callSide = $('golCallSide');
+  if (callSide) {
+    const syncSide = () => { document.body.classList.toggle('gol-circle-on', !mqMobile.matches && window.innerWidth >= 1024 && window.innerHeight >= 700); };
+    syncSide();
+    window.addEventListener('resize', syncSide);
+    callSide.addEventListener('click', () => {
+      const cb = $('chatCallBtn'); if (!cb) { return; }
+      if (!isOpen()) { foldOpen(); setTimeout(() => { cb.click(); }, 380); }
+      else { cb.click(); }
+    });
+    const cbEl = $('chatCallBtn');
+    if (cbEl) { new MutationObserver(() => { callSide.classList.toggle('in-call', cbEl.classList.contains('in-call')); }).observe(cbEl, { attributes: true, attributeFilter: ['class'] }); }
+  }
+  // Dim the shop while Gol is open (owner, Nov 2 late: "gol khulda bg dim
+  // gardeu, ani gol minimize huda wapas"): a scrim under the panel darkens
+  // the register; minimizing Gol restores it. A tap on the dim folds Gol.
+  const scrim = $('golScrim');
+  if (scrim) {
+    const syncScrim = () => { scrim.classList.toggle('hidden', drawer.classList.contains('hidden')); };
+    syncScrim();
+    new MutationObserver(syncScrim).observe(drawer, { attributes: true, attributeFilter: ['class'] });
+    scrim.addEventListener('click', () => { foldPanel(); });
+  }
+  const heroLogo = $('golCenterLogo');
+  if (heroLogo) {
+    const syncHero = () => {
+      const body = $('chatBody');
+      const msgs = body ? body.querySelectorAll('.msg').length : 0;
+      const pad = $('pinPad');
+      const locked = pad && !pad.classList.contains('hidden');
+      const pill = $('voicePill');
+      const pillUp = pill && !pill.classList.contains('hidden');
+      const cb = $('chatCallBtn');
+      const inCall = cb && cb.classList.contains('in-call');
+      const listening = !!(cb && cb.classList.contains('call-listening'));
+      // While the ear is open at the start of a call the centre ring
+      // IS the listening face (it breathes — CIRCLE v42); once the
+      // thread grows, or Gol is speaking/thinking, it steps aside.
+      heroLogo.classList.toggle('hidden', !!(locked || pillUp || (inCall && !listening) || msgs > 1));
+      heroLogo.classList.toggle('gol-listening', !!(inCall && listening && !locked && !pillUp && msgs <= 1));
+    };
+    const heroObs = new MutationObserver(syncHero);
+    const bEl = $('chatBody'); if (bEl) { heroObs.observe(bEl, { childList: true }); }
+    const pEl = $('pinPad'); if (pEl) { heroObs.observe(pEl, { attributes: true, attributeFilter: ['class'] }); }
+    const vEl = $('voicePill'); if (vEl) { heroObs.observe(vEl, { attributes: true, attributeFilter: ['class'] }); }
+    const cEl = $('chatCallBtn'); if (cEl) { heroObs.observe(cEl, { attributes: true, attributeFilter: ['class'] }); }
+    syncHero();
+  }
+  window.__golFoldPanel = foldPanel;
+  window.addEventListener('resize', () => { if (drawer.classList.contains('chat-circle')) { applyCircle(); } });
+  drawer.addEventListener('pointerdown', () => {
+    if (drawer.classList.contains('chat-vanish')) {
+      drawer.classList.remove('chat-vanish');
+      if (vanishTimer) { clearTimeout(vanishTimer); vanishTimer = null; }
+    }
+  }, true);
+
+  // -- remembered position ----------------------------------------------------
+  function loadPos() {
+    try {
+      const p = JSON.parse(localStorage.getItem(POS_KEY));
+      if (p && isFinite(p.l) && isFinite(p.t) && isFinite(p.w) && isFinite(p.h)) { return p; }
+    } catch (e) { /* no saved spot yet */ }
+    return null;
+  }
+  function savePos(p) { try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch (e) { /* private mode */ } }
+  function clampPos(p) {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    p.w = Math.min(p.w, vw); p.h = Math.min(p.h, vh);
+    if (p.w < Math.min(MIN_W, vw)) { p.w = Math.min(MIN_W, vw); }
+    if (p.h < Math.min(MIN_H, vh)) { p.h = Math.min(MIN_H, vh); }
+    p.l = Math.max(0, Math.min(p.l, Math.max(0, vw - p.w)));
+    p.t = Math.max(0, Math.min(p.t, Math.max(0, vh - p.h)));
+    return p;
+  }
+  function currentPos() { const r = drawer.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; }
+  function applyPos(p) {
+    if (mqMobile.matches) { return; }
+    p = clampPos(p);
+    drawer.classList.add('chat-free');
+    drawer.style.left = p.l + 'px'; drawer.style.top = p.t + 'px';
+    drawer.style.width = p.w + 'px'; drawer.style.height = p.h + 'px';
+  }
+  function applySavedPos() { const p = loadPos(); if (p) { applyPos(p); } }
+
+  // -- the circle form (owner, Nov 2 evening: "bhaena golo chat") -------------
+  // On desktop the open panel takes Gol's own form: a true circle. It is
+  // squared around wherever the panel already lives, so the owner's saved
+  // spot survives as the circle's centre. One class (.chat-circle) carries
+  // the whole shape — removing it restores the rectangle untouched. Mobile
+  // keeps the full-screen law: no circle there.
+  function circleSize() { return Math.round(Math.min(window.innerWidth * 0.92, window.innerHeight * 0.86, 620)); }
+  function applyCircle() {
+    // The circle lives on big screens only (owner, Nov 2 late: "phone ma
+    // pahila jasatai chodnu — square and flexible"): under 1024x700 the
+    // panel keeps its earlier forms untouched. On a big screen the circle
+    // is clamped with RING ROOM (112px) on every side, so the flower ring
+    // and its buttons can never spill off-screen or over the top bar.
+    if (mqMobile.matches || window.innerWidth < 1024 || window.innerHeight < 700) { drawer.classList.remove('chat-circle'); placeMoon(); return; }
+    drawer.classList.add('chat-circle');
+    if (!isOpen()) { return; }
+    const M = 112, vw = window.innerWidth, vh = window.innerHeight;
+    let d = Math.round(Math.min(600, vw - 2 * M, vh - 2 * M));
+    if (d < 400) { drawer.classList.remove('chat-circle'); placeMoon(); return; }
+    const saved = loadPos();
+    let cx, cy;
+    if (saved) { cx = saved.l + saved.w / 2; cy = saved.t + saved.h / 2; }
+    else { cx = vw - d / 2 - 28; cy = vh / 2; }
+    cx = Math.max(d / 2 + M, Math.min(vw - d / 2 - M, cx));
+    cy = Math.max(d / 2 + M, Math.min(vh - d / 2 - M, cy));
+    drawer.classList.add('chat-free');
+    drawer.style.left = (cx - d / 2) + 'px'; drawer.style.top = (cy - d / 2) + 'px';
+    drawer.style.width = d + 'px'; drawer.style.height = d + 'px';
+    placeMoon();
+  }
+
+  // -- drag by the head ---------------------------------------------------------
+  if (head) {
+    head.addEventListener('pointerdown', (e) => {
+      if (mqMobile.matches || !isOpen()) { return; }
+      if (e.button !== undefined && e.button !== 0) { return; }
+      if (!e.target.closest || e.target.closest('button, a, input, select, textarea')) { return; }
+      let p;
+      if (drawer.classList.contains('chat-free')) { p = currentPos(); }
+      else {
+        // First grab: lift the docked panel into a floating window where
+        // it already sits — a little shorter than the screen so it can
+        // travel anywhere, the cart included no longer trapped under it.
+        const r = drawer.getBoundingClientRect();
+        const h = Math.min(r.height, Math.round(window.innerHeight * 0.88));
+        p = clampPos({ l: r.left, t: Math.max(0, window.innerHeight - h - 12), w: r.width, h });
+        applyPos(p);
+      }
+      dragging = { dx: e.clientX - p.l, dy: e.clientY - p.t, pos: p };
+      drawer.classList.add('chat-dragging');
+      try { head.setPointerCapture(e.pointerId); } catch (err) { /* mouse still drags */ }
+      e.preventDefault();
+    });
+    head.addEventListener('pointermove', (e) => {
+      if (!dragging) { return; }
+      const p = clampPos({ l: e.clientX - dragging.dx, t: e.clientY - dragging.dy, w: dragging.pos.w, h: dragging.pos.h });
+      dragging.pos = p;
+      drawer.style.left = p.l + 'px'; drawer.style.top = p.t + 'px';
+      noteActivity();
+    });
+    const endDrag = () => {
+      if (!dragging) { return; }
+      savePos(dragging.pos); dragging = null;
+      placeMoon();
+      drawer.classList.remove('chat-dragging');
+      noteActivity();
+    };
+    head.addEventListener('pointerup', endDrag);
+    head.addEventListener('pointercancel', endDrag);
+  }
+
+  // -- free-style resize: both sides, the bottom, both bottom corners -------
+  // Dragging the left edge anchors the right edge (the left compensates);
+  // the new size lands in the same saved record as the position.
+  let resizing = null;
+  [['l', 'chat-rz chat-rz-l'], ['r', 'chat-rz chat-rz-r'], ['b', 'chat-rz chat-rz-b'],
+   ['bl', 'chat-rz chat-rz-bl'], ['br', 'chat-rz chat-rz-br']].forEach(function (spec) {
+    const mode = spec[0];
+    const handle = document.createElement('div');
+    handle.className = spec[1];
+    handle.setAttribute('aria-hidden', 'true');
+    handle.addEventListener('pointerdown', (e) => {
+      if (mqMobile.matches || !isOpen() || !drawer.classList.contains('chat-free')) { return; }
+      if (e.button !== undefined && e.button !== 0) { return; }
+      resizing = { mode: mode, x: e.clientX, y: e.clientY, pos: currentPos(), live: null };
+      drawer.classList.add('chat-resizing');
+      try { handle.setPointerCapture(e.pointerId); } catch (err) { /* mouse still resizes */ }
+      e.preventDefault(); e.stopPropagation();
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!resizing) { return; }
+      const s = resizing.pos, m = resizing.mode;
+      const dx = e.clientX - resizing.x, dy = e.clientY - resizing.y;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let w = s.w, h = s.h, l = s.l;
+      if (m.indexOf('r') >= 0) { w = s.w + dx; }
+      if (m.indexOf('l') >= 0) { w = s.w - dx; }
+      if (m.indexOf('b') >= 0) { h = s.h + dy; }
+      w = Math.max(Math.min(MIN_W, vw), Math.min(w, vw));
+      h = Math.max(Math.min(MIN_H, vh), Math.min(h, vh));
+      if (m.indexOf('l') >= 0) {
+        l = Math.max(0, (s.l + s.w) - w);            // right edge stays anchored
+        if (l + w > vw) { w = vw - l; }
+      }
+      const p = { l: l, t: s.t, w: w, h: h };
+      resizing.live = p;
+      drawer.style.left = p.l + 'px'; drawer.style.top = p.t + 'px';
+      drawer.style.width = p.w + 'px'; drawer.style.height = p.h + 'px';
+      noteActivity();
+    });
+    const endResize = () => {
+      if (!resizing) { return; }
+      if (resizing.live) { savePos(resizing.live); }
+      placeMoon();
+      resizing = null;
+      drawer.classList.remove('chat-resizing');
+      noteActivity();
+    };
+    handle.addEventListener('pointerup', endResize);
+    handle.addEventListener('pointercancel', endResize);
+    drawer.appendChild(handle);
+  });
+
+  window.addEventListener('resize', () => {
+    if (fab && fab.style.left) { const r = fab.getBoundingClientRect(); placeFab(r.left, r.top); }
+    if (!isOpen()) { return; }
+    if (mqMobile.matches) {
+      drawer.classList.remove('chat-free'); drawer.classList.remove('chat-circle');
+      drawer.style.left = drawer.style.top = drawer.style.width = drawer.style.height = '';
+      return;
+    }
+    if (drawer.classList.contains('chat-free')) { applyPos(currentPos()); applyCircle(); }
+  });
+
+  // -- the floating circle ------------------------------------------------------
+  function syncFab() { if (fab) { fab.classList.toggle('hidden', isOpen()); } }
+  // The circle itself is free-style: drag it to any spot on the register
+  // and the spot is remembered on this device. A press that travels past
+  // TAP_SLOP px is a drag (and never opens); a press that stays put is a
+  // tap and opens the chat, exactly as before.
+  const TAP_SLOP = 7;
+  let fabDrag = null, fabMoved = false;
+  function clampFab(l, t) {
+    const w = (fab && fab.offsetWidth) || 56, h = (fab && fab.offsetHeight) || 56;
+    return { l: Math.max(0, Math.min(l, Math.max(0, window.innerWidth - w))),
+             t: Math.max(0, Math.min(t, Math.max(0, window.innerHeight - h))) };
+  }
+  function placeFab(l, t) {
+    const p = clampFab(l, t);
+    fab.style.left = p.l + 'px'; fab.style.top = p.t + 'px';
+    fab.style.right = 'auto'; fab.style.bottom = 'auto';
+    return p;
+  }
+  function applySavedFab() {
+    try {
+      const p = JSON.parse(localStorage.getItem(FAB_KEY));
+      if (p && isFinite(p.l) && isFinite(p.t)) { placeFab(p.l, p.t); }
+    } catch (e) { /* no saved spot yet — the default corner stands */ }
+  }
+  if (fab) {
+    fab.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0) { return; }
+      const r = fab.getBoundingClientRect();
+      fabDrag = { x: e.clientX, y: e.clientY, l: r.left, t: r.top, moved: false };
+      try { fab.setPointerCapture(e.pointerId); } catch (err) { /* a plain tap still works */ }
+    });
+    fab.addEventListener('pointermove', (e) => {
+      if (!fabDrag) { return; }
+      const dx = e.clientX - fabDrag.x, dy = e.clientY - fabDrag.y;
+      if (!fabDrag.moved && Math.sqrt(dx * dx + dy * dy) < TAP_SLOP) { return; }
+      if (!fabDrag.moved) { fabDrag.moved = true; fab.classList.add('gol-fab-dragging'); }
+      placeFab(fabDrag.l + dx, fabDrag.t + dy);
+    });
+    const endFabDrag = () => {
+      if (!fabDrag) { return; }
+      if (fabDrag.moved) {
+        // Swallow the click this press is about to fire: it was a drag.
+        fabMoved = true;
+        setTimeout(() => { fabMoved = false; }, 150);
+        const r = fab.getBoundingClientRect();
+        try { localStorage.setItem(FAB_KEY, JSON.stringify({ l: Math.round(r.left), t: Math.round(r.top) })); } catch (err) { /* private mode */ }
+      }
+      fabDrag = null;
+      fab.classList.remove('gol-fab-dragging');
+    };
+    fab.addEventListener('pointerup', endFabDrag);
+    fab.addEventListener('pointercancel', endFabDrag);
+    fab.addEventListener('click', () => {
+      if (fabMoved) { fabMoved = false; return; }
+      noteActivity(); openChatToGol();
+    });
+    applySavedFab();
+  }
+  let wasOpen = isOpen();
+  new MutationObserver(() => {
+    const open = isOpen();
+    if (open && !wasOpen) { noteActivity(); applySavedPos(); applyCircle(); if (window.__golPlaceMoon) { setTimeout(window.__golPlaceMoon, 380); setTimeout(window.__golPlaceMoon, 950); } }
+    wasOpen = open; syncFab();
+  }).observe(drawer, { attributes: true, attributeFilter: ['class'] });
+
+  // -- idle fold-back -------------------------------------------------------------
+  const body = $('chatBody');
+  if (body) { new MutationObserver(noteActivity).observe(body, { childList: true }); }
+  ['pointerdown', 'keydown', 'input', 'wheel', 'touchstart'].forEach((ev) =>
+    drawer.addEventListener(ev, noteActivity, true));
+  function stagedWaiting() {
+    return !!document.querySelector('#chatBody .msg.card:not(.sc-cancelled) .sc-confirm:not([disabled])');
+  }
+  function pinWaiting() { const p = $('pinPad'); return !!(p && !p.classList.contains('hidden')); }
+  function voiceWaiting() { const v = $('voicePill'); return !!(v && !v.classList.contains('hidden')); }
+  setInterval(() => {
+    if (!isOpen() || dragging || resizing) { return; }
+    if (typeof callActive !== 'undefined' && callActive) { noteActivity(); return; }
+    if (stagedWaiting() || pinWaiting() || voiceWaiting()) { noteActivity(); return; }
+    if (Date.now() - lastActivity >= IDLE_MS) { foldPanel(); }
+  }, 4000);
+
+  syncFab();
+  applyCircle();
+  if (isOpen()) { applySavedPos(); applyCircle(); }
+})();

@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Gol POS — Register</title>
 <script>try{var t=localStorage.getItem('golpos_theme');if(['midnight','clean','bold'].indexOf(t)<0)t='midnight';document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='midnight';}</script>
-<link rel="stylesheet" href="styles.css?v=c345a5d">
+<script>try{if(localStorage.getItem('golpos_lock_hint')==='1')document.documentElement.classList.add('boot-lock');}catch(e){}</script>
+<link rel="stylesheet" href="styles.css?v=0f0ac53">
 </head>
 <body>
 <header class="topbar">
@@ -21,7 +22,7 @@
       <button type="button" data-set-theme="bold"><span class="sw sw-bold"></span>Bold</button>
     </div>
     <span id="camPill" class="cam-pill hidden" role="status"><svg class="ic ic-dot" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="currentColor"/></svg> Camera on</span>
-    <button id="camBtn" type="button" aria-label="Camera — take a photo for Gol" title="Camera — take a photo for Gol (bill, receipt, product)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+    <button id="camBtn" type="button" aria-label="Scan bills" title="Scan bills — phone scanner, camera or upload"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
     <button id="voiceBtn" type="button" aria-label="Voice — talk to Gol" title="Voice — talk to Gol"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5"/></svg></button>
     <div class="setmenu">
       <button id="settingsBtn" type="button" aria-haspopup="true" aria-expanded="false"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Settings</button>
@@ -44,7 +45,7 @@
           <button type="button" class="sm-act" id="smHistoryBtn">History</button>
         </div>
         <div class="sm-row">
-          <div class="sm-main"><span class="sm-label">Scan with phone</span><span class="sm-sub">No camera here? A phone becomes this register's camera</span></div>
+          <div class="sm-main"><span class="sm-label">Scan bills with phone</span><span class="sm-sub">No camera here? A phone becomes this register's camera</span></div>
           <button type="button" class="sm-act" id="smScanBtn">Show link</button>
         </div>
         <div class="sm-row">
@@ -63,6 +64,14 @@
           <div class="sm-main"><span class="sm-label">Lock register</span><span class="sm-sub">Back to PIN please — the next person opens it in their name</span></div>
           <button type="button" class="sm-act" id="smLockBtn">Lock</button>
         </div>
+        <div class="sm-row hidden" id="smMrstoreRow">
+          <div class="sm-main"><span class="sm-label">Login to MR.STORE</span><span class="sm-sub">This store in MR.STORE — books, bills, reports</span></div>
+          <button type="button" class="sm-act" id="smMrstoreBtn">Open</button>
+        </div>
+        <div class="sm-row hidden" id="smTeamRow">
+          <div class="sm-main"><span class="sm-label">Team</span><span class="sm-sub">Owner, staff and PINs</span></div>
+          <button type="button" class="sm-act" id="smTeamBtn">Open</button>
+        </div>
         <div class="sm-row sm-last">
           <div class="sm-main"><span class="sm-label">Store</span><span class="sm-sub">Closed pauses new sales</span></div>
           <button type="button" class="sm-toggle on" id="smStoreBtn" aria-pressed="true">Open</button>
@@ -72,7 +81,7 @@
     <span id="actorChip" class="actor-chip hidden" role="status"></span>
     <button id="myTasksBtn" type="button" class="hidden">My Tasks</button>
     <button id="ownerBtn" type="button">Owner</button>
-    <button id="golBtn" type="button" class="gol-btn">Talk to Gol</button>
+    <button id="golBtn" type="button" class="gol-btn"><svg class="gol-ring" viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path d="M28.6 7.7 A15 15 0 1 0 34.8 22.6" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"/></svg>Talk to Gol</button>
   </div>
 </header>
 
@@ -189,12 +198,25 @@
   <button id="ownerClose" type="button" class="ghost">Close</button>
 </section>
 
+<div id="golRing" class="gol-ring hidden" aria-hidden="true"></div>
+<button id="golCallSide" type="button" aria-label="Call Gol"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg></button>
 <div class="lock-overlay hidden" id="lockOverlay" role="dialog" aria-label="Register locked">
   <div class="lock-card">
-    <img class="lock-logo" src="assets/gol-ring-blue.png" alt="Gol">
+    <img class="lock-logo" src="assets/gol-ring-white.png" alt="Gol">
     <h2 class="lock-title">PIN please</h2>
-    <p class="lock-sub">The register is locked. Type your PIN in the Gol chat —<br>it opens in your name, with your tasks ready.</p>
-    <button id="lockChatBtn" type="button" class="gol-btn">Talk to Gol</button>
+    <p class="lock-sub">The register is locked. Enter your PIN —<br>it opens in your name, with your tasks ready.</p>
+    <div id="lockPinPad" class="pin-pad lock-pin-pad" role="group" aria-label="PIN entry">
+      <div class="pin-pad-dots" id="lockPinDots" aria-hidden="true"></div>
+      <div class="pin-pad-grid" id="lockPinGrid">
+        <button type="button" data-lpin="1">1</button><button type="button" data-lpin="2">2</button><button type="button" data-lpin="3">3</button>
+        <button type="button" data-lpin="4">4</button><button type="button" data-lpin="5">5</button><button type="button" data-lpin="6">6</button>
+        <button type="button" data-lpin="7">7</button><button type="button" data-lpin="8">8</button><button type="button" data-lpin="9">9</button>
+        <button type="button" data-lpin="clear">C</button><button type="button" data-lpin="0">0</button><button type="button" data-lpin="back">⌫</button>
+      </div>
+      <button id="lockPinGo" type="button" class="pin-pad-go">Unlock</button>
+      <p class="lock-pin-msg" id="lockPinMsg" role="alert"></p>
+    </div>
+    <button id="lockChatBtn" type="button" class="gol-btn"><svg class="gol-ring" viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path d="M28.6 7.7 A15 15 0 1 0 34.8 22.6" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"/></svg>Talk to Gol</button>
   </div>
 </div>
 
@@ -384,10 +406,28 @@
   </div>
 </div></div>
 
+<div class="stock-add hidden" id="pinSetModal"><div class="stock-card">
+  <h3 class="pin-sheet-title" id="pinSetTitle">Set PIN</h3>
+  <p class="stock-pin-note">The owner sets every PIN and hands it out — it is never shown again after this. 4–6 digits.</p>
+  <label class="cash-label">New PIN
+    <input id="pinSetInput" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••">
+  </label>
+  <label class="cash-label">Once more
+    <input id="pinSetInput2" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••">
+  </label>
+  <p class="stock-note hidden" id="pinSetError" role="alert"></p>
+  <div class="cash-actions">
+    <button type="button" id="pinSetCancel" class="ghost">Cancel</button>
+    <button type="button" id="pinSetSave">Save PIN</button>
+  </div>
+</div></div>
+
 <div id="toast" class="toast hidden" role="status"></div>
 
+<div id="golScrim" class="gol-scrim hidden" aria-hidden="true"></div>
 <div class="chat-drawer hidden" id="chatDrawer">
   <div class="chat-head">
+    <span class="chat-grip" aria-hidden="true" title="Drag to move"></span>
     <span class="gol-mark"><img class="gol-mark-img" src="assets/gol-ring-white.png" alt="Gol"><i class="gol-mark-dot"></i></span>
     <div class="chat-title"><b>Gol</b><small>Your store brain · online</small></div>
     <button id="chatClose" type="button" aria-label="Close">×</button>
@@ -406,16 +446,32 @@
     <button type="button" data-chip="What sold best this week?"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v4.5a4 4 0 0 1-8 0z"/><path d="M8 5.5H4.5a3.5 3.5 0 0 0 3.6 3.5M16 5.5h3.5a3.5 3.5 0 0 1-3.6 3.5M12 12.5V15M8.5 20h7M10 15h4l.6 5H9.4z"/></svg> What sold best this week?</button>
     <button type="button" data-chip="How much is a Coke?"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9h12l-1.4 11a1.5 1.5 0 0 1-1.5 1.3H8.9A1.5 1.5 0 0 1 7.4 20z"/><path d="M4.5 9h15M14.5 2.5 13.2 9"/></svg> How much is a Coke?</button>
   </div>
-  <div id="voicePill" class="voice-pill hidden" role="status"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5"/></svg> Listening… speak now</div>
+  <div id="voicePill" class="voice-pill hidden" role="status"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5"/></svg><span class="vp-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span> Listening… speak now</div>
+    <div id="golCenterLogo" class="gol-center-logo hidden" aria-hidden="true"><img src="assets/gol-ring-blue.png" alt=""></div>
+  <button id="golMenuFab" type="button" class="gol-menu-fab" aria-label="Quick menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="5" r="2.1"/><circle cx="12" cy="5" r="2.1"/><circle cx="19" cy="5" r="2.1"/><circle cx="5" cy="12" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="19" cy="12" r="2.1"/><circle cx="5" cy="19" r="2.1"/><circle cx="12" cy="19" r="2.1"/><circle cx="19" cy="19" r="2.1"/></svg></button>
+  <div id="pinPad" class="pin-pad hidden" role="group" aria-label="PIN entry">
+    <div class="pin-pad-title">PIN halnus</div>
+    <p class="pin-pad-sub" id="pinPadSub">Register locked chha — PIN halnus, tapaai kai naam ma khulchha.</p>
+    <div class="pin-pad-dots" id="pinPadDots" aria-hidden="true"></div>
+    <div class="pin-pad-grid" id="pinPadGrid">
+      <button type="button" data-pin="1">1</button><button type="button" data-pin="2">2</button><button type="button" data-pin="3">3</button>
+      <button type="button" data-pin="4">4</button><button type="button" data-pin="5">5</button><button type="button" data-pin="6">6</button>
+      <button type="button" data-pin="7">7</button><button type="button" data-pin="8">8</button><button type="button" data-pin="9">9</button>
+      <button type="button" data-pin="clear">C</button><button type="button" data-pin="0">0</button><button type="button" data-pin="back">⌫</button>
+    </div>
+    <button id="pinPadGo" type="button" class="pin-pad-go">Unlock</button>
+  </div>
   <form class="chat-form" id="chatForm">
     <label class="photo-btn" title="Send a photo — Gol's eyes (SAM) will read it"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
       <input id="photoInput" type="file" accept="image/*" hidden>
     </label>
     <button id="chatMicBtn" type="button" class="mic-btn" title="Voice — talk to Gol" aria-label="Voice input"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5"/></svg></button>
+    <button id="chatVoiceBtn" type="button" class="mic-btn" title="Gol voice on — tap to mute" aria-label="Gol voice toggle" aria-pressed="true"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></button>
     <input id="chatInput" type="text" placeholder="Message Gol…" autocomplete="off">
     <button type="submit"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 2.5 11 13"/><path d="M21.5 2.5 14.8 21.5l-3.8-8.5-8.5-3.8z"/></svg> Send</button>
   </form>
 </div>
+<button id="golFab" type="button" class="gol-fab hidden" aria-label="Talk to Gol" title="Talk to Gol"><svg class="gol-ring" viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path d="M28.6 7.7 A15 15 0 1 0 34.8 22.6" fill="none" stroke="currentColor" stroke-width="6.3" stroke-linecap="round"/></svg><span class="fab-dot"></span></button>
 
 <div class="camview hidden" id="camModal"><div class="cam-card">
   <div class="cam-head">
@@ -455,9 +511,31 @@
   <p class="cam-note">A few seconds around this cash sale, from the register camera — event footage only, never a 24/7 tape.</p>
 </div></div>
 
+<div class="camview hidden" id="scanSheet"><div class="cam-card">
+  <div class="cam-head">
+    <h3>Scan bills</h3>
+    <button type="button" id="ssClose" class="ghost">Close</button>
+  </div>
+  <p class="cam-note">Scan a bill or receipt — Gol reads it right here in this register's chat.</p>
+  <div class="ss-rows">
+    <button type="button" id="ssPhone" class="ss-row ss-main"><span class="ss-t">Scan bills — with your phone</span><span class="ss-s">Show a QR code; your phone becomes this register's scanner</span></button>
+    <button type="button" id="ssCamera" class="ss-row"><span class="ss-t">Use this register's camera</span><span class="ss-s">Take the photo on this screen</span></button>
+    <button type="button" id="ssUpload" class="ss-row"><span class="ss-t">Upload a photo</span><span class="ss-s">Pick a photo file from this computer</span></button>
+  </div>
+</div></div>
+<style>
+#scanSheet .ss-rows{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+#scanSheet .ss-row{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;padding:13px 14px;border-radius:12px;border:1.5px solid #dbe3ee;background:#fff;cursor:pointer;font:inherit}
+#scanSheet .ss-row .ss-t{font-weight:700;font-size:15px;color:#16283f}
+#scanSheet .ss-row .ss-s{font-size:12.5px;color:#63738a}
+#scanSheet .ss-row.ss-main{background:#2563eb;border-color:#2563eb}
+#scanSheet .ss-row.ss-main .ss-t{color:#fff}
+#scanSheet .ss-row.ss-main .ss-s{color:#dbeafe}
+</style>
+
 <div class="camview hidden" id="scanModal"><div class="cam-card">
   <div class="cam-head">
-    <h3>Scan with phone</h3>
+    <h3>Scan bills with your phone</h3>
     <button type="button" id="scanClose" class="ghost">Close</button>
   </div>
   <p class="cam-note">Open this link on a phone — or type the code there — and its camera becomes this register's camera. Bills and photos land in this register's Gol chat.</p>
@@ -480,6 +558,6 @@
 <video id="watchVideo" muted playsinline class="watch-video" aria-hidden="true"></video>
 
 <script src="qrcode.min.js"></script>
-  <script src="app.js?v=c345a5d"></script>
+  <script src="app.js?v=2232719"></script>
 </body>
 </html>

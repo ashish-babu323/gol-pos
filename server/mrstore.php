@@ -302,6 +302,36 @@ function mrstore_sim_price(array $p): array {
     return [2.49, 'sim-demo'];
 }
 
+// The register's shelf speaks in category tabs, and the tab labels are
+// the store's REAL MR.STORE categories (owner catch, Oct 30: the
+// projection used to flatten every product to 'MR.STORE', leaving one
+// useless tab and no way to browse by kind). MR.STORE stores lowercase
+// keys (grocery, alcohol, vapes, tobacco, drinks, candy, snacks); the
+// register's own standalone catalog already uses title-case labels
+// (Drinks, Beer and Wine) — one display language on the shelf. An
+// uncategorized product projects '' and gets NO tab (it lives under
+// All), never a borrowed label.
+function mrstore_cat_label(string $c): string {
+    $c = trim($c);
+    if ($c === '') { return ''; }
+    return ucwords(strtolower($c));
+}
+
+// The write-side twin: a category named at the till (its label, e.g.
+// 'Grocery') lands in MR.STORE under the catalog's OWN existing key
+// when one matches case-insensitively ('grocery'), so a till-born item
+// joins its family instead of splitting the store's category counts.
+function mrstore_cat_key(array $cat, string $want): string {
+    $want = trim($want);
+    if ($want === '') { return $want; }
+    foreach (($cat['products'] ?? []) as $p) {
+        if (!is_array($p)) { continue; }
+        $k = (string)($p['category'] ?? '');
+        if ($k !== '' && strtolower($k) === strtolower($want)) { return $k; }
+    }
+    return $want;
+}
+
 function mrstore_catalog_with_stock(): ?array {
     $pdo = mrstore_pdo();
     $set = mrstore_settings();
@@ -320,6 +350,46 @@ function mrstore_catalog_with_stock(): ?array {
         '071279001234' => ['ice', 'baraf', 'बरफ'],
         '037000123456' => ['paper towels', 'towels'],
     ];
+    // Alias truth (Oct 30): MR.STORE's learned product_truth carries the
+    // alternate names bills and staff actually use for this store's
+    // products (floor-intel's byKey table — the same truth the What's
+    // Out engine reads). The catalog records themselves carry NO aliases
+    // field (0 of 1,022 Lucky / 0 of 1,266 123 rows), so a projection
+    // that reads only the record could never speak them. Read-only
+    // here: a missing or unreadable truth file yields empty indexes and
+    // the projection behaves exactly as before.
+    $truthByUpc = [];
+    $truthByName = [];
+    try {
+        $apiDir = golpos_link_config()['api_dir'];
+        $slug = substr(preg_replace('/[^a-z0-9]+/', '_', strtolower(trim($sid))) ?? '', 0, 64);
+        $truthFile = $apiDir . '/data/product_truth_' . $slug . '.json';
+        if ($slug !== '' && is_file($truthFile)) {
+            $tj = json_decode((string) @file_get_contents($truthFile), true);
+            foreach ((array) ($tj['byKey'] ?? []) as $te) {
+                if (!is_array($te)) { continue; }
+                $tAls = [];
+                foreach ((array) ($te['aliases'] ?? []) as $ta) {
+                    $ta = trim((string) $ta);
+                    if ($ta !== '') { $tAls[] = $ta; }
+                }
+                if (!$tAls) { continue; }
+                $tUpc = preg_replace('/\D+/', '', (string) ($te['upc'] ?? '')) ?? '';
+                if ($tUpc !== '') {
+                    $truthByUpc[$tUpc] = array_merge($truthByUpc[$tUpc] ?? [], $tAls);
+                    $tUpcZ = ltrim($tUpc, '0');
+                    if ($tUpcZ !== '' && $tUpcZ !== $tUpc) { $truthByUpc[$tUpcZ] = array_merge($truthByUpc[$tUpcZ] ?? [], $tAls); }
+                }
+                $tName = trim((string) ($te['name'] ?? ''));
+                if ($tName !== '') {
+                    $tSpaced = trim(preg_replace('/\s+/', ' ', preg_replace('/[^a-z0-9]+/', ' ', strtolower($tName)) ?? '') ?? '');
+                    foreach ([mrstore_nk($tName), $tSpaced] as $nkK) {
+                        if ($nkK !== '') { $truthByName[$nkK] = array_merge($truthByName[$nkK] ?? [], $tAls); }
+                    }
+                }
+            }
+        }
+    } catch (Throwable $e) { /* truth is an enrichment, never a dependency */ }
     $products = [];
     foreach ($cat['products'] as $i => $p) {
         if (!is_array($p)) { continue; }
@@ -346,12 +416,34 @@ function mrstore_catalog_with_stock(): ?array {
         if (preg_match('/mountain\s*dew|\bdew\b/i', $name)) {
             $aliases = array_values(array_unique(array_merge($aliases, ['dew', 'mountain dew'])));
         }
+        // The store's learned truth aliases for THIS product ride
+        // along: matched by UPC digits (raw or zero-stripped) or by
+        // normalized product name, in both key styles the truth uses.
+        // An alias that merely restates the product's own name adds
+        // nothing (name search already covers it) and is dropped.
+        $nameNk = mrstore_nk($name);
+        $truthHit = [];
+        foreach ([$bc, (string) ($p['upc'] ?? '')] as $cand) {
+            $dg = preg_replace('/\D+/', '', (string) $cand) ?? '';
+            if ($dg === '') { continue; }
+            foreach ([$dg, ltrim($dg, '0')] as $dk) {
+                if ($dk !== '' && isset($truthByUpc[$dk])) { $truthHit = array_merge($truthHit, $truthByUpc[$dk]); }
+            }
+        }
+        $nameSpaced = trim(preg_replace('/\s+/', ' ', preg_replace('/[^a-z0-9]+/', ' ', strtolower($name)) ?? '') ?? '');
+        foreach ([$nameNk, $nameSpaced] as $nkK) {
+            if ($nkK !== '' && isset($truthByName[$nkK])) { $truthHit = array_merge($truthHit, $truthByName[$nkK]); }
+        }
+        foreach ($truthHit as $ta) {
+            if (mrstore_nk($ta) !== $nameNk) { $aliases[] = $ta; }
+        }
+        $aliases = array_values(array_unique($aliases));
         $products[] = [
             'sku' => $bc !== '' ? 'bc-' . $bc : 'mr-' . $i,
             'barcode' => $bc,
             'name' => $name,
             'mr_name' => $name,
-            'category' => 'MR.STORE',
+            'category' => mrstore_cat_label((string)($p['category'] ?? '')),
             'price' => $price,
             'price_source' => $src,
             // MR.STORE's own cost rides the projection when the record
@@ -633,7 +725,7 @@ function mrstore_create_product(array $f): ?array {
                 'cost' => $cost, 'caseCost' => null, 'packSize' => '',
                 'retail' => $price, 'price' => $price,
                 'onHand' => $stock, 'qty' => $stock, 'storeId' => $sid,
-                'category' => (string)($f['category'] ?? 'Counter')];
+                'category' => mrstore_cat_key($cat, (string)($f['category'] ?? 'Counter'))];
         $cat['products'][] = $rec;
         mrstore_save_catalog($pdo, $sid, $cat);
         if ($stock !== null) {
@@ -645,7 +737,7 @@ function mrstore_create_product(array $f): ?array {
                          'price' => $price, 'cost' => $cost, 'stock' => $stock]);
         $out = ['sku' => $barcode !== '' ? 'bc-' . $barcode : 'mr-' . $idx,
                 'barcode' => $barcode, 'name' => $name, 'mr_name' => $name,
-                'category' => 'MR.STORE', 'price' => $price, 'price_source' => 'mrstore',
+                'category' => mrstore_cat_label((string)$rec['category']), 'price' => $price, 'price_source' => 'mrstore',
                 'aliases' => [], 'onHand' => $stock];
         if ($cost !== null) { $out['cost'] = $cost; }
         return $out;

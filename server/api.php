@@ -60,6 +60,27 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 // past closing with an unsealed card segment (see golpos_batch_auto_sweep).
 golpos_batch_auto_sweep();
 
+// --- the Owner panel gate -----------------------------------------------------
+// Every read that feeds the Owner panel is OWNER-domain: when an admin
+// PIN exists, the session must be admin. This is the ?team rule as ONE
+// helper for all of them (leak fix, Nov 2: the Team card itself was
+// gated, but its sibling panel reads — ?orders, ?report, ?closes,
+// ?feed, ?order_sheet — answered ANY session, including none at all, so
+// a cashier at the counter could open the panel and read vendor/order
+// data and the full close history). A virgin setup till (no admin PIN
+// yet) reads openly, like the rest of setup mode — the owner needs the
+// panel reachable to set the first PIN from it.
+function golpos_panel_gate(): void {
+    if (golpos_admin_pin_hash() === null) { return; }
+    $sid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($_GET['session'] ?? ''));
+    $sess = $sid === '' ? [] : golpos_session($sid);
+    if (empty($sess['admin'])) {
+        http_response_code(403);
+        echo json_encode(['error' => 'pin_required']);
+        exit;
+    }
+}
+
 if ($method === 'GET' && isset($_GET['products'])) {
     echo json_encode(golpos_catalog(), JSON_UNESCAPED_UNICODE);
     exit;
@@ -76,6 +97,9 @@ if ($method === 'GET' && isset($_GET['summary'])) {
 if ($method === 'GET' && isset($_GET['closes'])) {
     // Day-close records — one per date, written when the owner closes the
     // day in the Gol chat; the owner view reads them back here.
+    // Owner-domain (the panel gate): the full close history is not
+    // counter reading.
+    golpos_panel_gate();
     echo json_encode(golpos_read('closes.json', []), JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -85,7 +109,9 @@ if ($method === 'GET' && isset($_GET['pending'])) {
 }
 if ($method === 'GET' && isset($_GET['feed'])) {
     // The demo store's social feed — posters Gol staged and the owner
-    // confirmed with "gol". Fictional demo content only.
+    // confirmed with "gol". Fictional demo content only. Read by the
+    // Owner panel only, so it rides the panel gate.
+    golpos_panel_gate();
     echo json_encode(golpos_read('feed.json', []), JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -261,18 +287,20 @@ if ($method === 'GET' && isset($_GET['lock'])) {
 }
 if ($method === 'GET' && isset($_GET['team'])) {
     // The Owner panel's Team card + unlock feed + What's Out board in
-    // one read. Owner-domain: when an admin PIN exists, the session
-    // must be admin (the sheet gate's rule); a virgin setup till (no
-    // PIN yet) reads openly, like the rest of setup mode. Reading the
-    // inbox is a task sync point — Gol's own tasks generate here too.
+    // one read. Owner-domain: the panel gate (an admin PIN exists ->
+    // the session must be admin; a virgin setup till reads openly).
+    // Reading the inbox is a task sync point — Gol's own tasks
+    // generate here too.
+    // LIGHT-MIRROR PAYLOAD (leak fix, Nov 2): the register is a light
+    // mirror, so this read carries counts, names and statuses ONLY —
+    // never the task item texts (the price-gap items name cost work),
+    // never team-note texts, never the day-trail texts (which included
+    // each employee's chat questions), never pay rates or correction
+    // words. The detail lives in MR.STORE and the Gol chat, where the
+    // owner works it. Before this trim the payload was the ENTIRE task
+    // store (~48 KB, every item text) for any admin-flagged session.
+    golpos_panel_gate();
     $adminPin = golpos_admin_pin_hash();
-    $sid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($_GET['session'] ?? ''));
-    $sess = $sid === '' ? [] : golpos_session($sid);
-    if ($adminPin !== null && empty($sess['admin'])) {
-        http_response_code(403);
-        echo json_encode(['error' => 'pin_required']);
-        exit;
-    }
     golpos_tasks_sync();
     $people = [];
     foreach (golpos_people()['employees'] as $e) {
@@ -285,28 +313,32 @@ if ($method === 'GET' && isset($_GET['team'])) {
                 if (!empty($it['done'])) { $done++; } else { $open++; }
             }
         }
-        $notes = [];
         foreach (golpos_team_notes() as $n) {
-            if (($n['from_email'] ?? '') === $email) {
-                $notes[] = $n;
-                if (empty($n['read'])) { $unread++; }
-            }
+            if (($n['from_email'] ?? '') === $email && empty($n['read'])) { $unread++; }
         }
+        // The trail rides as COUNTS (the panel only ever counted it);
+        // its texts stay owner-side in the store, not on the wire.
+        $trail = golpos_presence_trail($email, date('Y-m-d'));
         $people[] = ['email' => $email, 'name' => golpos_display_name($e),
+                     'has_pin' => !empty($e['pin_hash']),
                      'role' => (string)($pres['role'] ?? 'cashier'),
-                     'duties' => array_values((array)($pres['job_pack']['items'] ?? [])),
                      'first_unlock_at' => $pres['first_unlock_at'] ?? null,
                      'last_unlock_at' => $pres['last_unlock_at'] ?? null,
                      'last_unlock_photo' => $pres['last_unlock_photo'] ?? null,
                      'tasks_open' => $open, 'tasks_done' => $done,
-                     'notes' => array_slice(array_reverse($notes), 0, 5), 'notes_unread' => $unread,
-                     'trail' => golpos_presence_trail($email, date('Y-m-d'))];
+                     'notes_unread' => $unread,
+                     'trail' => ['done' => count($trail['done']), 'notes' => count($trail['notes']),
+                                 'outs' => count($trail['outs']), 'counts' => count($trail['counts']),
+                                 'questions' => count($trail['questions'])]];
     }
     $roleTasks = [];
     foreach (golpos_tasks() as $t) {
         if (!empty($t['employee_email']) || ($t['status'] ?? '') === 'superseded'
             || golpos_task_status($t) === 'done') { continue; }
-        $roleTasks[] = $t;
+        $openN = 0;
+        foreach ((array)($t['items'] ?? []) as $it) { if (empty($it['done'])) { $openN++; } }
+        $roleTasks[] = ['kind' => (string)($t['kind'] ?? ''), 'subject' => (string)($t['subject'] ?? ''),
+                        'status' => golpos_task_status($t), 'open_count' => $openN];
     }
     // The unlock FEED shows opens and lockouts — 'lock' events are the
     // pay lane's hours evidence, not feed rows.
@@ -314,15 +346,16 @@ if ($method === 'GET' && isset($_GET['team'])) {
         static fn($u) => in_array((string)($u['kind'] ?? 'unlock'), ['unlock', 'lockout'], true)));
     $payReqs = [];
     foreach (golpos_pay_pending_all() as $r) {
+        // Name, period, hours, amount — the mirror line. The rate
+        // segments and her correction words are chat-domain detail.
         $payReqs[] = ['id' => (string)$r['id'], 'name' => (string)$r['employee_name'],
                       'email' => (string)$r['employee_email'],
                       'period' => golpos_pay_period_label((string)$r['period_from'], (string)$r['period_to']),
                       'hours' => (float)$r['hours'], 'amount' => (float)$r['amount'],
-                      'segments' => (array)$r['segments'],
-                      'corrections' => (array)($r['corrections'] ?? []),
                       'created' => (string)($r['created'] ?? '')];
     }
-    echo json_encode(['people' => $people, 'tasks' => golpos_tasks(), 'role_tasks' => $roleTasks,
+    echo json_encode(['people' => $people, 'admin_has_pin' => $adminPin !== null,
+                      'role_tasks' => $roleTasks,
                       'unlocks' => array_slice(array_reverse($feedUnlocks), 0, 15),
                       'whatsout' => golpos_whatsout_open(),
                       'pay_requests' => $payReqs,
@@ -365,19 +398,63 @@ if ($method === 'GET' && isset($_GET['whatsout'])) {
     echo json_encode(['open' => golpos_whatsout_open()], JSON_UNESCAPED_UNICODE);
     exit;
 }
+/* Books closes for a date range when this till is LINKED to an
+   MR.STORE store (audit GOL-02, Oct 30): the Owner panel must read
+   the same basis the Gol chat speaks — the store's Books closes —
+   not only this register's local journal (on the live Lucky till the
+   panel's Yesterday showed zeros while the Books close for the same
+   day was $2,119.15). Rows come from the store-api read stack
+   (gol-reads), the bridge's own source; mapped to the panel's shape.
+   Returns date => close-row, empty when unlinked or unreadable. */
+function golpos_books_closes(string $from, string $to): array {
+    if (!golpos_link_on()) return [];
+    $cfg = golpos_link_config();
+    $apiDir = (string)($cfg['api_dir'] ?? '');
+    $sid = (string)($cfg['store_id'] ?? '');
+    if ($apiDir === '' || $sid === '' || !is_file($apiDir . '/gol-reads.php')) return [];
+    try {
+        require_once $apiDir . '/gol-reads.php';
+        if (!function_exists('golr_closes')) return [];
+        $store = function_exists('golr_store_by_id') ? golr_store_by_id($sid) : null;
+        if ($store === null) {
+            $store = ['slug' => function_exists('golr_slug_for') ? golr_slug_for($sid) : '',
+                      'id' => $sid, 'name' => 'Store'];
+        }
+        $out = [];
+        foreach (golr_closes($store, $from, $to) as $d => $r) {
+            $out[(string)$d] = ['date' => (string)$d,
+                'gross' => round((float)($r['gross'] ?? 0), 2),
+                'cash' => round((float)($r['cash'] ?? 0), 2),
+                'card' => round((float)($r['card'] ?? 0), 2),
+                'tax' => round((float)($r['tax'] ?? 0), 2),
+                'overShort' => $r['overShort'] ?? null,
+                'txns' => null, 'basis' => 'books_close'];
+        }
+        return $out;
+    } catch (Throwable $e) { return []; }
+}
 if ($method === 'GET' && isset($_GET['report'])) {
     // Manual Reports card data — the same day-summary figures the Gol chat
     // speaks, for a picked date or the last 7 days, plus the saved close
     // record for a date when one exists (the frozen truth for that day).
+    // Owner-domain (the panel gate): the Reports card is the Owner
+    // panel's; period figures are not counter reading.
+    golpos_panel_gate();
     if (isset($_GET['week'])) {
+        $booksWk = golpos_books_closes(date('Y-m-d', strtotime('-6 days')), date('Y-m-d'));
         $days = []; $tot = ['gross' => 0.0, 'cash' => 0.0, 'card' => 0.0, 'txns' => 0];
         for ($i = 6; $i >= 0; $i--) {
             $d = date('Y-m-d', strtotime("-{$i} days"));
-            $s = golpos_day_summary($d);
-            $s['closed'] = golpos_close_record($d) !== null;
+            if (isset($booksWk[$d])) {
+                $s = $booksWk[$d];
+                $s['closed'] = true;
+            } else {
+                $s = golpos_day_summary($d);
+                $s['closed'] = golpos_close_record($d) !== null;
+            }
             $days[] = $s;
             $tot['gross'] += $s['gross']; $tot['cash'] += $s['cash'];
-            $tot['card'] += $s['card']; $tot['txns'] += $s['txns'];
+            $tot['card'] += $s['card']; $tot['txns'] += (int)($s['txns'] ?? 0);
         }
         $tot = ['gross' => round($tot['gross'], 2), 'cash' => round($tot['cash'], 2),
                 'card' => round($tot['card'], 2), 'txns' => $tot['txns']];
@@ -390,8 +467,11 @@ if ($method === 'GET' && isset($_GET['report'])) {
     // day's sealed batches plus any card sales not yet inside one.
     $unb = golpos_unbatched_card_sales($d);
     $unbTotal = 0.0; foreach ($unb as $s) { $unbTotal += (float)($s['total'] ?? 0); }
+    $books = golpos_books_closes($d, $d);
+    $bc = $books[$d] ?? null;
     echo json_encode(['date' => $d, 'summary' => golpos_day_summary($d),
-                      'close' => golpos_close_record($d),
+                      'close' => $bc ?? golpos_close_record($d),
+                      'books_close' => $bc,
                       'batches' => golpos_batches_on($d),
                       'unbatched_card' => ['count' => count($unb), 'total' => round($unbTotal, 2)]],
                      JSON_UNESCAPED_UNICODE);
@@ -402,6 +482,9 @@ if ($method === 'GET' && isset($_GET['orders'])) {
     // every vendor due today with its prep status, plus the order
     // records (newest first) whose sheets the panel prints/shares. Read
     // only — orders are staged and confirmed in the Gol chat.
+    // Owner-domain (the panel gate): vendor and order records are not
+    // counter reading.
+    golpos_panel_gate();
     $today = date('Y-m-d');
     $pend = golpos_pending();
     $visits = [];
@@ -428,6 +511,8 @@ if ($method === 'GET' && isset($_GET['orders'])) {
 }
 if ($method === 'GET' && isset($_GET['order_sheet'])) {
     // One order record for the print/share sheet, or null.
+    // Owner-domain (the panel gate) — the sheet is the panel's printout.
+    golpos_panel_gate();
     $id = (string)($_GET['order_sheet'] ?? '');
     $found = null;
     foreach (golpos_orders() as $o) {
@@ -469,6 +554,48 @@ if ($method === 'POST') {
         $saved = golpos_save_settings($in['settings']);
         $saved['regcam'] = golpos_regcam_state();
         echo json_encode($saved, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if (isset($in['pin_set']) && is_array($in['pin_set'])) {
+        // PIN set/reset from the Owner panel's Team card (TASKS 230/231,
+        // Nov 2): the OWNER sets every PIN — the admin PIN and each
+        // employee's — and hands them out; an employee can never set or
+        // reset their own PIN anywhere. Owner-only door: when an admin
+        // PIN exists the session must be admin (the same rule ?team and
+        // stock_add follow); a virgin setup till (no PIN yet) is open,
+        // like the rest of setup mode. The PIN itself is never echoed
+        // back — the response carries only the fact that it is set.
+        $sid = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($in['session'] ?? ''));
+        if ($sid === '') { $sid = 'anon'; }
+        $sess = golpos_session($sid);
+        if (golpos_admin_pin_hash() !== null && empty($sess['admin'])) {
+            http_response_code(403);
+            echo json_encode(['error' => 'pin_required'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $pin = golpos_norm_pin((string)($in['pin_set']['pin'] ?? ''));
+        if ($pin === null) {
+            http_response_code(422);
+            echo json_encode(['error' => 'PIN must be 4–6 digits.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $target = (string)($in['pin_set']['target'] ?? '');
+        if ($target === 'admin') {
+            golpos_set_admin_pin(password_hash($pin, PASSWORD_DEFAULT));
+            echo json_encode(['ok' => true, 'target' => 'admin', 'has_pin' => true], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $emp = golpos_employee($target);
+        if ($emp === null) {
+            http_response_code(404);
+            echo json_encode(['error' => 'That person is not on the team list.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        $emp['pin_hash'] = password_hash($pin, PASSWORD_DEFAULT);
+        golpos_save_employee($emp);
+        echo json_encode(['ok' => true, 'target' => (string)$emp['email'],
+                          'name' => golpos_display_name($emp), 'has_pin' => true],
+                         JSON_UNESCAPED_UNICODE);
         exit;
     }
     if (isset($in['stock_add']) && is_array($in['stock_add'])) {

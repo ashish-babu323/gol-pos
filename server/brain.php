@@ -131,6 +131,19 @@ function golpos_verify_out(array $r): void {
             'session' => $sid]);
     }
 }
+
+function golpos_echo_confirm(string $msg, array $in): bool {
+    if (!empty($in['confirm'])) return false;
+    if (!in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true)) return false;
+    if (empty($GLOBALS['golpos_session_id'])) return false;
+    $ss = golpos_session((string)$GLOBALS['golpos_session_id']);
+    $said = (string)($ss['last_spoken'] ?? '');
+    $at = (int)($ss['last_spoken_at'] ?? 0);
+    if ($said === '' || $at <= 0) return false;
+    if (!preg_match('/\bgol\b|गोल/iu', $said)) return false;
+    return (time() - $at) < 8;
+}
+
 function out(array $r): void {
     // ANTI-BLUFF GUARD (owner-caught, Oct 28): a reply may only say a card
     // was staged when a card is actually in this response or still pending
@@ -167,13 +180,29 @@ function out(array $r): void {
             'role' => (string)($ss['unlocked_role'] ?? ''),
             'email' => $ss['unlocked_by'] === 'admin' ? '' : (string)$ss['unlocked_by'],
         ] : null;
+        // PIN state (Oct 30): is the server still waiting for a PIN
+        // after this reply — the register locked, or a PIN stage armed
+        // for a gated ask / PIN creation? The chat opens its masked PIN
+        // pad on exactly this signal and closes it on its absence, so
+        // the ask is a state of the chat, never a guessing game.
+        $r['pin_ask'] = golpos_lock_state($ss) || !empty($ss['pin_stage']);
     }
     // When the access gate consumed this turn's message as a PIN (including
     // when it replayed the pending intent after a successful PIN), the
     // client masks the typed bubble — the digits never stand in the history.
     if (!empty($GLOBALS['golpos_pin_mask'])) { $r['pin_mask'] = true; }
     golpos_verify_out($r);
-    echo json_encode($r, JSON_UNESCAPED_UNICODE); exit;
+    if (!empty($GLOBALS['golpos_session_id']) && isset($r['reply']) && is_string($r['reply'])) {
+        $spoken = golpos_session((string)$GLOBALS['golpos_session_id']);
+        $spoken['last_spoken'] = $r['reply'];
+        $spoken['last_spoken_at'] = time();
+        golpos_save_session((string)$GLOBALS['golpos_session_id'], $spoken);
+    }
+    // JSON_INVALID_UTF8_SUBSTITUTE (Nov 2, brain-task fix): one bad byte
+    // in a composed reply must never blank the whole response — the
+    // task-list answer's em-dash split did exactly that before the
+    // split itself was fixed; this flag is the fence behind the fix.
+    echo json_encode($r, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 function money(float $n): string { return '$' . number_format($n, 2); }
 
@@ -193,8 +222,27 @@ function golpos_lang(string $msg): string {
            'talab', 'paincha', 'jyala', 'ghanta', ' mero '];
     $hi = ['kitna', 'kitne', 'daam', 'jodo', 'lagao', 'saaman', 'karo', 'badlo',
            'hisaab', ' hai ', ' aaj ', ' mein '];
-    $n = 0; foreach ($np as $w) { if (mb_strpos($t, $w) !== false) { $n++; } }
-    $h = 0; foreach ($hi as $w) { if (mb_strpos($t, $w) !== false) { $h++; } }
+    // Whole-word (prefix) match. Substring matching turned English
+    // ("purchase", "change") into Roman Nepali because "cha" sat inside them.
+    $n = 0;
+    foreach ($np as $w) {
+        $w = trim($w);
+        if ($w !== '' && preg_match('/\b' . preg_quote($w, '/') . '/iu', $msg)) { $n++; }
+    }
+    $h = 0;
+    foreach ($hi as $w) {
+        $w = trim($w);
+        if ($w !== '' && preg_match('/\b' . preg_quote($w, '/') . '/iu', $msg)) { $h++; }
+    }
+    // Whole-word function tokens: the short words real Nepali turns
+    // are built from (cha / ke / ko / baki / bhayo / kasto). They must
+    // match as WHOLE words — as stems they would fire inside English
+    // ("cha" in "change"), which is why they were never in the stem
+    // list, and why short turns like "cart ma ke cha?" scored zero and
+    // were answered in English.
+    foreach (['cha', 'ke', 'ko', 'baki', 'bhayo', 'kasto'] as $w) {
+        if (preg_match('/\b' . $w . '\b/iu', $msg)) { $n++; }
+    }
     if ($n === 0 && $h === 0) { return 'en'; }
     return $n >= $h ? 'np' : 'hi';
 }
@@ -317,6 +365,11 @@ $S = [
     'np' => 'Tyo saman bhettina — naam arkai gari bhannus hernus.',
     'hi' => 'Woh saaman nahi mila — naam doosre tareeke se kahiye.',
     'dev' => 'त्यो सामान भेटिन — नाम अर्कै गरी भन्नुस् हेर्नुस्।'],
+  'question_no_stage' => [
+    'en' => 'That was a question, so I haven\'t staged or changed anything. If you want an item added or created, say it as an instruction — "add <item> at <price>".',
+    'np' => 'Tyo prashna thiyo, tyasaile kehi stage gareko chhaina. Saman thapna wa banauna cha bhane nirdeshan jasari bhannus — "add <item> at <price>".',
+    'hi' => 'Woh sawaal tha, isiliye kuchh stage nahi kiya. Saaman jodna ya banana ho to nirdesh ki tarah kahiye — "add <item> at <price>".',
+    'dev' => 'त्यो प्रश्न थियो, त्यसैले केही स्टेज गरेको छैन। सामान थप्न वा बनाउनु छ भने निर्देशनजसरी भन्नुस् — "add <item> at <price>"।'],
   'week_none' => [
     'en' => 'No sales recorded in the last 7 days yet — once the register rings, I can analyse the week for you.',
     'np' => 'Pachhillo 7 din ma ahile samma bikri record chhaina — register ma bikri bhaye pachhi hapta ko hisab herna sakchhu.',
@@ -333,10 +386,10 @@ $S = [
     'hi' => 'Is mahine abhi tak: kul %s andar aaya, %d sale (cash %s, card %s). POS sirf bikri rakhta hai — yeh andar aaya paisa hai, munafa books mein hota hai.',
     'dev' => 'यो महिना अहिलेसम्म: जम्मा %s भित्र आयो, %d वटा बिक्री (नगद %s, कार्ड %s)। POS ले बिक्री मात्र राख्छ — यो भित्र आएको पैसा हो, नाफा बुक्समा हुन्छ।'],
   'poster_which' => [
-    'en' => 'Which product should the poster feature? Say its name — e.g. "make an offer poster for Coke".',
-    'np' => 'Poster ma kun saman rakhne? Naam bhannus — jastai "Coke ko offer poster bana".',
-    'hi' => 'Poster mein kaun sa saaman ho? Naam bataiye — jaise "Coke ka offer poster banao".',
-    'dev' => 'पोस्टरमा कुन सामान राख्ने? नाम भन्नुस् — जस्तै "कोकको अफर पोस्टर बनाऊ"।'],
+    'en' => 'Which product should the poster feature? Say its name — e.g. "make an offer poster for" + the item\'s name.',
+    'np' => 'Poster ma kun saman rakhne? Naam bhannus — jastai "offer poster bana" + saman ko naam.',
+    'hi' => 'Poster mein kaun sa saaman ho? Naam bataiye — jaise "offer poster banao" + saaman ka naam.',
+    'dev' => 'पोस्टरमा कुन सामान राख्ने? नाम भन्नुस् — जस्तै "अफर पोस्टर बनाऊ" + सामानको नाम।'],
   'poster_ready' => [
     'en' => 'Poster ready — preview below. Say "gol" and I\'ll post it to the %s demo feed.',
     'np' => 'Poster tayar chha — tala preview hernus. "gol" bhannus, ma %s ko demo feed ma haldinchhu.',
@@ -514,7 +567,7 @@ $S = [
     'hi' => '⚠️ %s nahi ho paya: %s',
     'dev' => '⚠️ %s पुगेन: %s'],
   'fallback' => [
-    'en' => 'I can add items, quote or change prices (staged as a card), give today\'s total, and run the receipt print settings. Try: "print settings" or "How much is Coke?"',
+    'en' => 'I can add items, quote or change prices (staged as a card), give today\'s total, and run the receipt print settings. Try: "print settings", or ask any item\'s price by name.',
     'np' => 'Ma saman thapna, mulya sodhna/badalna (card stage garera), din ko hisab dina, ra receipt print settings chalauna sakchhu. Prayas garnus: "print settings ke chha?"',
     'hi' => 'Main saaman jod sakta hoon, daam bata ya badal sakta hoon (card stage karke), aaj ka hisaab de sakta hoon, aur receipt print settings chala sakta hoon. Koshish kijiye: "print settings".',
     'dev' => 'म सामान थप्न, मूल्य सोध्न/बदल्न (कार्ड स्टेज गरेर), दिनको हिसाब दिन, र रसिद प्रिन्ट सेटिङ चलाउन सक्छु। प्रयास गर्नुस्: "प्रिन्ट सेटिङ के छ?"'],
@@ -584,11 +637,64 @@ $S = [
     'np' => 'Yo owner-only ho, ra yo register ma admin PIN set bhakai chhaina — banauna man lage "admin" bhannus, tyahi bela sodchhu. Kei dekhaiena.',
     'hi' => 'Yeh sirf owner ke liye hai, aur is register par abhi admin PIN set nahi hai — banana ho to "admin" kahen, tabhi poochhunga. Kuchh nahi dikhaya gaya.',
     'dev' => 'यो owner-only हो, र यो register मा admin PIN set भएकै छैन — बनाउन मन लागे "admin" भन्नुस्, त्यही बेला सोध्छु। केही देखाइएन।'],
+  // PIN / lock guidance (owner trace, Oct 31): an already-elevated session
+  // never meets the PIN gate, so admin/PIN words used to fall through to
+  // the free-form composer ("I can't help with that…"). These lines carry
+  // the REAL paths, truthfully: creation lives in the sheet/chat gate;
+  // since Nov 2 (TASKS 230/231) the owner also SETS/CHANGES every PIN —
+  // a staged pin_set card here in chat, or the Owner panel's Team card —
+  // and hands them out; an employee never sets their own PIN anywhere.
+  'pin_help_none' => [
+    'en' => 'No admin PIN is set on this register yet. To create one, run any admin action — tap + Add Product or + Stock: the sheet will say "No admin PIN yet — choose one"; enter a new 4–6 digit PIN there and confirm it. PINs are set in that gate, never typed loose in chat. The Lock button starts working only once a PIN exists.',
+    'np' => 'Yo register ma admin PIN ajhai set bhakai chhaina. PIN banauna kunai admin kaam garnus — jastai + Add Product wa + Stock thichnus; \'No admin PIN yet\' bhanne aauchha, tyaha naya PIN (4–6 digit) haalera confirm garnus. PIN chat ma khulla lekhera hoina, tyahi gate bata banchha. PIN banepachhi matra Lock button le kaam garchha.',
+    'hi' => 'Is register par admin PIN abhi set nahi hai. PIN banane ke liye koi admin kaam kijiye — jaise + Add Product ya + Stock dabaiye; "No admin PIN yet" aayega, wahan naya PIN (4–6 digit) daalkar confirm kijiye. PIN chat mein khule mein nahi likha jata, usi gate se banta hai. PIN banne ke baad hi Lock button kaam karega.',
+    'dev' => 'यो register मा admin PIN अझै set भएकै छैन। PIN बनाउन कुनै admin काम गर्नुस् — जस्तै + Add Product वा + Stock थिच्नुस्; \'No admin PIN yet\' भन्ने आउँछ, त्यहाँ नयाँ PIN (४–६ अंक) हालेर confirm गर्नुस्। PIN chat मा खुल्ला लेखेर होइन, त्यही gate बाट बन्छ। PIN बनेपछि मात्र Lock button ले काम गर्छ।'],
+  'pin_help_have' => [
+    'en' => 'This register has an admin PIN, and PINs belong to the owner: only the owner sets or changes them, and hands them out. To set an employee\'s PIN here, say "Sita ko PIN set gara" with the new 4–6 digits — I\'ll stage a card and it lands only on your "gol". Your own admin PIN changes the same way ("admin PIN set gara …"). On screen: Owner panel → Team → Set PIN. The Lock button at the top locks the register; it opens again with the PIN of whoever is on shift. A bare PIN typed loose in chat is never used.',
+    'np' => 'Yo register ma admin PIN chha, ra PIN haru owner kai ho: owner le matra set/change garchha, ra aafai haat ma dinchha. Employee ko PIN yaha set garna "Sita ko PIN set gara" bhanera naya 4–6 digit bhannus — card stage garchhu, tapaiko "gol" pachhi matra lands hunchha. Aafno admin PIN pani testai badlinchha ("admin PIN set gara …"). Screen ma: Owner panel → Team → Set PIN. Mathi ko Lock button le register lock garchha; shift ma jo chha usko PIN le khulchha. Chat ma khulla type gareko PIN kahile prayog hundaina.',
+    'hi' => 'Is register par admin PIN hai, aur PIN owner ke hi hain: sirf owner set/change karta hai aur khud deta hai. Kisi employee ka PIN yahan set karne ke liye "Sita ko PIN set gara" ke saath naye 4–6 digit kahiye — card stage karunga, aapke "gol" par hi lagega. Apna admin PIN bhi aise hi badalta hai ("admin PIN set gara …"). Screen par: Owner panel → Team → Set PIN. Upar ka Lock button register lock karta hai; shift par jo ho uske PIN se khulta hai. Chat mein khule mein type kiya PIN kabhi istemal nahi hota.',
+    'dev' => 'यो register मा admin PIN छ, र PIN हरू owner कै हुन्: owner ले मात्र set/change गर्छ, र आफै हातमा दिन्छ। Employee को PIN यहाँ set गर्न "Sita ko PIN set gara" भनेर नयाँ ४–६ अंक भन्नुस् — card stage गर्छु, तपाईंको "गोल" पछि मात्र लाग्छ। आफ्नो admin PIN पनि त्यसै बदलिन्छ ("admin PIN set gara …")। Screen मा: Owner panel → Team → Set PIN। माथिको Lock button ले register lock गर्छ; shift मा जो छ उसको PIN ले खुल्छ। Chat मा खुल्ला type गरेको PIN कहिल्यै प्रयोग हुँदैन।'],
+  'pin_set_who' => [
+    'en' => 'Whose PIN should I set — yours (the admin PIN) or an employee\'s? Name them, with the new 4–6 digits, and I\'ll stage the card.',
+    'np' => 'Kas ko PIN set garne — tapaiko (admin PIN) ki employee ko? Naam ra naya 4–6 digit bhannus, card stage garchhu.',
+    'hi' => 'Kis ka PIN set karoon — aapka (admin PIN) ya kisi employee ka? Naam aur naye 4–6 digit bataiye, card stage karta hoon.',
+    'dev' => 'कसको PIN set गर्ने — तपाईंको (admin PIN) कि employee को? नाम र नयाँ ४–६ अंक भन्नुस्, card stage गर्छु।'],
+  'pin_set_ask' => [
+    'en' => 'What 4–6 digit PIN for %s? Say it in the same breath — "PIN set gara 1234" — and I\'ll stage the card. It lands only on your "gol", and I never show it back.',
+    'np' => '%s ko lagi kun 4–6 digit PIN? Ekai sas ma bhannus — "PIN set gara 1234" — card stage garchhu. Tapaiko "gol" pachhi matra lands hunchha, ra ma PIN feri dekhaudina.',
+    'hi' => '%s ke liye kaun sa 4–6 digit PIN? Ek saath kahiye — "PIN set gara 1234" — card stage karta hoon. Sirf aapke "gol" par lagega, aur main PIN phir kabhi nahi dikhaunga.',
+    'dev' => '%s को लागि कुन ४–६ अंक PIN? एकै सासमा भन्नुस् — "PIN set gara 1234" — card stage गर्छु। तपाईंको "गोल" पछि मात्र लाग्छ, र म PIN फेरि देखाउँदिन।'],
+  'pin_set_done_emp' => [
+    'en' => 'PIN set for %s. Hand it to them yourself — Gol never shows it again. Their old PIN (if any) no longer opens the register.',
+    'np' => '%s ko PIN set bhayo. Uslai aafai dinus — Gol le feri dekhaudaina. Purano PIN (thiyo bhane) le aba register khuldaina.',
+    'hi' => '%s ka PIN set ho gaya. Unhen khud dijiye — Gol phir kabhi nahi dikhayega. Purana PIN (agar tha) ab register nahi kholega.',
+    'dev' => '%s को PIN set भयो। उसलाई आफै दिनुस् — Gol ले फेरि देखाउँदैन। पुरानो PIN (थियो भने) ले अब register खुल्दैन।'],
+  'pin_set_done_admin' => [
+    'en' => 'Your admin PIN is changed. The old one no longer opens the register or the admin gate — use the new one from now on, and don\'t share it.',
+    'np' => 'Tapaiko admin PIN badliyo. Purano le aba register wa admin gate khuldaina — aba dekhi naya nai chalaunus, ra kasailai nadinus.',
+    'hi' => 'Aapka admin PIN badal gaya. Purana ab register ya admin gate nahi kholega — ab se naya hi chalaiye, aur kisi ko mat dijiye.',
+    'dev' => 'तपाईंको admin PIN बदलियो। पुरानोले अब register वा admin gate खुल्दैन — अबदेखि नयाँ नै चलाउनुस्, र कसैलाई नदिनुस्।'],
+  'pin_set_gone' => [
+    'en' => 'That PIN card couldn\'t run — %s is no longer on the team list, or the staged PIN was lost. Nothing was changed; stage it again.',
+    'np' => 'Tyo PIN card chalna sakena — %s team list ma chhaina, wa stage bhayeko PIN harayo. Kei badliena; feri stage garnus.',
+    'hi' => 'Woh PIN card nahi chal paya — %s team list mein nahi hai, ya staged PIN kho gaya. Kuchh nahi badla; phir stage kijiye.',
+    'dev' => 'त्यो PIN card चल्न सकेन — %s team list मा छैन, वा stage भएको PIN हरायो। केही बदलिएन; फेरि stage गर्नुस्।'],
+
+  'pin_never_chat' => [
+    'en' => 'That looks like a PIN — PINs are never typed loose in chat, and I won\'t use, store or repeat it.',
+    'np' => 'Tyo PIN jasto dekhiyo — PIN chat ma khulla kahile lekhinna, ma teslai prayog, store wa dohraudina.',
+    'hi' => 'Woh PIN jaisa lagta hai — PIN chat mein khule mein kabhi nahi likha jata, main use istemal, store ya dohraunga nahi.',
+    'dev' => 'त्यो PIN जस्तो देखियो — PIN chat मा खुल्ला कहिल्यै लेखिन्न, म त्यसलाई प्रयोग, store वा दोहोर्याउँदिनँ।'],
   'card_cancelled' => [
     'en' => 'Cancelled — the staged card is cleared; nothing was changed.',
     'np' => 'Radda bhayo — stage bhayeko card clear bhayo; kei change bhayena.',
     'hi' => 'Cancel ho gaya — staged card clear hai; kuchh change nahi hua.',
     'dev' => 'रद्द भयो — stage भएको card clear भयो; केही change भएन।'],
+  'card_not_live' => [
+    'en' => 'That card is no longer live — nothing was changed.',
+    'np' => 'Tyo card aba live chhaina — kei change bhayena.',
+    'hi' => 'Woh card ab live nahi hai — kuchh change nahi hua.',
+    'dev' => 'त्यो card अब live छैन — केही change भएन।'],
   'hours_line' => [
     'en' => 'Store hours: opens %s, closes %s. Batch close mode: %s.',
     'np' => 'Pasal ko samaya: %s khulchha, %s banda hunchha. Batch close mode: %s.',
@@ -664,6 +770,16 @@ $S = [
     'np' => 'Employee yahi bata chalaunchha: "add name@email.com as employee" (Gol le invite pathauchha), "employees list", wa "remove name@email.com".',
     'hi' => 'Employees yahin se chalte hain: "add name@email.com as employee" (Gol invite bhejega), "employees list", ya "remove name@email.com".',
     'dev' => 'कर्मचारी यहीँबाट चल्छ: "add name@email.com as employee" (Gol ले निमन्त्रणा पठाउँछ), "employees list", वा "remove name@email.com"।'],
+  'capabilities' => [
+    'en' => 'Here is what I can do at this register: • Sell: add items to the cart by name ("add two" + the item\'s name), quote prices, check stock. • Reports: today\'s sales, yesterday, this week, closes — ask "hijo ko hisab" or "sales this week". • Stock: what\'s out, low stock, receive deliveries, stock counts. • People: add or remove employees by email (invite goes out on your "gol"), assign tasks. • Settings: receipt/print settings, store hours, tax — changes stage as cards and run only on your "gol". • Store books (linked): bills, vendors (ask "vendor profile" + the vendor\'s name), purchases and expenses by day or week. Nothing is saved or sent until you confirm a staged card with "gol".',
+    'np' => 'Ma yo register ma ke ke garna sakchhu: • Bechne: naam liyera saman cart ma thapne ("dui ota" + item ko naam thap), mulya bhanna, stock herne. • Report: aaja, hijo, yo hapta ko bikri ra close — "hijo ko hisab" wa "sales this week" sodhnus. • Stock: ke sakiyo, low stock, delivery receive, ginti. • Manche: email bata employee thapne/hataune (tapaiko "gol" pachhi invite janchha), kaam lagaune. • Settings: receipt/print, pasal khulne time, tax — change card ma stage hunchha, "gol" bhane pachhi matra lagu hunchha. • Pasal ko books (linked): bills, vendor (vendor ko naam + "vendor profile"), din/hapta ko kharid ra kharcha. Kunai pani kura tapaile card confirm ("gol") nagaresamma save hudaina.',
+    'hi' => 'Main is register par yeh kar sakta hoon: • Bechna: naam lekar saaman cart mein jodna ("do" + saaman ka naam jodo), daam batana, stock dekhna. • Report: aaj, kal, is hafte ki bikri aur close — "kal ka hisab" ya "sales this week" poochhiye. • Stock: kya khatam hai, low stock, delivery receive, ginti. • Log: email se employee jodna/hatana (aapke "gol" par invite jata hai), kaam dena. • Settings: receipt/print, dukaan ka samay, tax — badlav card mein stage hota hai, "gol" kehne par hi lagu hota hai. • Dukaan ki books (linked): bills, vendor (vendor ka naam + "vendor profile"), din/hafte ki kharid aur kharcha. Jab tak aap card confirm ("gol") nahi karte, kuchh save nahi hota.',
+    'dev' => 'म यो रजिस्टरमा यी गर्न सक्छु: • बेच्ने: नाम लिएर सामान कार्टमा थप्ने ("दुई वटा" + सामानको नाम थप), मूल्य भन्न, स्टक हेर्न। • रिपोर्ट: आज, हिजो, यो हप्ताको बिक्री र क्लोज — "हिजोको हिसाब" वा "sales this week" सोध्नुस्। • स्टक: के सकियो, low stock, डेलिभरी receive, गिन्ती। • मान्छे: इमेलबाट कर्मचारी थप्ने/हटाउने (तपाईंको "गोल" पछि निमन्त्रणा जान्छ), काम लगाउने। • सेटिङ: रसिद/प्रिन्ट, पसल खुल्ने समय, कर — परिवर्तन कार्डमा स्टेज हुन्छ, "गोल" भनेपछि मात्र लागू हुन्छ। • पसलका बुक्स (linked): बिल, भेन्डर (भेन्डरको नाम + "vendor profile"), दिन/हप्ताको खरिद र खर्च। तपाईंले कार्ड confirm ("गोल") नगरेसम्म केही save हुँदैन।'],
+  'emp_negated' => [
+    'en' => 'Understood — I have not added or saved any employee, and I won\'t from this message. When you want one, say "add name@email.com as employee" and I\'ll stage the invite card for your "gol".',
+    'np' => 'Bujhe — maile kunai employee thapeko/save gareko chhaina, yo message bata gardina pani. Chahiyo bhane "add name@email.com as employee" bhannus, invite card stage garchhu — tapaiko "gol" pachhi matra janchha.',
+    'hi' => 'Samajh gaya — maine koi employee joda/save nahi kiya hai, aur is message se karunga bhi nahi. Jab chahiye, "add name@email.com as employee" kahiye, invite card stage karunga — aapke "gol" par hi jayega.',
+    'dev' => 'बुझेँ — मैले कुनै कर्मचारी थपेको/save गरेको छैन, यो message बाट गर्दिनँ पनि। चाहिए "add name@email.com as employee" भन्नुस्, निमन्त्रणा कार्ड स्टेज गर्छु — तपाईंको "गोल" पछि मात्र जान्छ।'],
   'board_none' => [
     'en' => 'The loyalty leaderboard is empty — no customer has sent a receipt photo yet.',
     'np' => 'Loyalty leaderboard khali chha — kunai customer le ahile samma receipt photo pathaeko chhaina.',
@@ -680,20 +796,25 @@ $S = [
     'hi' => 'Sale chat se kabhi nahi jodta — sale sirf register par ring karke tender karne par banta hai. Main yahan naam lekar saaman cart mein daal sakta hoon; bikri register par payment lene par record hoti hai.',
     'dev' => 'सेल च्याटबाट कहिल्यै थपिन्न — सेल रजिस्टरमा रिङ गरेर टेन्डर गरेपछि मात्र बन्छ। म यहाँ नाम लिएर सामान कार्टमा हाल्न सक्छु; बिक्री रजिस्टरले भुक्तानी लिएपछि रेकर्ड हुन्छ।'],
   'bluff_guard' => [
-    'en' => 'I haven\'t staged anything — no card is waiting. Tell me the item and the exact new price (like "change Coke to $3") and I\'ll stage the real card here.',
-    'np' => 'Maile kunai card banaeko chhaina — kehi parkhi rako chhaina. Saman ra naya mulya spashta bhannus (jastai "Coke to $3") — asal card yahi stage garchhu.',
-    'hi' => 'Maine koi card nahi banaya hai — kuchh intezaar nahi kar raha. Saaman aur naya daam saaf bataiye (jaise "Coke to $3") — asal card yahin stage karunga.',
-    'dev' => 'मैले कुनै कार्ड बनाएको छैन — केही पर्खिरहेको छैन। सामान र नयाँ मूल्य स्पष्ट भन्नुस् (जस्तै "Coke to $3") — असली कार्ड यहीँ स्टेज गर्छु।'],
+    'en' => 'I haven\'t staged anything — no card is waiting. Tell me the item and the exact new price (like "change [item name] to $3") and I\'ll stage the real card here.',
+    'np' => 'Maile kunai card banaeko chhaina — kehi parkhi rako chhaina. Saman ra naya mulya spashta bhannus (jastai "[saman ko naam] to $3") — asal card yahi stage garchhu.',
+    'hi' => 'Maine koi card nahi banaya hai — kuchh intezaar nahi kar raha. Saaman aur naya daam saaf bataiye (jaise "[saaman ka naam] to $3") — asal card yahin stage karunga.',
+    'dev' => 'मैले कुनै कार्ड बनाएको छैन — केही पर्खिरहेको छैन। सामान र नयाँ मूल्य स्पष्ट भन्नुस् (जस्तै "[सामानको नाम] to $3") — असली कार्ड यहीँ स्टेज गर्छु।'],
   'already_staged' => [
     'en' => 'That card is already staged: %s — say "gol" to run it.',
     'np' => 'Tyo card pahile nai stage chha: %s — chalauna "gol" bhannus.',
     'hi' => 'Woh card pehle se stage hai: %s — chalane ke liye "gol" kahiye.',
     'dev' => 'त्यो कार्ड पहिल्यै स्टेज छ: %s — चलाउन "गोल" भन्नुस्।'],
+  'ho_teach' => [
+    'en' => 'To confirm, say "gol" — "ho" no longer confirms. Your card is still ready:',
+    'np' => 'Confirm garna "gol" bhannus — "ho" le aba confirm hudaina. Card ready nai chha:',
+    'hi' => 'Confirm karne ke liye "gol" kahiye — "ho" se ab confirm nahi hota. Aapka card abhi ready hai:',
+    'dev' => 'Confirm गर्न "gol" भन्नुहोस् — "हो" ले अब confirm हुँदैन। Card तयारै छ:'],
   'stage_what' => [
-    'en' => 'Stage what? Nothing is waiting right now — tell me the item and the new price (like "change Coke to $3") and I\'ll stage the card.',
-    'np' => 'Ke stage garne? Ahile kehi parkhi rako chhaina — saman ra naya mulya bhannus (jastai "Coke to $3"), card stage garchhu.',
-    'hi' => 'Kya stage karoon? Abhi kuchh intezaar nahi kar raha — saaman aur naya daam bataiye (jaise "Coke to $3"), card stage karunga.',
-    'dev' => 'के स्टेज गर्ने? अहिले केही पर्खिरहेको छैन — सामान र नयाँ मूल्य भन्नुस् (जस्तै "Coke to $3"), कार्ड स्टेज गर्छु।'],
+    'en' => 'Stage what? Nothing is waiting right now — tell me the item and the new price (like "change [item name] to $3") and I\'ll stage the card.',
+    'np' => 'Ke stage garne? Ahile kehi parkhi rako chhaina — saman ra naya mulya bhannus (jastai "[saman ko naam] to $3"), card stage garchhu.',
+    'hi' => 'Kya stage karoon? Abhi kuchh intezaar nahi kar raha — saaman aur naya daam bataiye (jaise "[saaman ka naam] to $3"), card stage karunga.',
+    'dev' => 'के स्टेज गर्ने? अहिले केही पर्खिरहेको छैन — सामान र नयाँ मूल्य भन्नुस् (जस्तै "[सामानको नाम] to $3"), कार्ड स्टेज गर्छु।'],
   'ask_cancelled' => [
     'en' => 'Okay — dropped that. Nothing is staged.',
     'np' => 'Huss — tyo chhodiye. Kehi stage chhaina.',
@@ -916,10 +1037,10 @@ $S = [
     'hi' => 'Count file ho gaya — %s: ginti %s, system %s (antar %s). Shelf stock nahi badla — antar owner ke faisle ka intezaar karega.',
     'dev' => 'Count file भयो — %s: गिन्ती %s, system %s (फरक %s)। Shelf stock बदलिएन — फरक owner को कुरा पर्खिरहेको छ।'],
   'count_ask' => [
-    'en' => 'Tell me the count the way you counted it — "Coke 20oz ko ginti 42 chha" — item and the number you counted on the shelf.',
-    'np' => 'Ginti jastai gannu bhayo tyastai bhannus — "Coke 20oz ko ginti 42 chha" — saman ra shelf ma ganeko number.',
-    'hi' => 'Ginti jaise aapne ginni waisi bataiye — "Coke 20oz ko ginti 42 chha" — saaman aur shelf par gina number.',
-    'dev' => 'गिन्ती जस्तै गन्नुभयो त्यस्तै भन्नुस् — "Coke 20oz को गिन्ती 42 छ" — सामान र shelf मा गनेको नम्बर।'],
+    'en' => 'Tell me the count the way you counted it — "[item name] ko ginti 42 chha" — the item and the number you counted on the shelf.',
+    'np' => 'Ginti jastai gannu bhayo tyastai bhannus — "[saman ko naam] ko ginti 42 chha" — saman ra shelf ma ganeko number.',
+    'hi' => 'Ginti jaise aapne ginni waisi bataiye — "[saaman ka naam] ko ginti 42 chha" — saaman aur shelf par gina number.',
+    'dev' => 'गिन्ती जस्तै गन्नुभयो त्यस्तै भन्नुस् — "[सामानको नाम] को गिन्ती 42 छ" — सामान र shelf मा गनेको नम्बर।'],
   // --- register order prep (owner directive, Oct 28) -------------------------
   'ord_none_needed' => [
     'en' => '%s — nothing needs ordering today: every line on its list is covered (%d lines checked). No card staged.',
@@ -927,10 +1048,10 @@ $S = [
     'hi' => '%s — aaj order ki zaroorat nahi: uski list ki har line covered hai (%d line dekhi). Card stage nahi hua.',
     'dev' => '%s — आज अर्डर चाहिन्न: उसको सूचीको सबै लाइन covered छ (%d लाइन हेरियो)। कार्ड स्टेज भएन।'],
   'ord_head' => [
-    'en' => 'Order draft for %s (rep day %s) — Gol\'s draft from the shelf, sales since the last delivery, and the usual bill lines. Edit in chat ("Coke 12 hata", "Pepsi 20 thap"), then say "gol" to confirm the sheet.',
-    'np' => 'Order draft — %s (rep din %s) — shelf, pachhillo delivery pachhi ko bikri, ra sadhain ko bill line bata Gol ko draft. Chat ma edit garnus ("Coke 12 hata", "Pepsi 20 thap"), ani sheet pakka garna "gol" bhannus.',
-    'hi' => 'Order draft — %s (rep din %s) — shelf, pichhli delivery ke baad ki bikri, aur aam bill lines se Gol ka draft. Chat mein edit kijiye ("Coke 12 hata", "Pepsi 20 thap"), phir sheet pakka karne ke liye "gol" kahiye.',
-    'dev' => 'अर्डर ड्राफ्ट — %s (रेप दिन %s) — सेल्फ, पछिल्लो डेलिभरीपछिको बिक्री, र सधैंको बिल लाइनबाट Gol को ड्राफ्ट। च्याटमा edit गर्नुस् ("Coke 12 hata", "Pepsi 20 thap"), अनि sheet पक्का गर्न "गोल" भन्नुस्।'],
+    'en' => 'Order draft for %s (rep day %s) — Gol\'s draft from the shelf, sales since the last delivery, and the usual bill lines. Edit in chat ("[item] 12 hata" to strike a line, "[item] 20 thap" to set its quantity), then say "gol" to confirm the sheet.',
+    'np' => 'Order draft — %s (rep din %s) — shelf, pachhillo delivery pachhi ko bikri, ra sadhain ko bill line bata Gol ko draft. Chat ma edit garnus ("[item] 12 hata" = line kataune, "[item] 20 thap" = sankhya rakhne), ani sheet pakka garna "gol" bhannus.',
+    'hi' => 'Order draft — %s (rep din %s) — shelf, pichhli delivery ke baad ki bikri, aur aam bill lines se Gol ka draft. Chat mein edit kijiye ("[item] 12 hata" = line kaatna, "[item] 20 thap" = sankhya rakhna), phir sheet pakka karne ke liye "gol" kahiye.',
+    'dev' => 'अर्डर ड्राफ्ट — %s (रेप दिन %s) — सेल्फ, पछिल्लो डेलिभरीपछिको बिक्री, र सधैंको बिल लाइनबाट Gol को ड्राफ्ट। च्याटमा edit गर्नुस् ("[item] 12 hata" = लाइन काट्ने, "[item] 20 thap" = संख्या राख्ने), अनि sheet पक्का गर्न "गोल" भन्नुस्।'],
   'ord_line' => [
     'en' => '• %s × %d%s',
     'np' => '• %s × %d%s',
@@ -957,10 +1078,10 @@ $S = [
     'hi' => 'Order update ho gaya — %s mein ab %d line, andaz %s. Sheet pakka karne ke liye "gol" kahiye, ya edit jaari rakhen.',
     'dev' => 'अर्डर update भयो — %s मा अब %d लाइन, अनुमान %s। Sheet पक्का गर्न "गोल" भन्नुस्, वा edit गर्दै गर्नुस्।'],
   'ord_edit_none' => [
-    'en' => 'I couldn\'t read that edit — say it like "Coke 12 hata" (strike) or "Pepsi 20 thap" (set 20). The order card is unchanged.',
-    'np' => 'Tyo edit bujhina — "Coke 12 hata" (kataune) wa "Pepsi 20 thap" (20 rakhne) jastai bhannus. Order card ustai chha.',
-    'hi' => 'Woh edit samajh nahi aaya — "Coke 12 hata" (kaatna) ya "Pepsi 20 thap" (20 rakhna) jaise kahiye. Order card waisa hi hai.',
-    'dev' => 'त्यो edit बुझिन — "Coke 12 hata" (काट्ने) वा "Pepsi 20 thap" (20 राख्ने) जस्तै भन्नुस्। अर्डर कार्ड उस्तै छ।'],
+    'en' => 'I couldn\'t read that edit — say it like "[item] 12 hata" (strike) or "[item] 20 thap" (set 20). The order card is unchanged.',
+    'np' => 'Tyo edit bujhina — "[item] 12 hata" (kataune) wa "[item] 20 thap" (20 rakhne) jastai bhannus. Order card ustai chha.',
+    'hi' => 'Woh edit samajh nahi aaya — "[item] 12 hata" (kaatna) ya "[item] 20 thap" (20 rakhna) jaise kahiye. Order card waisa hi hai.',
+    'dev' => 'त्यो edit बुझिन — "[item] 12 hata" (काट्ने) वा "[item] 20 thap" (20 राख्ने) जस्तै भन्नुस्। अर्डर कार्ड उस्तै छ।'],
   'ord_done' => [
     'en' => 'Order confirmed for %s — %d lines, est. %s. The order sheet is in the Owner panel (Today\'s rep visits → Print / Share) to hand to the rep. Nothing has been sent to the vendor.',
     'np' => 'Order pakka bhayo — %s, %d line, anumaan %s. Order sheet Owner panel ma chha (Today\'s rep visits → Print / Share) — rep lai dina. Vendor lai kehi pathaieko chhaina.',
@@ -1284,6 +1405,7 @@ function golpos_settings_read_reply(): string {
     $lines[] = '• ' . golpos_setting_label('refund_window_days') . ': '
         . golpos_setting_display('refund_window_days', $s['refund_window_days']);
     $lines[] = '• ' . golpos_setting_label('credit_redeem') . ': ' . golpos_onoff((bool)$s['credit_redeem']);
+    $lines[] = '• Login to MR.STORE: Settings panel — opens this store in MR.STORE (owner/admin session)';
     return implode("\n", $lines);
 }
 // Stage one settings change as a card (old -> new). A value that already
@@ -1317,8 +1439,110 @@ function golpos_is_lock_intent(string $msg): bool {
     return preg_match('/^\s*(lock|log\s*out|admin\s+off)\s*[.!]?\s*$/iu', $msg) === 1
         || preg_match('/(admin bata bahira|lock gara|लक गर)/iu', $msg) === 1;
 }
+// PIN / admin guidance intents (owner trace, Oct 31): the words an owner
+// naturally types when he wants the PIN itself — set / change / create,
+// Romanized Nepali verbs, a forgot-PIN, a register-lock question. Pure
+// "lock" is NOT here (golpos_is_lock_intent owns it, above); a bare
+// "admin"/"pin" is handled by the gate when unelevated and by the
+// guidance intercept when the session is already elevated.
+function golpos_is_pin_help_intent(string $msg): bool {
+    if (preg_match('/\b(set|change|reset|create|make)\s+(a\s+)?(new\s+)?(admin\s+)?pin\b/iu', $msg)) { return true; }
+    if (preg_match('/\bpin\s+(set|change|reset|setup|banaune|banauna|banau|badalne|badalna|badlau|kasari)\b/iu', $msg)) { return true; }
+    if (preg_match('/\b(admin\s+pin|forgot\s+(my\s+)?pin|pin\s+birse|pin\s+bhule|pin\s+bhulyo)\b/iu', $msg)) { return true; }
+    if (preg_match('/\bregister\s+lock\b/iu', $msg)) { return true; }
+    if (preg_match('/(पिन\s*(बनाउ|बदल|सेट))/iu', $msg)) { return true; }
+    return false;
+}
+// The truthful PIN guidance for THIS register's state: no admin PIN yet
+// (create path via an admin action's gate) vs a PIN exists (the owner's
+// set/change paths + the lock path). Never invents a step the code lacks.
+function golpos_pin_help_reply(): string {
+    return golpos_admin_pin_hash() === null ? t('pin_help_none') : t('pin_help_have');
+}
+// PIN set/reset asks (TASKS 230/231, Nov 2): the OWNER sets every PIN —
+// his own admin PIN and each employee's — and hands them out; an
+// employee can never set or reset a PIN. The ask names the person (or
+// the admin PIN) with a set verb; the digits may ride in the same
+// message. Staging lives in the dispatch lane; the confirm runs through
+// the admin gate like every roster write (golpos_needs_admin).
+function golpos_is_pin_set_intent(string $msg): bool {
+    if (!preg_match('/\bpin\b|पिन/iu', $msg)) { return false; }
+    if (preg_match('/\b(set|change|reset|make|give|assign)\b/iu', $msg)) { return true; }
+    if (preg_match('/\b(rakh\w*|badal\w*|fer|hal\w*|सेट|बदल|राख|फेर|हाल)/iu', $msg)) { return true; }
+    // No verb: a named person + a 4–6 digit run still reads as a set ask.
+    return golpos_pin_set_target($msg) !== null
+        && preg_match('/\b\d{4,6}\b/', golpos_norm_digits($msg)) === 1;
+}
+// Who a PIN-set ask is about: the admin PIN, or one roster employee
+// named by email, full name or first name. Null when nobody is named —
+// the lane then asks who, and never guesses.
+function golpos_pin_set_target(string $msg): ?array {
+    if (preg_match('/\b(admin|owner)\b[^.]{0,24}\bpin\b/iu', $msg)
+        || preg_match('/\bpin\b[^.]{0,24}\b(admin|owner)\b/iu', $msg)
+        || preg_match('/\b(mero|my)\s+pin\b/iu', $msg)) {
+        return ['kind' => 'admin', 'email' => '', 'name' => 'Owner (admin PIN)'];
+    }
+    $low = mb_strtolower($msg);
+    foreach (golpos_people()['employees'] as $e) {
+        $email = (string)($e['email'] ?? '');
+        if ($email !== '' && strpos($low, $email) !== false) {
+            return ['kind' => 'employee', 'email' => $email, 'name' => golpos_display_name($e)];
+        }
+    }
+    foreach (golpos_people()['employees'] as $e) {
+        $name = trim((string)($e['name'] ?? ''));
+        if ($name === '') { continue; }
+        $first = explode(' ', mb_strtolower($name))[0];
+        foreach (array_unique([mb_strtolower($name), $first]) as $cand) {
+            if ($cand !== '' && preg_match('/\b' . preg_quote($cand, '/') . '\b/iu', $msg)) {
+                return ['kind' => 'employee', 'email' => (string)$e['email'],
+                        'name' => golpos_display_name($e)];
+            }
+        }
+    }
+    return null;
+}
+// "Who is on this register?" (owner addition, Oct 31): the ask names no
+// person — it asks for the register's CURRENT actor(s). Distinct from a
+// presence ask about a named employee (golpos_parse_presence_ask), which
+// stays admin-gated exactly as before.
+function golpos_is_who_intent(string $msg): bool {
+    if (preg_match('/\bwho\b.{0,30}\b(logged|signed|unlocked|login|on the register)\b/iu', $msg)) { return true; }
+    if (preg_match('/(ko|kun|kasle)\b.{0,25}(logged|login|unlock|kholeko|kholyo)\b/iu', $msg)) { return true; }
+    if (preg_match('/\b(logged\s*in|login)\b.{0,12}\b(cha|chha|ko|kun|garne|cha\?)\b/iu', $msg)) { return true; }
+    if (preg_match('/(को|कसले|कुन).{0,20}(लगइन|खोलेको|अनलक|लग इन)/u', $msg)) { return true; }
+    return false;
+}
 function golpos_is_cancel_intent(string $msg): bool {
-    return preg_match('/^\s*(cancel|radda|chhod|chhoda|nahune|hudaina|nakara|रद्द|छोड|नगर|नहुने)\s*[.!]?\s*$/iu', $msg) === 1;
+    if (preg_match('/^\s*(cancel|radda|chhod|chhoda|nahune|hudaina|nakara|रद्द|छोड|नगर|नहुने)\s*[.!]?\s*$/iu', $msg) === 1) return true;
+    /* audit GOL-04: a cancel SENTENCE ("Cancel the staged action. Do
+       not confirm it.") is a cancel too — the anchored set alone fell
+       through to the composer and the card stayed armed. Short
+       messages only; a plain "do not cancel" vetoes. */
+    $t = mb_strtolower(trim($msg));
+    $t = trim(rtrim($t, '.!?~। '));
+    if ($t === '' || count(preg_split('/\s+/u', $t) ?: []) > 12) return false;
+    $dnc = (strpos($t, 'do not confirm') !== false || strpos($t, "don't confirm") !== false
+        || strpos($t, 'confirm nagara') !== false || strpos($t, 'confirm nagarne') !== false);
+    if (!$dnc && preg_match('/\b(do not|don\'t|dont|never)\s+(cancel|stop)\b/u', $t)
+        && !preg_match('/^(cancel|stop|radda|rada|रद्द)\b/u', $t)) return false;
+    if ($dnc) return true;
+    if (preg_match('/^(please\s+)?(cancel|stop|drop|scrap|radda|rada|रद्द|बन्द)\b/u', $t)) return true;
+    if (preg_match('/\b(radda|rada)\s+(gara|gar|garideu|gardinu|garnu|karo|kar)\b/u', $t)) return true;
+    if (preg_match('/\b(nagareko|nagarnu|nagare|chhod|chhoda|chhodideu)\b/u', $t)) return true;
+    if (preg_match('/(रद्द|नगर्नु|नगर|बन्द\s*गर)/u', $t)) return true;
+    return false;
+}
+/* The legacy confirm word (Books parity, Oct 31 final-pass follow-up):
+   the whole message is exactly "ho" / "हो" (trailing punctuation
+   tolerated) — the pre-Oct-25 confirm habit. Mirrors Books'
+   sb_gol_is_legacy_confirm: it never executes and never drops the
+   card; against a staged card it earns the migration teach below. */
+function golpos_is_legacy_confirm(string $msg): bool {
+    $x = trim($msg);
+    if ($x === '') return false;
+    $x = trim(rtrim($x, '.!?~।'));
+    return $x === 'ho' || $x === 'हो';
 }
 function golpos_is_batch_close_intent(string $msg): bool {
     return preg_match('/(batch\s*(close|banda|seal)|ब्याच)/iu', $msg) === 1;
@@ -1337,6 +1561,27 @@ function golpos_is_employee_intent(string $msg): bool {
 }
 function golpos_is_loyalty_board_intent(string $msg): bool {
     return preg_match('/(loyalty|leader\s*board)/iu', $msg) === 1;
+}
+// A CAPABILITY question (audit GOL-01, Oct 30): the owner asking what
+// Gol can do — explicitly ("what can you do", "ke ke garna sakchha")
+// or by listing several workflows in a can-you question ("Can you add
+// products, show reports, manage employees, change settings, and
+// print receipts?"). It must get the capability answer, never the
+// first workflow lane whose keyword appears in the list (that list
+// used to land in receipt print settings / employee instructions).
+function golpos_is_capability_question(string $msg): bool {
+    if (preg_match('/(what can you (do|help)|what do you do|how can you help|can you help me|ke ke garna (sak|mil)|kun kun kaam|timile ke ke|तिमीले के के|के के गर्न सक्छ)/iu', $msg)) {
+        return true;
+    }
+    if (strpos($msg, '?') !== false
+        && preg_match('/(can you|sakchhau|sakhcha|milcha|गर्न सक्छ)/iu', $msg)) {
+        $nouns = 0;
+        foreach (['product', 'report', 'employee', 'setting', 'receipt', 'print', 'stock', 'sales', 'bill', 'cart', 'price', 'order'] as $w) {
+            if (preg_match('/\b' . $w . '/iu', $msg)) { $nouns++; }
+        }
+        return $nouns >= 2;
+    }
+    return false;
 }
 function golpos_is_hours_read(string $msg): bool {
     if (preg_match('/store\s+hours/iu', $msg)) { return true; }
@@ -1693,13 +1938,141 @@ function golpos_meta_compose(string $shop, string $facts, string $userMsg, ?stri
         . "a product, or a figure, and state every figure exactly as given. If the facts do not "
         . "answer the question, say briefly what you can do instead: add items to the cart by "
         . "name, quote a price, stage a price change as a card (it runs only when the owner says "
-        . "the confirm word \"gol\"), or give today's total.\nFacts:\n{$facts}";
+        . "the confirm word \"gol\"), or give today's total. Name those capabilities GENERICALLY \u2014 never cite a specific product or a specific price as an example of what you can do.\nFacts:\n{$facts}";
     return golpos_meta_chat($model, $system, $userMsg, 1500, 30);
 }
 
 // The deterministic layer assembles the week's facts for the Wonder lane:
 // per-day totals for the last 7 days, the week aggregate, the tender split,
 // and the top sellers by revenue. Returns [facts string, grounding figures].
+
+// --- month records: closes, bills, expenses (owner bare-month law, Nov 1) ----
+// A named or bare month is a full report period on this register: its
+// sales compose from the saved day closes (the day's own summary covers a
+// day never closed), its purchases from the executed-bill records
+// (purchases.json), its expenses from the expense lines (expenses.json).
+// These readers are the ONLY source for month figures — no lane ever
+// substitutes today's numbers for a month's.
+function golpos_month_ref(string $msg): ?array {
+    $names = ['january'=>1,'february'=>2,'march'=>3,'april'=>4,'may'=>5,'june'=>6,'july'=>7,
+              'august'=>8,'september'=>9,'october'=>10,'november'=>11,'december'=>12,
+              'jan'=>1,'feb'=>2,'mar'=>3,'apr'=>4,'jun'=>6,'jul'=>7,'aug'=>8,'sep'=>9,'sept'=>9,
+              'oct'=>10,'nov'=>11,'dec'=>12];
+    $low = mb_strtolower(trim($msg));
+    if (preg_match('/(last|previous|gata)\s*(month|mahina)/iu', $msg)
+        || preg_match('/(mahina|month)\s*(agadi|aghi)/iu', $msg)) {
+        $d = new DateTime('first day of last month');
+        return ['ym' => $d->format('Y-m'), 'label' => $d->format('F Y'), 'bare' => false];
+    }
+    if (preg_match('/(this|current|yo)\s*(month|mahina)/iu', $msg)) {
+        $d = new DateTime('first day of this month');
+        return ['ym' => $d->format('Y-m'), 'label' => $d->format('F Y'), 'bare' => false];
+    }
+    foreach ($names as $nm => $mn) {
+        if (preg_match('/\b' . $nm . '\b/iu', $low)) {
+            $y = (int)date('Y'); if ($mn > (int)date('n')) { $y--; }
+            if (preg_match('/\b(19|20)\d{2}\b/', $msg, $ym2)) { $y = (int)$ym2[0]; }
+            $dt = DateTime::createFromFormat('Y-n-j', $y . '-' . $mn . '-1');
+            $stripped = trim((string)preg_replace('/[^a-z]/iu', ' ', str_ireplace($nm, ' ', $low)));
+            $bare = in_array($stripped, ['', 'report', 'hisab', 'hisaab', 'ko', 'the', 'of'], true);
+            return ['ym' => $dt->format('Y-m'), 'label' => $dt->format('F Y'), 'bare' => $bare];
+        }
+    }
+    return null;
+}
+
+// Every distinct month a message names, in the order named — the
+// comparison lane's raw material ("October vs September", "October
+// compared to last month").
+function golpos_month_refs_all(string $msg): array {
+    $names = ['january'=>1,'february'=>2,'march'=>3,'april'=>4,'may'=>5,'june'=>6,'july'=>7,
+              'august'=>8,'september'=>9,'october'=>10,'november'=>11,'december'=>12,
+              'jan'=>1,'feb'=>2,'mar'=>3,'apr'=>4,'jun'=>6,'jul'=>7,'aug'=>8,'sep'=>9,'sept'=>9,
+              'oct'=>10,'nov'=>11,'dec'=>12];
+    $low = mb_strtolower($msg);
+    $hits = []; // [pos, ym, label]
+    foreach ($names as $nm => $mn) {
+        if (preg_match('/\b' . $nm . '\b/iu', $low, $mm, PREG_OFFSET_CAPTURE)) {
+            $y = (int)date('Y'); if ($mn > (int)date('n')) { $y--; }
+            $dt = DateTime::createFromFormat('Y-n-j', $y . '-' . $mn . '-1');
+            $hits[] = [$mm[0][1], $dt->format('Y-m'), $dt->format('F Y')];
+        }
+    }
+    if (preg_match('/(last|previous|gata)\s*(month|mahina)/iu', $msg, $mm, PREG_OFFSET_CAPTURE)) {
+        $d = new DateTime('first day of last month');
+        $hits[] = [$mm[0][1], $d->format('Y-m'), $d->format('F Y')];
+    }
+    if (preg_match('/(this|current|yo)\s*(month|mahina)/iu', $msg, $mm, PREG_OFFSET_CAPTURE)) {
+        $d = new DateTime('first day of this month');
+        $hits[] = [$mm[0][1], $d->format('Y-m'), $d->format('F Y')];
+    }
+    usort($hits, static fn($a, $b) => $a[0] <=> $b[0]);
+    $out = []; $seen = [];
+    foreach ($hits as $h) {
+        if (isset($seen[$h[1]])) { continue; }
+        $seen[$h[1]] = true;
+        $out[] = ['ym' => $h[1], 'label' => $h[2]];
+    }
+    return $out;
+}
+
+function golpos_month_days(string $ym): array {
+    $out = []; $n = (int)date('t', strtotime($ym . '-01'));
+    for ($d = 1; $d <= $n; $d++) { $out[] = $ym . '-' . str_pad((string)$d, 2, '0', STR_PAD_LEFT); }
+    return $out;
+}
+
+// One month's sales: the saved closes first (the register's frozen
+// truth), the live day summary for any day never closed.
+function golpos_month_sales(string $ym): array {
+    $closes = [];
+    foreach (golpos_read('closes.json', []) as $c) {
+        if (is_array($c) && isset($c['date'])) { $closes[(string)$c['date']] = $c; }
+    }
+    $gross = 0.0; $cash = 0.0; $card = 0.0; $txns = 0; $days = [];
+    foreach (golpos_month_days($ym) as $ymd) {
+        if (isset($closes[$ymd])) {
+            $r = $closes[$ymd];
+            $g = (float)($r['gross'] ?? 0);
+            $days[$ymd] = $g;
+            $gross += $g; $cash += (float)($r['cash'] ?? 0); $card += (float)($r['card'] ?? 0);
+            $txns += (int)($r['txns'] ?? 0);
+        } else {
+            $s = golpos_day_summary($ymd);
+            $days[$ymd] = (float)$s['gross'];
+            $gross += (float)$s['gross']; $cash += (float)$s['cash']; $card += (float)$s['card'];
+            $txns += (int)$s['txns'];
+        }
+    }
+    return ['gross' => round($gross, 2), 'cash' => round($cash, 2), 'card' => round($card, 2),
+            'txns' => $txns, 'days' => $days];
+}
+
+function golpos_month_purchases(string $ym): array {
+    $total = 0.0; $n = 0; $byVendor = [];
+    foreach (golpos_read('purchases.json', []) as $rec) {
+        if (!is_array($rec)) { continue; }
+        if (substr((string)($rec['date'] ?? $rec['at'] ?? ''), 0, 7) !== $ym) { continue; }
+        $t = (float)($rec['total'] ?? 0);
+        $total += $t; $n++;
+        $v = (string)($rec['vendor'] ?? 'Vendor');
+        $byVendor[$v] = round(($byVendor[$v] ?? 0) + $t, 2);
+    }
+    arsort($byVendor);
+    return ['total' => round($total, 2), 'bills' => $n, 'by_vendor' => $byVendor];
+}
+
+function golpos_month_expenses(string $ym): array {
+    $total = 0.0; $rows = [];
+    foreach (golpos_read('expenses.json', []) as $rec) {
+        if (!is_array($rec)) { continue; }
+        if (substr((string)($rec['date'] ?? $rec['at'] ?? ''), 0, 7) !== $ym) { continue; }
+        $total += (float)($rec['amount'] ?? 0); $rows[] = $rec;
+    }
+    usort($rows, static fn($a, $b) => (float)($b['amount'] ?? 0) <=> (float)($a['amount'] ?? 0));
+    return ['total' => round($total, 2), 'count' => count($rows), 'rows' => $rows];
+}
+
 function golpos_week_facts(string $shop, array $products): array {
     // Top sellers by revenue come from the raw log — line detail lives
     // only there. Every TOTAL below comes from golpos_day_summary, the
@@ -1742,8 +2115,30 @@ function golpos_week_facts(string $shop, array $products): array {
         $figures[] = money($v['gross']);
     }
     $lines[] = "Week total: " . money($weekGross) . " across {$weekTx} sales (cash " . money($cash) . ", card " . money($card) . ").";
-    $lines[] = "Month to date (" . date('F Y') . "): " . money($monthGross) . " across {$monthTx} sales (cash " . money($monthCash) . ", card " . money($monthCard) . "). The POS records sales only — no purchases or expenses — so for a 'money left / how much money' question this month-taken-in figure is the POS truth; profit is computed in the books. Never present a profit figure for the POS.";
+    $lines[] = "Month to date (" . date('F Y') . "): " . money($monthGross) . " across {$monthTx} sales (cash " . money($monthCash) . ", card " . money($monthCard) . "). Purchases and expenses are recorded at this register too — the lines below carry this month and last month in full. Profit is computed in the books; never present a profit figure for the POS.";
     $figures[] = money($monthGross);
+    $pmF = golpos_month_ref('last month');
+    if ($pmF !== null) {
+        $psF = golpos_month_sales($pmF['ym']); $ppF = golpos_month_purchases($pmF['ym']); $peF = golpos_month_expenses($pmF['ym']);
+        $lines[] = "Last month (" . $pmF['label'] . "), the FULL month from the day closes: sales " . money($psF['gross'])
+            . " across {$psF['txns']} sales (cash " . money($psF['cash']) . ", card " . money($psF['card'])
+            . "). Purchases " . money($ppF['total']) . " across {$ppF['bills']} vendor bills. Expenses "
+            . money($peF['total']) . " across {$peF['count']} expense lines. A question naming that month is answered with THESE figures — never today's, never the trailing week's.";
+        $figures[] = money($psF['gross']); $figures[] = money($ppF['total']); $figures[] = money($peF['total']);
+        $cmP = golpos_month_purchases(date('Y-m')); $cmE = golpos_month_expenses(date('Y-m'));
+        $lines[] = "This month to date: purchases " . money($cmP['total']) . " across {$cmP['bills']} bills; expenses " . money($cmE['total']) . ".";
+        $figures[] = money($cmP['total']); $figures[] = money($cmE['total']);
+        $trendParts = [];
+        for ($k = 5; $k >= 0; $k--) {
+            $tm = (new DateTime('first day of this month'))->modify("-{$k} months");
+            $ts = golpos_month_sales($tm->format('Y-m'));
+            if ($ts['txns'] === 0 && $k !== 0) { continue; }
+            $tp = golpos_month_purchases($tm->format('Y-m')); $te = golpos_month_expenses($tm->format('Y-m'));
+            $trendParts[] = $tm->format('M Y') . ": sales " . money($ts['gross']) . ", purchases " . money($tp['total']) . ", expenses " . money($te['total']);
+            $figures[] = money($ts['gross']);
+        }
+        if ($trendParts) { $lines[] = "Monthly trend (full months, from the closes, bills and expenses): " . implode('; ', $trendParts) . ". Month comparisons and trend questions are answered from THESE figures."; }
+    }
     $lines[] = "Today so far: " . money($today['gross']) . " across {$today['txns']} sales.";
     $top = array_slice($items, 0, 5, true);
     if ($top) {
@@ -1792,7 +2187,7 @@ function golpos_mask_sizes(string $work, ?array $product): string {
         preg_match('/' . preg_quote((string)$product['name'], '/') . '/iu', $work, $mm, PREG_OFFSET_CAPTURE)) {
         $spans[] = ['start' => $mm[0][1], 'len' => strlen($mm[0][0])];
     }
-    if (preg_match_all('/\d+(?:\.\d+)?[\s-]*(?:fl\s*oz|oz|ml|ltr|litres?|liters?|l|gm|g|kg|lb|pk|packs?|count|ct)\b/iu',
+    if (preg_match_all('/\d+(?:\.\d+)?[\s-]*(?:fl\s*oz|ounces?|oz|ml|ltr|litres?|liters?|l|gm|g|kg|lb|pk|packs?|count|ct)\b/iu',
                        $work, $um, PREG_OFFSET_CAPTURE)) {
         foreach ($um[0] as $u) { $spans[] = ['start' => $u[1], 'len' => strlen($u[0])]; }
     }
@@ -1827,7 +2222,27 @@ function golpos_word_after(string $s, int $end): string {
     return '';
 }
 // The price the owner actually said: ['status' => ok|none|ambiguous, ...].
+function golpos_price_words(string $s): string {
+    // Spoken amounts are prices. "four dollars" used to have no digit, so the
+    // price question was dropped and the capability menu answered instead.
+    $words = ['one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5,
+              'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9, 'ten' => 10,
+              'eleven' => 11, 'twelve' => 12, 'thirteen' => 13, 'fourteen' => 14,
+              'fifteen' => 15, 'sixteen' => 16, 'seventeen' => 17, 'eighteen' => 18,
+              'nineteen' => 19, 'twenty' => 20];
+    $alt = implode('|', array_map(static fn($w) => preg_quote($w, '/'), array_keys($words)));
+    $num = static function (string $w) use ($words): string {
+        return (string)($words[mb_strtolower($w)] ?? $w);
+    };
+    $s = (string)preg_replace_callback('/\b(' . $alt . ')\b(\s+)(dollars?|bucks?)\b/iu',
+        static function ($m) use ($num) { return $num($m[1]) . $m[2] . $m[3]; }, $s);
+    if (preg_match('/^\s*(' . $alt . ')\s*[.!]?\s*$/iu', $s, $m)) {
+        return $num($m[1]);
+    }
+    return $s;
+}
 function golpos_extract_price(string $msg, ?array $product): array {
+    $msg = golpos_price_words($msg);
     $work = golpos_mask_sizes(golpos_norm_digits($msg), $product);
     $nums = golpos_num_spans($work);
     if (!$nums) { return ['status' => 'none']; }
@@ -1861,6 +2276,88 @@ function golpos_extract_price(string $msg, ?array $product): array {
 // The count the owner actually said ("coke 20 ota ayo" -> 20), or null when
 // no number is bound as a count. Money is never a count; a size is never a
 // count; an unbound tie returns null rather than a guess.
+/* Number WORDS in a count position (audit GOL-01, Oct 30): the span
+   reader in golpos_extract_count only sees digits, so "Add two Coke
+   20oz" silently added ONE. Convert a number word to its digit only
+   where it is bound like a count: directly before a classifier
+   (ota/vata/pcs) or directly before the resolved item's own first
+   name word / alias ("two Coke"). A number word inside a product's
+   name ("Five Hour Energy") is never touched — conversion needs the
+   item's FIRST word or a classifier after the number word, and the
+   item's first word is matched whole. */
+function golpos_count_words(string $s, ?array $product): string {
+    $words = ['one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5,
+              'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9, 'ten' => 10,
+              'eleven' => 11, 'twelve' => 12, 'thirteen' => 13, 'fourteen' => 14,
+              'fifteen' => 15, 'sixteen' => 16, 'seventeen' => 17, 'eighteen' => 18,
+              'nineteen' => 19, 'twenty' => 20, 'thirty' => 30, 'forty' => 40,
+              'fifty' => 50, 'sixty' => 60, 'seventy' => 70, 'eighty' => 80, 'ninety' => 90,
+              'ek' => 1, 'dui' => 2, 'tin' => 3, 'char' => 4, 'chaar' => 4, 'panch' => 5,
+              'paanch' => 5, 'chha' => 6, 'saat' => 7, 'aath' => 8, 'nau' => 9, 'das' => 10,
+              'eghara' => 11, 'bahra' => 12, 'chaudha' => 14, 'choudha' => 14,
+              'pandhra' => 15, 'pandra' => 15, 'sohra' => 16, 'satra' => 17,
+              'athara' => 18, 'unnais' => 19, 'bis' => 20, 'ekkais' => 21, 'bais' => 22,
+              'teis' => 23, 'chaubis' => 24, 'pachchis' => 25, 'chhabbis' => 26,
+              'sattais' => 27, 'aththais' => 28, 'unantis' => 29,
+              'दुई' => 2, 'तीन' => 3, 'चार' => 4, 'पाँच' => 5, 'छ' => 6,
+              'सात' => 7, 'आठ' => 8, 'नौ' => 9, 'दश' => 10, 'एघार' => 11, 'बाह्र' => 12,
+              'चौध' => 14, 'पन्ध्र' => 15, 'सोह्र' => 16, 'सत्र' => 17, 'अठार' => 18,
+              'उन्नाइस' => 19, 'बीस' => 20, 'चौबीस' => 24, 'तीस' => 30];
+    $alt = implode('|', array_map(static fn($w) => preg_quote($w, '/'), array_keys($words)));
+    $toNum = static function ($m) use ($words) { return (string) ($words[mb_strtolower($m[1])] ?? $m[1]); };
+    /* Compound tens ("twenty-four", "twenty four") are single counts.
+       The Nov 2 ear test: "Add twenty-four 8.4-ounce Red Bull" rang 8 —
+       the compound was invisible to the word reader while the size's
+       8.4 stood unmasked ("ounce" missing from the size units) and the
+       count reader took the 8. Compounds convert under the same
+       binding gates as single words: before a classifier, before the
+       item's first word, or before a SIZE that stands before the item
+       ("twenty-four 8.4-ounce Red Bull" — the count binds through the
+       size to the item it counts). */
+    $tens = ['twenty' => 20, 'thirty' => 30, 'forty' => 40, 'fifty' => 50,
+             'sixty' => 60, 'seventy' => 70, 'eighty' => 80, 'ninety' => 90];
+    $ones = ['one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5,
+             'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9];
+    $tAlt = implode('|', array_keys($tens));
+    $oAlt = implode('|', array_keys($ones));
+    $compound = static function ($m) use ($tens, $ones) {
+        return (string) (($tens[mb_strtolower($m[1])] ?? 0) + ($ones[mb_strtolower($m[2])] ?? 0));
+    };
+    $toNumPhrase = static function (string $ph) use ($words, $tens, $ones) {
+        $ph = mb_strtolower(trim($ph));
+        $parts = preg_split('/[-\s]+/u', $ph);
+        if (count($parts) === 2 && isset($tens[$parts[0]], $ones[$parts[1]])) {
+            return (string) ($tens[$parts[0]] + $ones[$parts[1]]);
+        }
+        return (string) ($words[$ph] ?? $ph);
+    };
+    $s = (string) preg_replace_callback('/\b(' . $tAlt . ')[-\s](' . $oAlt . ')\b(\s*)(ota|vata|वटा|pcs|pieces?|पिस)\b/iu',
+        static function ($m) use ($compound) { return $compound($m) . $m[3] . $m[4]; }, $s);
+    $s = (string) preg_replace_callback('/\b(' . $alt . ')\b(\s*)(ota|vata|वटा|pcs|pieces?|पिस)\b/iu',
+        static function ($m) use ($toNum) { return $toNum($m) . $m[2] . $m[3]; }, $s);
+    if ($product) {
+        $names = [];
+        foreach (preg_split('/[^a-z0-9]+/u', mb_strtolower((string) ($product['name'] ?? ''))) as $w) {
+            if ($w !== '') { $names[] = $w; break; }
+        }
+        foreach (($product['aliases'] ?? []) as $a) {
+            $a = mb_strtolower(trim((string) $a));
+            if ($a !== '') $names[] = $a;
+        }
+        $sizeSpan = '\d+(?:\.\d+)?[\s-]*(?:fl\s*oz|ounces?|oz|ml|ltr|litres?|liters?|l|gm|g|kg|lb|pk|packs?|count|ct)\b';
+        foreach (array_unique($names) as $nm) {
+            $qnm = preg_quote($nm, '/');
+            $s = (string) preg_replace_callback('/\b((?:' . $tAlt . ')[-\s](?:' . $oAlt . ')|' . $alt . ')\b(\s+)(' . $sizeSpan . ')(\s+)' . $qnm . '\b/iu',
+                static function ($m) use ($toNumPhrase, $nm) { return $toNumPhrase($m[1]) . $m[2] . $m[3] . $m[4] . $nm; }, $s, 1);
+            $s = (string) preg_replace_callback('/\b(' . $tAlt . ')[-\s](' . $oAlt . ')\b(\s+)' . $qnm . '\b/iu',
+                static function ($m) use ($compound, $nm) { return $compound($m) . $m[3] . $nm; }, $s, 1);
+            $s = (string) preg_replace_callback('/\b(' . $alt . ')\b(\s+)' . $qnm . '\b/iu',
+                static function ($m) use ($toNum, $nm) { return $toNum($m) . $m[2] . $nm; }, $s, 1);
+        }
+    }
+    return $s;
+}
+
 function golpos_extract_count(string $msg, ?array $product): ?float {
     $work = golpos_mask_sizes(golpos_norm_digits($msg), $product);
     if (preg_match_all('/\$\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*\$/', $work, $dm, PREG_OFFSET_CAPTURE)) {
@@ -2091,6 +2588,8 @@ function golpos_card_summary(array $card): string {
                 . '. This persona starts knowing: ' . implode(' · ', array_slice($duties, 0, 5))
                 . (count($duties) > 5 ? ' · +' . (count($duties) - 5) . ' more' : '');
         }
+        case 'pin_set':
+            return 'PIN for ' . ($card['name'] ?? '') . ' — a new PIN the owner hands out (the digits are never shown)';
         case 'task_assign':
             return 'tasks for ' . ($card['employee_name'] ?? '') . ' — '
                 . count((array)($card['items'] ?? [])) . ' item(s): '
@@ -2201,6 +2700,22 @@ function golpos_ctx_product(array $products): ?array {
 function golpos_is_question(string $msg): bool {
     if (preg_match('/\?\s*$/u', trim($msg))) { return true; }
     return preg_match('/(kati|kitna|kitne|how\s+much|how\s+many|ke\s+chha|k\s+ho|kasto|kina|what|which|why|kun|कति|कितना|कुन)/iu', $msg) === 1;
+}
+
+// An INFORMATION question — a turn seeking an answer, as opposed to a
+// polite imperative ("Can you add ...?", "please add ...", a bare
+// imperative wearing a stray "?"). Only information questions are
+// fenced off from the write lanes: the Nov 2 ear test watched a whole
+// spoken question ("What does your laptop show after adding M&M's
+// Peanut at $1.69? Is it in the cart now?") staged as a "New item"
+// card named by the question itself. A question may be answered or
+// honestly not-caught — it never stages, never rings, never writes.
+function golpos_is_info_question(string $msg): bool {
+    if (!golpos_is_question($msg)) { return false; }
+    if (preg_match('/^\s*(can|could|would|will)\s+you\s+(please\s+)?(add|put|ring|set|make|stage|thap|badha|receive|restock|hala|joda|rakha)\b/iu', $msg)) { return false; }
+    if (preg_match('/\bplease\s+(add|put|ring|set|thap)\b/iu', $msg)) { return false; }
+    if (preg_match('/^\s*(please\s+)?(add|thap|jodo|lagao|give|ring|receive|restock|set|change|make|put)\b/iu', $msg)) { return false; }
+    return true;
 }
 
 // A bare greeting (the dispatch greeting lane's own anchored shape) —
@@ -2999,44 +3514,32 @@ function golpos_actor(): ?array {
     return null;
 }
 
-// The owner's team line: yesterday's unfinished items (named) +
-// overnight unread notes. Empty string when the team is clear.
+// The owner's team line: the backlog as ONE glanceable line of
+// counts only (owner, Nov 2 late: the named multi-sentence version
+// was "to much to read"). No holder names, no parentheticals, no
+// detail — the grouped detail answers when he asks ("what tasks are
+// open?", "pay requests", "price gaps"). Empty string when clear.
 function golpos_team_line(): string {
-    $parts = [];
     $today = date('Y-m-d');
-    $openCount = 0; $names = [];
+    $openCount = 0;
     foreach (golpos_tasks() as $t) {
         if (($t['status'] ?? '') === 'superseded' || golpos_task_status($t) === 'done') { continue; }
         if (substr((string)($t['created'] ?? ''), 0, 10) >= $today) { continue; }
-        $n = 0;
-        foreach ((array)($t['items'] ?? []) as $it) { if (empty($it['done'])) { $n++; } }
-        if ($n > 0) {
-            $openCount += $n;
-            $nm = (string)($t['employee_name'] ?? 'Team');
-            if (!in_array($nm, $names, true)) { $names[] = $nm; }
-        }
+        foreach ((array)($t['items'] ?? []) as $it) { if (empty($it['done'])) { $openCount++; } }
     }
-    if ($openCount > 0) { $parts[] = t('yday_unfinished', $openCount, implode(', ', $names)); }
     $since = strtotime(date('Y-m-d', strtotime('-1 day')) . ' 18:00');
     $notes = 0;
     foreach (golpos_team_notes() as $n) {
         if (empty($n['read']) && strtotime((string)($n['at'] ?? '')) >= $since) { $notes++; }
     }
-    if ($notes > 0) { $parts[] = t('overnight_notes', $notes); }
-    // Pay requests waiting on the owner ride the same line — her ask,
-    // his decision, named with hours × rate = amount + period.
-    foreach (golpos_pay_pending_all() as $r) {
-        $parts[] = (string)$r['employee_name'] . ' is asking for pay — '
-            . golpos_pay_headline((array)$r['segments'], (float)$r['amount'])
-            . ' · ' . golpos_pay_period_label((string)$r['period_from'], (string)$r['period_to'])
-            . ' — waiting on you ("pay requests").';
-    }
-    // Price gaps ride the same line (price-gap engine, Oct 28): what
-    // the till healed today and what is still waiting — from the
-    // records, and silent when there is nothing to report.
-    $gapLine = golpos_gap_owner_line();
-    if ($gapLine !== '') { $parts[] = $gapLine; }
-    return implode("\n", $parts);
+    $payCount = count(golpos_pay_pending_all());
+    $gapWait = count(golpos_gap_scan());
+    $bits = [];
+    if ($openCount > 0) { $bits[] = $openCount . ' tasks open'; }
+    if ($gapWait > 0) { $bits[] = $gapWait . ' prices waiting'; }
+    if ($notes > 0) { $bits[] = $notes . ' note(s) unread'; }
+    if ($payCount > 0) { $bits[] = $payCount . ' pay request(s) waiting'; }
+    return $bits ? implode(' · ', $bits) . '.' : '';
 }
 
 // One person's open items, flattened in list order — the numbering the
@@ -3060,9 +3563,22 @@ function golpos_open_items_for(string $email): array {
 // including anything assigned before their first ever unlock). On her
 // FIRST unlock the greeting also names her role and her standing
 // duties, briefly — the persona she was born with (owner, Oct 28).
+function golpos_store_tz(): DateTimeZone {
+    $tz = 'America/New_York';
+    try {
+        $set = trim((string)(golpos_settings()['timezone'] ?? ''));
+        if ($set !== '') { $tz = $set; }
+    } catch (Throwable $e) {}
+    try { return new DateTimeZone($tz); } catch (Throwable $e) { return new DateTimeZone('America/New_York'); }
+}
+function golpos_greet_word(): string {
+    $h = (int)(new DateTimeImmutable('now', golpos_store_tz()))->format('G');
+    if ($h < 12) { return 'Good morning'; }
+    if ($h < 17) { return 'Good afternoon'; }
+    return 'Good evening';
+}
 function golpos_unlock_greeting(array $actor, bool $firstUnlock = false, ?string $prevUnlockAt = null): string {
-    $h = (int)date('G');
-    $greet = $h < 12 ? 'Good morning' : ($h < 17 ? 'Good afternoon' : 'Good evening');
+    $greet = golpos_greet_word();
     if (($actor['role'] ?? '') === 'employee') {
         $email = (string)$actor['email'];
         $lines = [$greet . ', ' . $actor['name'] . ' — the register is open in your name.'];
@@ -3705,14 +4221,34 @@ if ($pendDecline !== null && ($pendDecline['type'] ?? '') === 'pay_approve'
 // staged price card got "I can't cancel that here" and the card stayed
 // armed). One truth, one line, before every lane.
 if (golpos_is_cancel_intent($msg) && golpos_pending() !== null) {
+    $pendCx = golpos_pending();
     golpos_clear_pending();
-    out(['reply' => t('card_cancelled'), 'cancelled' => true]);
+    out(['reply' => t('card_cancelled'), 'cancelled' => true, 'cancelled_pid' => (string)($pendCx['id'] ?? '')]);
+}
+
+// --- the legacy confirm word: teach, never execute (Books parity) ----------
+// "ho" against a staged card: the Books Gol teaches the migration and
+// re-shows the SAME card (Oct 25 law); the POS executed nothing on "ho"
+// (correct) but taught nothing (gap closed Oct 31). The card stays
+// armed for the owner's "gol". Checked before the confirm block; with
+// no card waiting, "ho" is an ordinary turn and flows on untouched.
+$pendHo = golpos_pending();
+if ($pendHo !== null && golpos_is_legacy_confirm($msg)) {
+    out(['reply' => t('ho_teach') . "\n" . golpos_card_summary($pendHo), 'card' => $pendHo]);
 }
 
 // --- the confirm word --------------------------------------------------------
 if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['confirm'])) {
+    if (golpos_echo_confirm($msg, $in)) { out(['reply' => 'That was my own voice. The card is still waiting. Tap Confirm after I am quiet.']); }
+
     $card = golpos_pending();
     if (!$card) { out(['reply' => t('no_pending')]); }
+    /* a Confirm tap carrying a DIFFERENT card's id is stale
+       (audit GOL-04): the live card keeps waiting, nothing runs. */
+    if (!empty($in['confirm']) && !empty($in['pending_pid'])
+        && (string)($in['pending_pid']) !== (string)($card['id'] ?? '')) {
+        out(['reply' => t('card_not_live'), 'stale' => 'card_not_live', 'cancelled_pid' => (string)$in['pending_pid']]);
+    }
     if ($card['type'] === 'price_change') {
         foreach ($products as &$p) {
             if ($p['sku'] === $card['sku']) { $p['price'] = $card['new_price']; }
@@ -3931,6 +4467,27 @@ if (in_array(mb_strtolower($msg), ['gol', 'गोल'], true) || !empty($in['con
             out(['reply' => t('emp_removed', (string)$card['email']), 'done' => $card]);
         }
         out(['reply' => t('emp_not_found', (string)$card['email'])]);
+    }
+    // A PIN-set card (TASKS 231): the hash was stashed in the session at
+    // staging — the card itself never carries digits or a hash, and no
+    // reply ever repeats them. The owner hands the PIN out himself.
+    if ($card['type'] === 'pin_set') {
+        golpos_clear_pending();
+        $sid = (string)($GLOBALS['golpos_session_id'] ?? '');
+        $ss = golpos_session($sid);
+        $hash = (string)($ss['pin_set_hash'] ?? '');
+        unset($ss['pin_set_hash']);
+        golpos_save_session($sid, $ss);
+        if ($hash === '') { out(['reply' => t('card_fail')]); }
+        if (($card['target'] ?? '') === 'admin') {
+            golpos_set_admin_pin($hash);
+            out(['reply' => t('pin_set_done_admin'), 'done' => $card]);
+        }
+        $emp = golpos_employee((string)($card['email'] ?? ''));
+        if ($emp === null) { out(['reply' => t('pin_set_gone', (string)($card['name'] ?? ''))]); }
+        $emp['pin_hash'] = $hash;
+        golpos_save_employee($emp);
+        out(['reply' => t('pin_set_done_emp', golpos_display_name($emp)), 'done' => $card]);
     }
     // A stock-receive card (link mode): the goods physically arrived, the
     // owner confirmed — MR.STORE stock goes up by the received quantity.
@@ -4248,6 +4805,18 @@ if (preg_match('/\bstage\b|स्टेज/iu', $msg) && !preg_match('/\d|\$/u',
     out(['reply' => t('stage_what')]);
 }
 
+// --- capability questions (audit GOL-01, Oct 30) -----------------------------
+// "What can you do? Can you add products, show reports, manage
+// employees, change settings, and print receipts?" lists workflows —
+// it is a question ABOUT abilities and gets the capability answer,
+// never the first workflow lane whose keyword appears in the list
+// (it used to land in the receipt print settings dump below, and a
+// greeting/scope question mentioning employees landed in the
+// employee-invitation instructions).
+if (golpos_is_capability_question($msg)) {
+    out(['reply' => t('capabilities')]);
+}
+
 // --- receipt print settings: read + staged changes ---------------------------
 // The POS keeps only its selling screen — print settings are run from this
 // chat; the Owner panel only mirrors their values, it never edits them.
@@ -4526,19 +5095,23 @@ if (preg_match('/^\s*(good\s*(morning|afternoon|evening)|namaste|namaskar|hello|
             }
         } catch (Throwable $e) {}
     }
-    if ($teamLine !== '' || $calLine !== '') {
-        $rep = $waiting ? t('morning_due',
+    $greetHead = golpos_greet_word() . '.';
+    $dueBody = static function () use ($waiting): string {
+        if (!$waiting) { return ''; }
+        $raw = t('morning_due',
             implode(' + ', array_map(static fn($v) => (string)$v['name'], $waiting)),
-            (string)$waiting[0]['name']) : '';
-        out(['reply' => t('morning_plain')
+            (string)$waiting[0]['name']);
+        return (string)preg_replace('/^Good morning[।.]?\s*/u', '', $raw);
+    };
+    if ($teamLine !== '' || $calLine !== '') {
+        $rep = $dueBody();
+        out(['reply' => $greetHead
             . ($teamLine !== '' ? "\n" . $teamLine : '')
             . ($calLine !== '' ? "\n" . $calLine : '')
             . ($rep !== '' ? "\n" . $rep : '')]);
     }
     if ($waiting) {
-        out(['reply' => t('morning_due',
-            implode(' + ', array_map(static fn($v) => (string)$v['name'], $waiting)),
-            (string)$waiting[0]['name'])]);
+        out(['reply' => $greetHead . "\n" . $dueBody()]);
     }
 }
 
@@ -4960,10 +5533,44 @@ if (preg_match('/(sakiyo|sakyo|sakisakyo|done|finished|complete|bhaisakyo|सक
     }
 }
 
+// --- PIN set/reset: the owner's card (TASKS 230/231, Nov 2) -------------------
+// Admin domain — the gate has already run, so a session reaching here
+// with a PIN-set ask is elevated (or no admin exists yet); an employee
+// session can never stage this card. The owner names the person (or the
+// admin PIN) and the new digits; the staged card carries NEITHER digits
+// NOR the hash — the hash waits in the session and the execution case
+// reads it from there. Only the owner's "gol" lands it.
+if (golpos_is_pin_set_intent($msg)) {
+    $target = golpos_pin_set_target($msg);
+    if ($target === null) { out(['reply' => t('pin_set_who')]); }
+    $digits = null;
+    if (preg_match('/\b(\d{4,6})\b/', golpos_norm_digits($msg), $dm)) {
+        $digits = golpos_norm_pin($dm[1]);
+    }
+    if ($digits === null) {
+        out(['reply' => t('pin_set_ask', (string)$target['name'])]);
+    }
+    $card = golpos_stage(['type' => 'pin_set', 'target' => (string)$target['kind'],
+                          'email' => (string)$target['email'], 'name' => (string)$target['name']]);
+    $sid = (string)($GLOBALS['golpos_session_id'] ?? '');
+    $ss = golpos_session($sid);
+    $ss['pin_set_hash'] = password_hash($digits, PASSWORD_DEFAULT);
+    golpos_save_session($sid, $ss);
+    out(['reply' => t('card_staged'), 'card' => $card]);
+}
+
 // --- employees: add (invite by email), list, staged remove -------------------
 // Admin domain — the gate has already run, so a session reaching here with
 // an employee intent is elevated (or no admin exists yet).
 if (golpos_is_employee_intent($msg)) {
+    /* A NEGATED employee ask saves nothing and starts no invitation
+       flow (audit GOL-01, Oct 30): "Do not add or save any employees,
+       just tell me" is a scope statement — acknowledge it plainly.
+       An email in the same breath overrides: that is a real act. */
+    if (!preg_match('/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/', $msg)
+        && preg_match('/(do\s*not|don\'?t|never|nagar|nagari|नगर)\b[^.]{0,40}\b(add|save|invite|create|thap|rakh|employee|staff|karmachari)\b/iu', $msg)) {
+        out(['reply' => t('emp_negated')]);
+    }
     $email = null;
     if (preg_match('/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/', $msg, $em)) { $email = golpos_norm_email($em[0]); }
     // An add verb leading the message owns it: in "add rita@x as
@@ -5008,7 +5615,7 @@ if (golpos_is_employee_intent($msg)) {
                               'role' => $role, 'duties' => $duties]);
         out(['reply' => t('card_staged'), 'card' => $card]);
     }
-    if (preg_match('/(list|dekha|dekhaunus|show|ko ko|kati|हेर|देखा)/iu', $msg)) {
+    if (preg_match('/(list|dekha|dekhaunus|show|ko ko|kati|who|my\s+(employees|staff|team)|mero\s+(employee|staff)|हेर|देखा)/iu', $msg)) {
         $emps = golpos_people()['employees'];
         if (!$emps) { out(['reply' => t('emp_none')]); }
         $lines = [t('emp_list_head')];
@@ -5171,9 +5778,54 @@ if (preg_match('/(receipt|bill|print|paper|footer|logo|tax|auto|cop(y|ies)|phone
 // resolved FIRST and no count is ever extracted: in "Newport 100 box
 // out" the 100 belongs to the product's NAME. Question shapes ("ke ke
 // out chha?") stay the read in the stock lane below.
-if (!preg_match('/(ke\s+ke|kati|kitna|kun|which|list|dekha|how\s+many|कति|कुन)/iu', $msg)
+/* Intent before dispatch (audit GOL-01, Oct 30): the "out" inside
+   "check out" is not an out-of-stock word, a negation scoping over
+   the report ("do not check out", "report nagara") vetoes this lane,
+   and a cart ADD ("Add two X to the current cart only") is never a
+   report — the complete intent is resolved BEFORE a lane is chosen.
+   Gate fix (Oct 30): the "out" inside "close out" is not an
+   out-of-stock word either — the whole day-close phrase family
+   ("close out", "close out the day", "end of day close out",
+   "day close out", "closeout", "close the day") belongs to the
+   close lane below, so those phrasings are blanked from the probe
+   AND a close intent vetoes this lane outright, whichever way the
+   wording arrives. */
+$woProbe = (string) preg_replace('/(check\s*out|checkout|take\s+payment|close\s*out|closeout|close\s+the\s+day|end\s+of\s+day|day\s+close)/iu', ' ', $msg);
+$woCloseIntent = (bool) preg_match('/(close\s*out|closeout|close\s+the\s+day|end\s+of\s+day|day\s+close)/iu', $msg);
+$woNegated = (bool) preg_match('/(do\s*not|don\'?t|never|nagar|nagari|नगर)\b[^.]{0,40}\b(out|check|report|file)\b/iu', $msg);
+$woCartAdd = (bool) (preg_match('/\bcart\b/iu', $msg)
+    && preg_match('/(add|thap|rakh|jodo|lagao|put|hal|थप|राख|हाल)/iu', $msg));
+/* What's Out READ intent (POS-D1, Oct 30): the out-of-stock QUESTION
+   in its natural shapes — "ke ke out chha?", "what's out?", "show me
+   the out list", "sabai out bhako ke ke chha?", "all out Sato" —
+   carries an out-state word (out / आउट / sakiyo family / khatam)
+   with question or list intent, or an aggregate (all / sabai / सबै)
+   over NO named item. Those shapes missed the stock lane's gate
+   words below and fell through to the composed brain, which falsely
+   claimed it had no stock information; the aggregate shape was even
+   misread by the report lane as a shelf report on an unmatched item.
+   The read is the stock lane's own — this flag opens its gate and
+   vetoes the report lane for the shape. The close family stays
+   dominant (the probe has already blanked it, and $woCloseIntent
+   vetoes outright), the negation / cart-add vetoes stand, and an
+   aggregate over a NAMED item ("all Coke out") stays that item's
+   REPORT — resolve_item is the arbiter, so a named report is never
+   stolen by the read. */
+$woReadIntent = false;
+if (!$woNegated && !$woCartAdd && !$woCloseIntent
+    && preg_match('/(\bout\b|आउट|sakiyo|sakiyeko|sakyo|sakina|khatam|सकियो|खतम)/iu', $woProbe)) {
+    if (mb_strpos($msg, '?') !== false
+        || preg_match('/(\bke\b|kei|kun|which|what|kati|kitna|how\s+many|list|dekha|show|herau|batau|के|कुन|कति|देखा)/iu', $msg)) {
+        $woReadIntent = true;
+    } elseif (preg_match('/\b(all|sabai)\b|सबै/iu', $msg)) {
+        $woRes = resolve_item($products, $msg);
+        $woReadIntent = empty($woRes['one']) && empty($woRes['many']);
+    }
+}
+if (!$woNegated && !$woCartAdd && !$woCloseIntent && !$woReadIntent
+    && !preg_match('/(ke\s+ke|kati|kitna|kun|which|list|dekha|how\s+many|कति|कुन)/iu', $msg)
     && mb_strpos($msg, '?') === false
-    && preg_match('/(\bout\b|sakiyo|sakyo|khatam|khatiyo|सकियो|खतम)/iu', $msg)) {
+    && preg_match('/(\bout\b|sakiyo|sakyo|khatam|khatiyo|सकियो|खतम)/iu', $woProbe)) {
     $actor = golpos_actor();
     $r = resolve_item($products, $msg);
     if (!empty($r['one'])) {
@@ -5265,7 +5917,8 @@ if (!preg_match('/(kati|kitna|how\s+many|कति)/iu', $msg)
 // delivery stages the SAME receive card in both modes; only the
 // executor's landing differs. This lane sits before the price and
 // day-total lanes because "stock kati chha?" is a stock question.
-if (preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khatam|restock|received|delivery|ayo|aayo|ginti|स्टक|आयो)/iu', $msg)) {
+if ($woReadIntent
+    || preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khatam|restock|received|delivery|ayo|aayo|ginti|स्टक|आयो)/iu', $msg)) {
     $link = golpos_link_on();
     $fmtq = static fn($v) => rtrim(rtrim(number_format((float)$v, 2, '.', ''), '0'), '.');
     $onHandOf = static function (array $p) use ($link) {
@@ -5281,7 +5934,7 @@ if (preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khatam|restock|received|d
             // The COUNT the owner said, by the shared meaning rules — never
             // the last number standing: in "12 ota lays ayo, $1.19 ma" the
             // count is 12 and the money stays out of the card entirely.
-            $qty = golpos_extract_count($msg, $p);
+            $qty = golpos_extract_count(golpos_count_words($msg, $p), $p);
             if ($qty !== null && $qty > 0) {
                 $card = golpos_stage(['type' => 'stock_receive', 'sku' => (string)$p['sku'],
                                       'name' => $p['mr_name'] ?? $p['name'], 'qty' => $qty]);
@@ -5290,12 +5943,12 @@ if (preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khatam|restock|received|d
         }
     }
     // out / running-low list (a READ — reports stage in the lane above)
-    if (preg_match('/(sakina|sakiyo|khatam|low|out|kun kun|कुन कुन)/iu', $msg)) {
+    if (preg_match('/(sakina|sakiyo|sakiyeko|khatam|low|out|आउट|kun kun|कुन कुन)/iu', $msg)) {
         $rows = [];
         foreach ($products as $p) {
             $oh = $onHandOf($p);
             if ($oh === null) { continue; }
-            if ((float)$oh <= 2) { $rows[] = [$p, $oh]; }
+            if ((float)$oh <= 3) { $rows[] = [$p, $oh]; }
         }
         usort($rows, static fn($a, $b) => (float)$a[1] <=> (float)$b[1]);
         if (!$rows) { out(['reply' => t($link ? 'stock_low_none' : 'stock_low_none_local')]); }
@@ -5320,7 +5973,9 @@ if (preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khatam|restock|received|d
             $reply = t('stock_one', $st['name'], $fmtq($st['onHand']));
             $tail = golpos_cal_notes_tail($st['name']);
             if ($tail !== '') { $reply .= "\n" . $tail; }
-            out(['reply' => $reply]);
+            out(['reply' => $reply, 'dcard' => ['type' => 'stock_list', 'display' => true, 'title' => 'Stock',
+                'items' => [['name' => (string)$st['name'], 'qty' => (float)$st['onHand'],
+                    'stock_state' => (float)$st['onHand'] <= 0 ? 'Out of stock' : ((float)$st['onHand'] <= 3 ? 'Low' : 'In stock')]]]]);
         }
         $oh = $onHandOf($p);
         if ($oh === null) { out(['reply' => t('stock_untracked_local', $p['name'])]); }
@@ -5331,7 +5986,9 @@ if (preg_match('/(stock|maujud|on\s*hand|sakina|sakiyo|khatam|restock|received|d
         $reply = t('stock_one_local', $p['name'], $fmtq($oh));
         $tail = golpos_cal_notes_tail((string)$p['name']);
         if ($tail !== '') { $reply .= "\n" . $tail; }
-        out(['reply' => $reply]);
+        out(['reply' => $reply, 'dcard' => ['type' => 'stock_list', 'display' => true, 'title' => 'Stock',
+            'items' => [['name' => (string)$p['name'], 'qty' => (float)$oh,
+                'stock_state' => (float)$oh <= 0 ? 'Out of stock' : ((float)$oh <= 3 ? 'Low' : 'In stock')]]]]);
     }
     if (!empty($r['many'])) {
         $list = implode(', ', array_map(fn($p) => $p['name'], $r['many']));
@@ -5390,6 +6047,82 @@ if (golpos_is_bestseller_ask($msg) || golpos_is_compare_ask($msg)) {
                       $fmtTop(array_slice($byQty, 0, 3)), $fmtTop(array_slice($byRev, 0, 3))),
          'graph' => golpos_report_card(
              golpos_graph_payload('hbars', t('graph_best', golpos_day_label($ymd)), $series, $gTotal), [$ymd])]);
+}
+
+// --- month report lane (owner bare-month law, Nov 1) -------------------------
+// A month reference — named, "last month", or a bare month name — is a
+// full report period: this lane answers from the month's own records
+// (closes, bills, expenses), deterministically, before the deep-think
+// lane can substitute today or the trailing week. A figure word picks
+// the focus; a bare month gets the whole month card.
+$monthRef = golpos_month_ref($msg);
+$monthRefsAll = golpos_month_refs_all($msg);
+$isCompareAsk = preg_match('/(compar|vs\.?|versus|than|against|difference|bhanda|भन्दा)/iu', $msg) === 1;
+if ($isCompareAsk && $monthRefsAll) {
+    $cmpA = $monthRefsAll[0];
+    $cmpB = $monthRefsAll[1] ?? null;
+    if ($cmpB === null) {
+        // One month named + a comparison word: the other side is the
+        // month right before it ("October vs last month" names the
+        // same pair in the other order — resolve by BEFORE, not equal).
+        $prev = (new DateTime($cmpA['ym'] . '-01'))->modify('-1 month');
+        $cmpB = ['ym' => $prev->format('Y-m'), 'label' => $prev->format('F Y')];
+        if ($cmpB['ym'] === $cmpA['ym']) { $cmpB = null; }
+    }
+    if ($cmpB !== null) {
+        $sa = golpos_month_sales($cmpA['ym']); $pa = golpos_month_purchases($cmpA['ym']); $ea = golpos_month_expenses($cmpA['ym']);
+        $sb = golpos_month_sales($cmpB['ym']); $pb = golpos_month_purchases($cmpB['ym']); $eb = golpos_month_expenses($cmpB['ym']);
+        // Speak the LATER month first when the pair is out of order.
+        if ($cmpB['ym'] > $cmpA['ym']) {
+            [$cmpA, $cmpB] = [$cmpB, $cmpA];
+            [$sa, $sb] = [$sb, $sa]; [$pa, $pb] = [$pb, $pa]; [$ea, $eb] = [$eb, $ea];
+        }
+        $dSales = round($sa['gross'] - $sb['gross'], 2);
+        $pct = $sb['gross'] > 0 ? round($dSales / $sb['gross'] * 100, 1) : 0.0;
+        $reply = $cmpA['label'] . " vs " . $cmpB['label'] . ".\n"
+            . $cmpA['label'] . ": sales " . money($sa['gross']) . " across {$sa['txns']} sales (cash " . money($sa['cash']) . ", card " . money($sa['card']) . "); purchases " . money($pa['total']) . "; expenses " . money($ea['total']) . ".\n"
+            . $cmpB['label'] . ": sales " . money($sb['gross']) . " across {$sb['txns']} sales (cash " . money($sb['cash']) . ", card " . money($sb['card']) . "); purchases " . money($pb['total']) . "; expenses " . money($eb['total']) . ".\n"
+            . "Difference: sales " . ($dSales >= 0 ? 'up ' : 'down ') . money(abs($dSales))
+            . " (" . ($dSales >= 0 ? '+' : '-') . abs($pct) . "% vs " . $cmpB['label'] . "); purchases "
+            . ($pa['total'] >= $pb['total'] ? 'up ' : 'down ') . money(abs(round($pa['total'] - $pb['total'], 2)))
+            . "; expenses " . ($ea['total'] >= $eb['total'] ? 'up ' : 'down ') . money(abs(round($ea['total'] - $eb['total'], 2))) . ".";
+        $graph = golpos_graph_payload('compare', $cmpA['label'] . ' vs ' . $cmpB['label'], [
+            ['label' => $cmpB['label'], 'value' => round($sb['gross'], 2), 'ymd' => $cmpB['ym'] . '-01'],
+            ['label' => $cmpA['label'], 'value' => round($sa['gross'], 2), 'ymd' => $cmpA['ym'] . '-01', 'highlight' => true],
+        ], round($sa['gross'] + $sb['gross'], 2));
+        out(['reply' => $reply, 'graph' => $graph]);
+    }
+}
+if ($monthRef !== null
+    && ($monthRef['bare']
+        || preg_match('/(sales|sale|bikri|total|jamma|purchase|purchases|kharid|expense|expenses|kharcha|report|hisab|hisaab|how much|kati|revenue|earning|bill)/iu', $msg))) {
+    $ms = golpos_month_sales($monthRef['ym']);
+    $mp = golpos_month_purchases($monthRef['ym']);
+    $me = golpos_month_expenses($monthRef['ym']);
+    $lbl = $monthRef['label'];
+    $salesLine = "Sales: " . money($ms['gross']) . " across {$ms['txns']} sales (cash " . money($ms['cash']) . ", card " . money($ms['card']) . ").";
+    $purchLine = $mp['bills'] > 0
+        ? "Purchases: " . money($mp['total']) . " across {$mp['bills']} vendor bills"
+          . ($mp['by_vendor'] ? " — " . implode('; ', array_map(static fn($v, $a) => $v . ' ' . money((float)$a), array_keys($mp['by_vendor']), array_values($mp['by_vendor']))) : "") . "."
+        : "Purchases: no vendor bills recorded for {$lbl}.";
+    $expLine = $me['count'] > 0
+        ? "Expenses: " . money($me['total']) . " across {$me['count']} lines"
+          . " — biggest: " . implode('; ', array_map(static fn($r) => (string)($r['label'] ?? 'Expense') . ' ' . money((float)($r['amount'] ?? 0)), array_slice($me['rows'], 0, 3))) . "."
+        : "Expenses: none recorded for {$lbl}.";
+    if (preg_match('/(purchase|purchases|kharid)/iu', $msg)) {
+        $reply = "{$lbl} — purchases.\n{$purchLine}\n{$salesLine}";
+    } elseif (preg_match('/(expense|expenses|kharcha)/iu', $msg)) {
+        $reply = "{$lbl} — expenses.\n{$expLine}\n{$salesLine}";
+    } else {
+        $reply = "{$lbl} — the full month.\n{$salesLine}\n{$purchLine}\n{$expLine}";
+    }
+    $series = [];
+    foreach ($ms['days'] as $ymd => $g) {
+        $series[] = ['label' => date('j', strtotime($ymd)), 'value' => round((float)$g, 2), 'ymd' => $ymd];
+    }
+    $graph = golpos_graph_payload('spark', $lbl . ' — ' . $shop, $series, round($ms['gross'], 2));
+    $graph = golpos_report_card($graph, array_keys($ms['days']));
+    out(['reply' => $reply, 'graph' => $graph]);
 }
 
 // --- analysis / advice: the DEEP-THINK lane (Muse Wonder) --------------------
@@ -5518,6 +6251,10 @@ if (preg_match('/(new\s+(item|product)|naya\s+(saman|item)|नयाँ|नय�
         out(['reply' => t('barcode_taken', (string)$bcx['holder']['name'])]);
     }
     $wmsg = $bcx['work'];
+    // A question stages nothing here either (see the add lane's fence).
+    if (golpos_is_info_question($msg)) {
+        out(['reply' => t('question_no_stage')]);
+    }
     $ex = golpos_extract_price($wmsg, null);
     if ($ex['status'] === 'ambiguous') {
         out(['reply' => t('price_ask_which_plain', money($ex['candidates'][0]), money($ex['candidates'][1]))]);
@@ -5626,9 +6363,12 @@ if (preg_match('/(kati|kitna|kitne|price|mulya|dam|daam|how much|मूल्य
                          'mode' => golpos_link_on() ? 'link' : 'local'],
             'session' => (string)($GLOBALS['golpos_session_id'] ?? '')]);
         // Muse phrases the answer around the exact resolved price.
+        $dcPrice = ['type' => 'price', 'display' => true, 'name' => (string)$p['name'],
+            'price' => round((float)$p['price'], 2), 'store' => $shop,
+            'onHand' => isset($p['onHand']) && is_numeric($p['onHand']) ? (float)$p['onHand'] : (isset($p['stock']) && is_numeric($p['stock']) ? (float)$p['stock'] : null)];
         $reply = golpos_meta_compose($shop, "Price fact: {$p['name']} costs " . money((float)$p['price']) . ". The owner asked its price.", $msg);
-        if ($reply !== null && strpos($reply, money((float)$p['price'])) !== false) { out(['reply' => $reply]); }
-        out(['reply' => $p['name'] . ' — ' . money((float)$p['price']) . '.']);
+        if ($reply !== null && strpos($reply, money((float)$p['price'])) !== false) { out(['reply' => $reply, 'dcard' => $dcPrice]); }
+        out(['reply' => $p['name'] . ' — ' . money((float)$p['price']) . '.', 'dcard' => $dcPrice]);
     }
     if (!empty($r['many'])) {
         foreach ($r['many'] as $cand) {
@@ -5639,13 +6379,16 @@ if (preg_match('/(kati|kitna|kitne|price|mulya|dam|daam|how much|मूल्य
                 'session' => (string)($GLOBALS['golpos_session_id'] ?? '')]);
         }
         $list = implode(', ', array_map(fn($p) => $p['name'] . ' (' . money((float)$p['price']) . ')', $r['many']));
+        $dcList = ['type' => 'price_list', 'display' => true, 'store' => $shop,
+            'items' => array_map(static fn($p) => ['name' => (string)$p['name'], 'price' => round((float)$p['price'], 2),
+                'onHand' => isset($p['onHand']) && is_numeric($p['onHand']) ? (float)$p['onHand'] : (isset($p['stock']) && is_numeric($p['stock']) ? (float)$p['stock'] : null)], $r['many'])];
         $reply = golpos_meta_compose($shop, "Several products match the owner's words. Candidates with exact prices: {$list}. Ask which one they mean.", $msg);
         if ($reply !== null) {
             foreach ($r['many'] as $cand) {
-                if (strpos($reply, money((float)$cand['price'])) !== false) { out(['reply' => $reply]); }
+                if (strpos($reply, money((float)$cand['price'])) !== false) { out(['reply' => $reply, 'dcard' => $dcList]); }
             }
         }
-        out(['reply' => t('which_one', $list)]);
+        out(['reply' => t('which_one', $list), 'dcard' => $dcList]);
     }
     out(['reply' => t('not_in_list')]);
 }
@@ -5659,8 +6402,31 @@ if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप|चा�
     // spent only if this sentence turns out to CREATE an item (below).
     $bcx = golpos_extract_barcode($msg, $products);
     $wmsg = $bcx['work'];
+    // A question never catalogs and never rings. The Nov 2 ear test
+    // watched the spoken question "What does your laptop show after
+    // adding M&M's Peanut at $1.69? Is it in the cart now?" ride this
+    // lane's price branch into a staged "New item" card named by the
+    // question itself. Information questions are answered or honestly
+    // not-caught — the write branches below are for imperatives.
+    if (golpos_is_info_question($msg)) {
+        out(['reply' => t('question_no_stage')]);
+    }
     $r = resolve_item($products, $wmsg);
     $ex = golpos_extract_price($wmsg, null);
+    /* A bare count before the item's name is a QUANTITY, never a price
+       (audit GOL-01, Oct 30): "Add 2 Coke 20oz to the cart" used to
+       stage a new-item card priced $2 named after the whole sentence,
+       because the price reader claimed the count digit (a classifier
+       "2 ota Coke" shielded it; the bare digit did not). When exactly
+       one item resolves and the count reader binds that same number
+       as the quantity, and no money marker ($) was said, the number
+       is the count — the cataloging branch below sees no price. */
+    if ($ex['status'] === 'ok' && !empty($r['one']) && strpos($wmsg, '$') === false) {
+        $cnt = golpos_extract_count(golpos_count_words($wmsg, $r['one']), $r['one']);
+        if ($cnt !== null && abs($cnt - (float) $ex['value']) < 0.001) {
+            $ex = ['status' => 'none'];
+        }
+    }
     // A price in the sentence makes it a CATALOGING sentence. Ringing never
     // needs a price — the register knows it — so when the name the owner
     // said is not exactly a known item's own name or alias, the item is
@@ -5688,7 +6454,7 @@ if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप|चा�
         // A count rides along only when the owner bound one ("2 ota coke"
         // -> 2). The product's SIZE is never a quantity: "coke 20oz thap"
         // adds one 20oz Coke.
-        $qty = golpos_extract_count($wmsg, $r['one']);
+        $qty = golpos_extract_count(golpos_count_words($wmsg, $r['one']), $r['one']);
         $n = $qty !== null && $qty > 0 ? (int)floor($qty) : 1;
         out(['reply' => ($n > 1 ? $n . ' × ' : '') . t('added_cart', $r['one']['name'], money((float)$r['one']['price'])),
              'action' => ['type' => 'add', 'sku' => $r['one']['sku'], 'qty' => $n]]);
@@ -5713,6 +6479,27 @@ if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप|चा�
         }
         out(['reply' => t('new_card_offer', money($ex['value']))]);
     }
+    // A quantity with NO item in the breath ("Add twenty-four
+    // pieces") binds to the item the conversation is already about —
+    // the one Gol just answered for — instead of dead-ending. It fires
+    // only when the words carry no item at all: once the add verb, the
+    // count and the classifiers are stripped, nothing may remain. A
+    // named item that failed to resolve still earns the honest
+    // not-found below.
+    $ctxP = golpos_ctx_product($products);
+    if ($ctxP !== null) {
+        $rest = golpos_count_words($wmsg, $ctxP);
+        $rest = preg_replace('/(add|thap|jodo|lagao|give|please|ota|vata|pcs|pieces?|पिस|वटा|more|aru|the|a|an|of|na|ta)\b/iu', ' ', $rest) ?? $rest;
+        $rest = preg_replace('/\d+(?:\.\d+)?/u', ' ', $rest) ?? $rest;
+        if (trim((string) preg_replace('/[^\p{L}\p{N}]+/u', ' ', $rest)) === '') {
+            $cqty = golpos_extract_count(golpos_count_words($wmsg, $ctxP), $ctxP);
+            if ($cqty !== null && $cqty > 0) {
+                $n = (int) floor($cqty);
+                out(['reply' => ($n > 1 ? $n . ' × ' : '') . t('added_cart', $ctxP['name'], money((float)$ctxP['price'])),
+                     'action' => ['type' => 'add', 'sku' => $ctxP['sku'], 'qty' => $n]]);
+            }
+        }
+    }
     out(['reply' => t('not_found_add')]);
 }
 
@@ -5733,6 +6520,23 @@ if (golpos_link_on()) {
     $pack .= "\nStock on hand (MR.STORE live): " . implode('; ', array_map(
         fn($p) => $p['name'] . ' — ' . (isset($p['onHand']) && $p['onHand'] !== null ? (string)(float)$p['onHand'] : 'not tracked'),
         $products)) . ". Sales totals above are the POS till's own figures.";
+}
+$pmPack = golpos_month_ref('last month');
+if ($pmPack !== null) {
+    $psP = golpos_month_sales($pmPack['ym']); $ppP = golpos_month_purchases($pmPack['ym']); $peP = golpos_month_expenses($pmPack['ym']);
+    $pack .= "\nLast month (" . $pmPack['label'] . "), the full month from the day closes: sales " . money($psP['gross'])
+        . " across {$psP['txns']} sales (cash " . money($psP['cash']) . ", card " . money($psP['card']) . "); purchases "
+        . money($ppP['total']) . " across {$ppP['bills']} vendor bills; expenses " . money($peP['total'])
+        . " across {$peP['count']} lines. A question naming that month is answered with THESE figures — never with today's.";
+    $trendP = [];
+    for ($k = 5; $k >= 1; $k--) {
+        $tm = (new DateTime('first day of this month'))->modify("-{$k} months");
+        $ts = golpos_month_sales($tm->format('Y-m'));
+        if ($ts['txns'] === 0) { continue; }
+        $tp = golpos_month_purchases($tm->format('Y-m')); $te = golpos_month_expenses($tm->format('Y-m'));
+        $trendP[] = $tm->format('M Y') . ": sales " . money($ts['gross']) . ", purchases " . money($tp['total']) . ", expenses " . money($te['total']);
+    }
+    if ($trendP) { $pack .= "\nMonthly trend (full months): " . implode('; ', $trendP) . ". Comparisons between months use these figures."; }
 }
 $reply = golpos_meta_compose($shop, $pack, $msg);
 if ($reply !== null) { out(['reply' => $reply]); }
@@ -5762,6 +6566,8 @@ out(['reply' => t('fallback')]);
 // PINs lock elevation for 10 minutes.
 function golpos_needs_admin(string $msg, array $in): bool {
     if (in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true) || !empty($in['confirm'])) {
+    if (golpos_echo_confirm($msg, $in)) { out(['reply' => 'That was my own voice. The card is still waiting. Tap Confirm after I am quiet.']); }
+
         $pend = golpos_pending();
         // A refund confirm is an admin execution exactly when the
         // store's refund_pin setting says so (default ON); with the
@@ -5771,7 +6577,7 @@ function golpos_needs_admin(string $msg, array $in): bool {
             return !empty(golpos_settings()['refund_pin']);
         }
         return $pend !== null && in_array($pend['type'] ?? '', [
-            'price_change', 'new_item', 'setting_change', 'batch_close', 'employee_remove', 'employee_add',
+            'price_change', 'new_item', 'setting_change', 'batch_close', 'employee_remove', 'employee_add', 'pin_set',
             'stock_receive', 'bill', 'order_prep', 'vendor_teach', 'task_assign',
             'pay_approve', 'rate_change',
             // Price-gap fills (Oct 28) execute through the price lane's
@@ -5796,6 +6602,10 @@ function golpos_needs_admin(string $msg, array $in): bool {
     if (golpos_parse_rate_change($msg) !== null) { return true; }
     if (golpos_is_pay_requests_ask($msg)) { return true; }
     if (golpos_is_pay_ask($msg)) { return false; }
+    // PIN set/reset (TASKS 231): the owner's act alone — an unelevated
+    // session meets the PIN demand before the lane can even stage, and
+    // the staged card's confirm is gated by the type list above.
+    if (golpos_is_pin_set_intent($msg)) { return true; }
     // The owner's team domain (employee lane): assigning work, reading
     // a person's notes, team progress, and the presence read are admin
     // asks. The employee's own lanes (her tasks, her note back, her
@@ -5837,6 +6647,2014 @@ function golpos_needs_admin(string $msg, array $in): bool {
     if (preg_match('/(why|how come|how was|how did|how is|किन|कस्तो|kasto|kina|hapta|हप्ता|week|month|suggest|advice|sujhab|sujhav|sallah|slow|trend|improv)/iu', $msg)) { return true; }
     if (preg_match('/(close|banda|बन्द|क्लोज)/iu', $msg)) { return true; }
     return false;
+}
+
+// =============================================================================
+// BIG BRAIN BRIDGE (owner directive, Oct 30) — "first class dimaag"
+// =============================================================================
+// The till's Gol panel used to run on this file's own register brain: a
+// second, smaller brain that read only the POS-local sale journal, so on
+// a linked store it answered "This week's sales" with "No sales recorded
+// in the last 7 days yet" while the store's Books held a Z close every
+// night, answered a yesterday ask with today's empty journal, and read
+// a stock-state question ("all out chha ta?") as a product lookup. The
+// owner caught all three live on the Lucky till.
+//
+// There is ONE Gol brain: store-api/gol-chat.php (gol_turn — Meta brain,
+// live context pack, Vendor AI, the Books closes, the staged-card law).
+// This bridge routes every STORE-KNOWLEDGE turn from the panel (typed
+// chat and the Call loop alike — both arrive here as brain.php turns) to
+// gol_turn with the POS surface identified, and translates the answer
+// back into this panel's shapes (reply, a staged-card rendering, the
+// report graph + month calendar drawn from the same Books closes).
+// Genuinely register-local work stays in golpos_dispatch: ring control
+// (add to cart), price queries against the shelf, receipt/print
+// settings, hours/batch, camera, credit attach, refunds, the employee
+// lanes (tasks / pay / presence), order prep, and the till's own staged
+// cards (price changes stage through the price lane and its waits).
+//
+// Caller identity follows the till session: the admin PIN's owner is
+// the store owner; an unlocked employee speaks as that employee (the
+// big brain's own staff fences apply — a staff "gol" is held there,
+// exactly as on every other surface); on a roster-less till the session
+// is the owner's. If the big brain cannot take the turn (link off,
+// caller unknown to the store, bridge failure), the till brain answers
+// as before — the register never goes mute.
+
+function golpos_bigbrain_cfg(): ?array {
+    if (!golpos_link_on()) { return null; }
+    $set = mrstore_settings();
+    if ($set === null || empty($set['owner'])) { return null; }
+    $cfg = golpos_link_config();
+    return ['store_id' => (string)$cfg['store_id'], 'api_dir' => (string)$cfg['api_dir'],
+            'owner' => (string)$set['owner'], 'name' => (string)($set['name'] ?? '')];
+}
+
+function golpos_bigbrain_caller(array $cfg, array $session): ?string {
+    if (!empty($session['admin']) || (string)($session['unlocked_by'] ?? '') === 'admin') {
+        return $cfg['owner'];
+    }
+    $email = (string)($session['unlocked_by'] ?? '');
+    if ($email === '' && !empty($session['employee'])) { $email = (string)$session['employee']; }
+    if ($email !== '') { return $email; }
+    // No identity on the session: only possible when the till has no
+    // PIN roster (the lock gate owns every other road here) — the
+    // session is the owner's own till session.
+    if (!golpos_roster_has_pin()) { return $cfg['owner']; }
+    return null;
+}
+
+function golpos_bigbrain_turn(array $cfg, string $email, array $input): ?array {
+    $cmd = 'php ' . escapeshellarg($cfg['api_dir'] . '/gol-chat.php')
+         . ' --email=' . escapeshellarg($email)
+         . ' --store=' . escapeshellarg($cfg['store_id'])
+         . ' --surface=pos';
+    if (!empty($input['action'])) { $cmd .= ' --action=' . escapeshellarg((string)$input['action']); }
+    if (!empty($input['pending_pid'])) { $cmd .= ' --pid=' . escapeshellarg((string)$input['pending_pid']); }
+    if (isset($input['text']) && (string)$input['text'] !== '') {
+        $cmd .= ' --text=' . escapeshellarg((string)$input['text']);
+    }
+    $raw = shell_exec($cmd . ' 2>/dev/null');
+    if (!is_string($raw) || trim($raw) === '') { return null; }
+    $j = json_decode($raw, true);
+    if (!is_array($j)) {
+        $a = strpos($raw, '{'); $b = strrpos($raw, '}');
+        if ($a !== false && $b !== false && $b > $a) {
+            $j = json_decode(substr($raw, $a, $b - $a + 1), true);
+        }
+    }
+    return is_array($j) ? $j : null;
+}
+
+// The report graph for a bridged sales answer: trailing-7-day bars +
+// the month calendar, computed from the store's Books closes (the
+// gol-reads lane — the same parsing as Owner Pulse), never from the
+// till's own journal. Returns null when the store has no closes on
+// record in the current month (the text answer stands alone).
+function golpos_bigbrain_graph(array $cfg, string $msg): ?array {
+    try {
+        $apiDir = $cfg['api_dir'];
+        if (!function_exists('golr_closes')) {
+            if (!is_file($apiDir . '/gol-reads.php')) { return null; }
+            require_once $apiDir . '/gol-reads.php';
+        }
+        $store = golr_store_by_id($cfg['store_id']);
+        if ($store === null) {
+            $store = ['slug' => golr_slug_for($cfg['store_id']), 'id' => $cfg['store_id'],
+                      'name' => $cfg['name'] !== '' ? $cfg['name'] : 'Store'];
+        }
+        /* Store binding (audit GOL-05, Oct 30): the text answer binds to
+           the store the question NAMES — golr_store_mention is the same
+           door the big brain's read lane (golr_answer) uses — so the
+           graph, cash card, calendar and focus must bind to that same
+           store, never silently to the till's own. No mention in the
+           message -> the till's store, as before. */
+        $mention = function_exists('golr_store_mention') ? golr_store_mention($msg) : null;
+        if ($mention !== null) { $store = $mention; }
+        $today = golr_today();
+        $todayStr = $today->format('Y-m-d');
+        $monthRows = golr_closes($store, $today->format('Y-m-01'), $todayStr);
+        if (!$monthRows) { return null; }
+        $ws = (clone $today)->modify('-6 days');
+        $series = []; $wkTotal = 0.0; $wkCash = 0.0; $wkCard = 0.0; $wkNights = 0;
+        $wkExp = 0.0; $wkTax = 0.0; $wkCounted = 0.0; $wkCountedN = 0;
+        $wkOS = 0.0; $wkOSN = 0; $adjDates = [];
+        $focusDate = golr_parse_date($msg, $todayStr);
+        $isPeriodAsk = (bool)preg_match('/(week|hapta|हप्ता|month|mahina)/iu', $msg);
+        for ($i = 0; $i < 7; $i++) {
+            $d = (clone $ws)->modify('+' . $i . ' days')->format('Y-m-d');
+            $r = $monthRows[$d] ?? null;
+            $g = $r !== null ? (float)$r['gross'] : 0.0;
+            $wkTotal += $g;
+            if ($r !== null) {
+                $wkCash += (float)($r['cash'] ?? 0); $wkCard += (float)($r['card'] ?? 0); $wkNights++;
+                $expC = isset($r['expectedCash']) ? (float)$r['expectedCash']
+                      : (float)$r['gross'] - (float)($r['card'] ?? 0);
+                $wkExp += $expC; $wkTax += (float)($r['tax'] ?? 0);
+                $cnt = $r['counted'] ?? null;
+                $osv = $r['overShort'] ?? null;
+                if ($cnt !== null) { $wkCounted += (float)$cnt; $wkCountedN++; }
+                if ($osv !== null) { $wkOS += (float)$osv; $wkOSN++; }
+                if ($cnt !== null && $osv !== null
+                    && abs((float)$cnt - ($expC + (float)$osv)) > 0.01) {
+                    $adjDates[] = (new DateTime($d))->format('M j');
+                }
+            }
+            $series[] = ['label' => (new DateTime($d))->format('D'), 'value' => round($g, 2),
+                         'highlight' => $focusDate !== null && $focusDate === $d && !$isPeriodAsk];
+        }
+        $graph = ['kind' => 'bars', 'title' => 'Last 7 days — ' . (string)($store['name'] ?? 'Store'), 'unit' => 'money',
+                  'series' => $series, 'total' => round($wkTotal, 2),
+                  'empty' => $wkTotal <= 0 && $wkNights === 0];
+        if ($graph['empty']) { $graph['empty_text'] = 'No closes in the last 7 days yet.'; }
+        /* Tender reconciliation (audit GOL-07, Oct 30): the closes'
+           recorded cash column mixes bases night to night (the counted
+           cash some nights, the register split others), so cash + card
+           alone need not tie to the graph total. The block therefore
+           also carries the expected cash (gross - card per night — the
+           split that always ties), the counted cash and the recorded
+           over/short from the SAME rows, plus one plain line that ties
+           the tender block to the total and names any night whose count
+           was booked against an adjusted close. */
+        $recon = null;
+        if ($wkNights > 0) {
+            $recon = 'Ties to the total: Card ' . golr_money($wkCard)
+                   . ' + expected cash ' . golr_money($wkExp)
+                   . ' = ' . golr_money($wkTotal) . '.';
+            if ($wkCountedN > 0) {
+                $recon .= ' Counted cash ' . golr_money($wkCounted)
+                        . ' (' . $wkCountedN . ' of ' . $wkNights . ' nights)';
+                if ($wkOSN > 0) {
+                    $recon .= ' · over/short as recorded '
+                            . ($wkOS < -0.001 ? '-' : ($wkOS > 0.001 ? '+' : '')) . golr_money(abs($wkOS));
+                }
+                $recon .= '.';
+            }
+            if ($adjDates) {
+                $recon .= ' ' . (count($adjDates) === 1
+                    ? $adjDates[0] . "'s count was booked against an adjusted close — its day card shows both figures."
+                    : 'Some counts (' . implode(', ', $adjDates) . ') were booked against adjusted closes — their day cards show both figures.');
+            }
+            if ($wkTax > 0) { $recon .= ' Tax collected in these closes: ' . golr_money($wkTax) . '.'; }
+        }
+        $graph['cash'] = ['cash' => round($wkCash, 2), 'card' => round($wkCard, 2),
+                          'total' => round($wkTotal, 2), 'txns' => $wkNights, 'split' => true,
+                          'cash_lbl' => t('cash_lbl'), 'card_lbl' => t('card_lbl'),
+                          'credit_lbl' => t('credit_lbl'),
+                          'expected' => round($wkExp, 2),
+                          'counted' => $wkCountedN > 0 ? round($wkCounted, 2) : null,
+                          'counted_n' => $wkCountedN,
+                          'os' => $wkOSN > 0 ? round($wkOS, 2) : null,
+                          'os_n' => $wkOSN,
+                          'tax' => round($wkTax, 2),
+                          'nights' => $wkNights,
+                          'recon' => $recon];
+        // month calendar from the same closes
+        $first = $today->format('Y-m-01');
+        $n = (int)$today->format('t');
+        $days = [];
+        for ($d = 1; $d <= $n; $d++) {
+            $ymd = $today->format('Y-m-') . str_pad((string)$d, 2, '0', STR_PAD_LEFT);
+            $r = $monthRows[$ymd] ?? null;
+            $days[] = ['d' => $d, 'ymd' => $ymd,
+                       'value' => $r !== null ? round((float)$r['gross'], 2) : 0.0,
+                       'txns' => $r !== null ? 1 : 0,
+                       'has' => $r !== null, 'today' => $ymd === $todayStr];
+        }
+        $graph['calendar'] = ['month' => $today->format('F Y'),
+                              'lead' => (int)(new DateTime($first))->format('w'),
+                              'dows' => array_map('trim', explode(',', t('cal_dows'))),
+                              'days' => $days, 'hint' => t('cal_hint')];
+        if ($focusDate !== null && !$isPeriodAsk && isset($monthRows[$focusDate])) {
+            $graph['focus'] = ['label' => (new DateTime($focusDate))->format('D, M j'),
+                               'value' => round((float)$monthRows[$focusDate]['gross'], 2)];
+        }
+        // A calendar-day tap fetches its day detail silently for THIS
+        // store (the one the question named) — the panel reads this
+        // binding back instead of sending a chat message.
+        $graph['cal_store'] = (string)$store['id'];
+        $graph['cal_store_name'] = (string)$store['name'];
+        return $graph;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+/* The card's own Cancel button (audit GOL-04): it names the exact
+   card by id — the till's own pending, or the big brain's staged card
+   this till is showing. Anything else is already dead: the UI marks
+   it cancelled and nothing anywhere is touched. */
+function golpos_cancel_card_handle(array $in, array $session, string $sessionId): bool {
+    if (empty($in['cancel_card'])) { return false; }
+    $pid = trim((string)($in['pending_pid'] ?? ''));
+    if ($pid === '') { return false; }
+    $pend = golpos_pending();
+    if ($pend !== null && (string)($pend['id'] ?? '') === $pid) {
+        golpos_clear_pending();
+        out(['reply' => t('card_cancelled'), 'cancelled' => true, 'cancelled_pid' => $pid]);
+    }
+    $sess = golpos_session($sessionId);
+    if (!empty($sess['gol_card']) && (string)($sess['gol_card_pid'] ?? '') === $pid) {
+        $cfg = golpos_bigbrain_cfg();
+        $email = $cfg !== null ? golpos_bigbrain_caller($cfg, $session) : null;
+        if ($cfg !== null && $email !== null) {
+            $res = golpos_bigbrain_turn($cfg, $email, ['action' => 'cancel', 'pending_pid' => $pid]);
+            if (is_array($res) && !empty($res['ok'])) {
+                $sess['gol_card'] = false; $sess['gol_card_pid'] = '';
+                golpos_save_session($sessionId, $sess);
+                out(['reply' => (string)($res['reply'] ?? t('card_cancelled')), 'cancelled' => true, 'cancelled_pid' => $pid]);
+            }
+        }
+        /* the big brain could not be reached: its card may still be
+           armed there — say so, do not paint this one dead. */
+        out(['reply' => t('card_not_live'), 'cancelled_pid' => $pid]);
+    }
+    out(['reply' => t('card_not_live'), 'cancelled' => true, 'cancelled_pid' => $pid]);
+    return true; // unreachable — out() exits
+}
+
+// May the big brain take this turn? Register-local lanes keep their
+// turns; everything else is store knowledge and goes up.
+function golpos_bigbrain_claims(string $msg, array $in, array $session): bool {
+    $norm = mb_strtolower(trim($msg));
+    $golCard = !empty($session['gol_card']);
+    $posPending = golpos_pending() !== null;
+    $isConfirmWord = in_array($norm, ['gol', 'गोल'], true);
+    $isCancelWord = golpos_is_cancel_intent($msg);
+    if (!empty($in['confirm']) || $isConfirmWord || $isCancelWord) {
+        // The till's own staged card executes first (it is the card
+        // physically in front of the cashier); a big-brain card staged
+        // earlier keeps waiting in the store's own pending, where the
+        // next "gol" reaches it once the till card is done.
+        if ($posPending) { return false; }
+        return $golCard;
+    }
+    // A bare greeting cancels a staged big-brain card (the big brain's
+    // own greeting law) — it must reach the big brain to do so.
+    if ($golCard && golpos_is_bare_greeting($msg)) { return true; }
+    // While the till's own card is staged, its guard owns the chat.
+    if ($posPending) { return false; }
+    // --- register-local quick lanes (the till's own work) ---
+    // The PIN setup word itself ("admin") is the till's own vocabulary —
+    // the creation flow replays it after the PIN is set, and it must
+    // land in the till brain exactly as it always has.
+    if (preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', $msg)) { return false; }
+    if (golpos_is_smalltalk($msg)) { return false; }
+    if (golpos_is_sale_add_ask($msg)) { return false; }
+    if (golpos_is_refund_ask($msg) || golpos_is_credit_ask($msg)) { return false; }
+    if (golpos_is_bestseller_ask($msg) || golpos_is_compare_ask($msg)) { return false; }
+    if (golpos_is_hours_read($msg) || golpos_is_batch_mode_set($msg)
+        || golpos_is_hours_set($msg) || golpos_is_batch_close_intent($msg)) { return false; }
+    if (golpos_parse_rate_change($msg) !== null || golpos_is_pay_ask($msg)
+        || golpos_is_pay_requests_ask($msg)) { return false; }
+    if (golpos_parse_task_assign($msg) !== null || golpos_is_my_tasks_ask($msg)) { return false; }
+    if (preg_match('/(receipt|print|bill|paper).{0,30}settings|settings.{0,30}(receipt|print|bill)/iu', $msg)) { return false; }
+    /* a capability question is answered by the till itself (audit
+       GOL-01) — never bridged, never a workflow lane's keyword. */
+    if (golpos_is_capability_question($msg)) { return false; }
+    /* "low stock" is the register's own shelf threshold list (audit
+       GOL-06) — never the bridge's What's Out report answer. */
+    if (preg_match('/(low\s+stock|stock\s+low|running\s+low|sakina\s+lageko)/iu', $msg)) { return false; }
+    if (preg_match('/(poster|banner)/iu', $msg)) { return false; }
+    if (preg_match('/(camera|क्यामेरा|surcharge|watch\s*frame)/iu', $msg)) { return false; }
+    if (golpos_is_employee_intent($msg) || golpos_is_loyalty_board_intent($msg)) { return false; }
+    if (golpos_is_teach_ask($msg) || golpos_is_order_prep_ask($msg)
+        || golpos_is_order_given($msg) || golpos_is_repday_ask($msg)) { return false; }
+    // A stock RECEIVE is a till act (a delivery at the counter, staged
+    // by the stock lane) — the same shape the stock lane itself uses.
+    if (preg_match('/(ayo|aayo|aaya|received|restock|delivery|आयो)/iu', $msg)
+        && !preg_match('/(kati|kun|which|list|dekha|कति|कुन)/iu', $msg)) { return false; }
+    // An employee's out / count REPORT names its item and is not a
+    // question — the What's Out + count report lanes file it. A
+    // stock-state QUESTION (what's out / all out / ke sakiyo) is store
+    // knowledge and falls through to the claim below.
+    if (!preg_match('/(kati|\bke\s|kun|which|what|list|dekha|\?|चाहियो)/iu', $msg)
+        && preg_match('/(out|saki|sakiyo|sakyo|khatam)/iu', $msg)) {
+        $rr = resolve_item($GLOBALS['golpos_products'] ?? [], $msg);
+        if (!empty($rr['one'])) { return false; }
+    }
+    // Named-day report asks: a PAST day belongs to the Books closes;
+    // today's own day stays with the till's running total.
+    if (preg_match('/\b(\d{4})-(\d{2})-(\d{2})\b/', $msg, $dm)
+        && checkdate((int)$dm[2], (int)$dm[3], (int)$dm[1])) {
+        $ymd = $dm[1] . '-' . $dm[2] . '-' . $dm[3];
+        if ($ymd === date('Y-m-d')) { return false; }
+        return (bool)preg_match('/(report|hisab|hisaab|total|sales|bikri|close)/iu', $msg);
+    }
+    // Add-to-cart + new-item sentences are ring work, never knowledge.
+    if (preg_match('/(thap|add|ek |one |chahiyo|give|jodo|jod |lagao|थप|चाहियो)/iu', $msg)
+        || preg_match('/\d+(?:\.\d+)?\s*(ota|vata|वटा)\b/iu', golpos_norm_digits($msg))) { return false; }
+    // A price QUESTION that resolves to a shelf item is the register's
+    // fastest lane (the same catalog truth); one that resolves to no
+    // item was never a shelf question ("Seaway ko bill kati?") and
+    // belongs to the big brain.
+    if (preg_match('/(kati|kitna|kitne|price|mulya|dam|daam|how much|मूल्य|कति)/iu', $msg)) {
+        $r = resolve_item($GLOBALS['golpos_products'] ?? [], $msg);
+        if (!empty($r['one']) || !empty($r['many'])) { return false; }
+    }
+    return true;
+}
+
+// Run one turn through the big brain and answer in this panel's shapes.
+// Returns true when the turn was answered there (out() already ran);
+// false hands the turn back to the till brain untouched.
+function golpos_bigbrain_handle(string $msg, array $in, array $session, string $sessionId, string $shop): bool {
+    $cfg = golpos_bigbrain_cfg();
+    if ($cfg === null) { return false; }
+    if (!golpos_bigbrain_claims($msg, $in, $session)) { return false; }
+    $email = golpos_bigbrain_caller($cfg, $session);
+    if ($email === null) { return false; }
+    $isConfirm = !empty($in['confirm'])
+        || in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true);
+    $turnIn = $isConfirm ? ['action' => 'confirm'] : ['text' => $msg];
+    if (!empty($in['pending_pid'])) { $turnIn['pending_pid'] = (string)$in['pending_pid']; }
+    $res = golpos_bigbrain_turn($cfg, $email, $turnIn);
+    if ($res === null || empty($res['ok'])) { return false; }
+    $reply = (string)($res['reply'] ?? '');
+    $pending = $res['pending'] ?? null;
+    $cardIn = (isset($res['card']) && is_array($res['card'])) ? $res['card'] : null;
+    // keep the till session's gol-card flag in step with the store's
+    // own pending (the flag only routes future confirms; the truth
+    // lives in gol-chat's state).
+    $sess2 = golpos_session($sessionId);
+    $had = !empty($sess2['gol_card']);
+    $has = is_array($pending) && $pending !== [];
+    $newPid = $has ? (string)($pending['pid'] ?? '') : '';
+    if ($had !== $has || (string)($sess2['gol_card_pid'] ?? '') !== $newPid) {
+        $sess2['gol_card'] = $has;
+        $sess2['gol_card_pid'] = $newPid;
+        golpos_save_session($sessionId, $sess2);
+    }
+    $resp = [];
+    if ($cardIn !== null && $has) {
+        // A staged card: the panel renders it as one card (its lines
+        // are the reply's own lines — the same card text the MR.STORE
+        // chat shows), and the card's Confirm button carries the
+        // confirm, so no separate reply bubble repeats it.
+        $lines = [];
+        foreach (preg_split('/\r?\n/', $reply) as $ln) {
+            $ln = trim((string)$ln);
+            if ($ln !== '') { $lines[] = $ln; }
+        }
+        $resp['card'] = ['type' => 'gol_stage',
+                         'pid' => (string)($pending['pid'] ?? ''),
+                         'title' => (string)($pending['summary'] ?? 'Staged — Gol'),
+                         'lines' => array_slice($lines, 0, 14)];
+        $resp['reply'] = '';
+    } else {
+        $resp['reply'] = $reply;
+        /* Lane 4 (Oct 31): a DESIGNED display card from the big brain
+           (price / overview / stock list / vendor profile) rides through
+           as 'dcard' and the panel renders it under the reply — the same
+           envelope the backend chat uses, figures untouched. Staged
+           cards keep the gol_stage path above; a display card is only
+           taken when nothing is staged. */
+        $dcard = null;
+        if ($cardIn !== null && !empty($cardIn['display'])) { $dcard = $cardIn; }
+        if ($dcard === null && !empty($res['messages']) && is_array($res['messages'])) {
+            for ($mi = count($res['messages']) - 1; $mi >= 0; $mi--) {
+                $mm = $res['messages'][$mi];
+                if (($mm['role'] ?? '') === 'gol' && !empty($mm['card']) && is_array($mm['card']) && !empty($mm['card']['display'])) { $dcard = $mm['card']; break; }
+            }
+        }
+        if ($dcard !== null) { $resp['dcard'] = $dcard; }
+    }
+    if ($isConfirm) { $resp['done'] = true; }
+    /* cancellation + staleness ride back so the register can paint
+       the exact rendered card dead (audit GOL-04). */
+    if (!empty($res['cancelled']) && is_array($res['cancelled'])) {
+        $resp['cancelled'] = true;
+        $resp['cancelled_pid'] = (string)($res['cancelled']['pid'] ?? '');
+    }
+    if (!empty($res['stale'])) { $resp['stale'] = (string)$res['stale']; }
+    // The report graph rides sales answers for the owner only (staff
+    // callers never see money figures — the big brain fences their
+    // reads, and its graph follows the same fence).
+    if ($cardIn === null && !$isConfirm && $email === $cfg['owner']
+        && preg_match('/(sales|bikri|close|\bz\b|total|report|hisab|week|hapta|month|mahina|yesterday|hijo|\d{4}-\d{2}-\d{2})/iu', $msg)) {
+        $g = golpos_bigbrain_graph($cfg, $msg);
+        if ($g !== null) { $resp['graph'] = $g; }
+    }
+    out($resp);
+    return true; // unreachable — out() exits; kept for the route's shape
+}
+
+// The one door both the plain flow and the PIN-gate replays walk
+// through: big brain first where it claims the turn, till brain after.
+// --- Calendar day tap: a SILENT data fetch, never a chat turn ----------------
+// Owner catch, Oct 31: tapping a day in a report calendar sent
+// "YYYY-MM-DD report" as a chat message and stacked a whole new
+// report (graph + cash card + calendar) under it, flooding the
+// thread. The panel now POSTs {action:'day_detail'} instead: this
+// read answers with ONE compact day payload and nothing else — no
+// turn is journaled on either brain, no state is written, and the
+// panel swaps a single day card in place under its report. Figures
+// come from the SAME sources the report itself reads: the Books
+// closes via gol-reads first (the rows the confirmed text answer
+// prints, tax + result included), the till's own journal day as
+// fallback. Money fence matches the report graph's own: Books
+// figures ride owner callers only; the till fallback rides admin
+// sessions (or a roster-less till — the owner's own session).
+function golpos_day_detail(array $in, array $session): void {
+    $ymd = trim((string)($in['ymd'] ?? ''));
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $ymd)) { out(['day_detail' => null]); }
+    $cfg = golpos_bigbrain_cfg();
+    if ($cfg !== null) {
+        $caller = golpos_bigbrain_caller($cfg, $session);
+        if ($caller !== null && $caller === $cfg['owner']) {
+            $apiDir = (string)$cfg['api_dir'];
+            if (!function_exists('golr_close_on') && is_file($apiDir . '/gol-reads.php')) {
+                require_once $apiDir . '/gol-reads.php';
+            }
+            if (function_exists('golr_close_on')) {
+                $storeId = trim((string)($in['store_id'] ?? '')) ?: (string)$cfg['store_id'];
+                $store = golr_store_by_id($storeId);
+                if ($store === null) {
+                    $store = ['slug' => golr_slug_for($storeId), 'id' => $storeId,
+                              'name' => (string)$cfg['name']];
+                }
+                $row = golr_close_on($store, $ymd);
+                if ($row !== null) {
+                    out(['day_detail' => [
+                        'ymd' => $ymd, 'basis' => 'books',
+                        'store' => (string)$store['name'],
+                        'label' => golr_fmt_date($ymd),
+                        'gross' => round((float)$row['gross'], 2),
+                        'cash' => round((float)$row['cash'], 2),
+                        'card' => round((float)$row['card'], 2),
+                        'tax' => round((float)($row['tax'] ?? 0), 2),
+                        'counted' => isset($row['counted']) ? round((float)$row['counted'], 2) : null,
+                        'expected' => isset($row['expectedCash']) ? round((float)$row['expectedCash'], 2) : null,
+                        'result' => golr_os_text($row['overShort'] ?? null),
+                        'cash_derived' => !empty($row['cashDerived']),
+                    ]]);
+                }
+            }
+        }
+    }
+    if (!empty($session['admin']) || !golpos_roster_has_pin()) {
+        $sum = golpos_day_summary($ymd);
+        if ((int)$sum['txns'] > 0) {
+            out(['day_detail' => [
+                'ymd' => $ymd, 'basis' => 'till',
+                'store' => (string)(golpos_catalog()['store']['name'] ?? ''),
+                'label' => date('D, M j, Y', (int)strtotime($ymd)),
+                'gross' => $sum['gross'], 'cash' => $sum['cash'], 'card' => $sum['card'],
+                'tax' => null, 'counted' => null, 'expected' => null,
+                'result' => '', 'cash_derived' => false,
+            ]]);
+        }
+    }
+    out(['day_detail' => null]);
+}
+
+// --- "Ko logged in cha?" — who is on this register, from the live record --
+// (Owner addition, Oct 31.) Computed AT ANSWER TIME from the register's
+// own session store + unlock journal — never from the roster, never
+// cached: a session counts as "on" only when it carries an identity and
+// is not locked. "Since when" is the latest unlock journal entry for
+// that same identity that no later lock entry closed; sheet-gate
+// unlocks are not journaled, so when no entry matches, since is
+// honestly null and the card says the time is not recorded — the
+// session record itself carries no unlock timestamp. The panel renders
+// the payload as a designed who-card (UI-answer law); the reply line is
+// the spoken/short form of the same truth. Lives in the route so the
+// PIN-gate replay (an unelevated "kun employee…" ask is employee-domain
+// and gates first) lands here too, after the PIN verifies.
+function golpos_who_answer(string $msg, string $sessionId): void {
+    $allSessions = golpos_read('sessions.json', []);
+    $lastUnlock = []; $lastLock = [];
+    foreach (golpos_unlocks() as $u) {
+        $key = ($u['role'] ?? '') === 'admin' ? 'admin' : (string)($u['email'] ?? '');
+        if ($key === '') { continue; }
+        if (($u['kind'] ?? '') === 'unlock') { $lastUnlock[$key] = (string)($u['at'] ?? ''); }
+        if (($u['kind'] ?? '') === 'lock') { $lastLock[$key] = (string)($u['at'] ?? ''); }
+    }
+    $who = []; $whoPos = [];
+    if (is_array($allSessions)) {
+        foreach ($allSessions as $sid => $s) {
+            if (!is_array($s) || empty($s['unlocked_by']) || golpos_lock_state($s)) { continue; }
+            $key = $s['unlocked_by'] === 'admin' ? 'admin' : (string)$s['unlocked_by'];
+            // One row per PERSON, not per device session: the same
+            // identity open on two tills is one "who", with the
+            // caller's own session flagged on the shared row.
+            if (isset($whoPos[$key])) {
+                if ($sid === $sessionId) { $who[$whoPos[$key]]['you'] = true; }
+                continue;
+            }
+            $since = $lastUnlock[$key] ?? null;
+            if ($since !== null && isset($lastLock[$key]) && $lastLock[$key] > $since) { $since = null; }
+            $whoPos[$key] = count($who);
+            $who[] = ['name' => (string)($s['unlocked_name'] ?? ''),
+                      'role' => (string)($s['unlocked_role'] ?? ''),
+                      'email' => $s['unlocked_by'] === 'admin' ? '' : (string)$s['unlocked_by'],
+                      'since' => $since,
+                      'you' => $sid === $sessionId];
+        }
+    }
+    $np = in_array(golpos_lang($msg), ['np', 'dev'], true)
+        || preg_match('/\b(ko|kun|kasle)\b.{0,25}(logged|login|unlock)|\b(logged|login)\b.{0,12}\b(cha|chha)\b/iu', $msg) === 1;
+    if ($who === []) {
+        out(['reply' => $np
+            ? 'Ahile kunai session khuleko chhaina — register locked chha wa setup mode ma chha, kohi logged in chhaina.'
+            : 'No session is open right now — the register is locked or in setup mode; nobody is logged in.',
+             'who' => []]);
+    }
+    $names = implode(', ', array_map(static fn($w) => $w['name'] . ' (' . $w['role'] . ')', $who));
+    out(['reply' => $np ? 'Register ma ahile: ' . $names . '.' : 'On this register now: ' . $names . '.',
+         'who' => $who]);
+}
+
+
+// =============================================================================
+// REASONING LAYER — TASKS 222 (owner order Nov 2; spec gol-brain-overall-fix-v1)
+// -----------------------------------------------------------------------------
+// The lanes below grew up as a rules machine: keyword gates chose the action
+// and the first number spotted won the turn — "2 ta coke 20oz ring gara"
+// staged a PRICE CHANGE because the price lane read the count as a price.
+// This layer sits in FRONT of them in golpos_brain_route and changes the
+// order of thinking:
+//   1. PACK — assemble the turn's full live context first: the open sale the
+//      client sends with the message, the catalog, today's and yesterday's
+//      figures, the card Gol currently has staged.
+//   2. INTERPRET — decide what the person is trying to DO (sell / ask /
+//      change / report / greet) over the Nepali+English mix and imperfect
+//      transcripts, including what each number MEANS inside that intent: a
+//      count bound to a classifier (ta/ota/vata) is a QUANTITY; a number is
+//      a price only inside a price change.
+//   3. ANSWER from the pack, scoped to the ask. Writes stay exactly what
+//      they were — staged cards confirmed by "gol". This layer never writes.
+// The old lanes remain as servants for everything this layer does not own.
+// Keyword rules here are fences only (the gol-confirm gate, the
+// greeting-cancels-armed-card fence), never the brain choosing by keyword.
+// =============================================================================
+
+function golpos_reason_tokens(string $msg): array {
+    $t = mb_strtolower(golpos_norm_digits($msg));
+    $t = preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $t) ?? $t;
+    $out = [];
+    foreach (preg_split('/\s+/u', trim($t)) ?: [] as $w) { if ($w !== '') { $out[] = $w; } }
+    return $out;
+}
+
+// Postpositions and fillers ride along with item names in Nepali speech
+// ("Red Bull ko stock", "Red Bull go stock"). They carry grammar, never
+// identity, so resolution never scores them.
+function golpos_reason_content_tokens(string $msg): array {
+    static $drop = ['ko' => 1, 'go' => 1, 'cha' => 1, 'chha' => 1, 'ho' => 1, 'ni' => 1,
+        'le' => 1, 'lai' => 1, 'ra' => 1, 'ani' => 1, 'the' => 1, 'a' => 1, 'an' => 1,
+        'of' => 1, 'please' => 1, 'plz' => 1, 'bhane' => 1,
+        // Verb endings are grammar, never product evidence: without
+        // these, the fuzzy skeleton pass read "chan" (…ota chan? =
+        // how many are there) as Sugar's alias "chini" (skel chn).
+        'chan' => 1, 'chhan' => 1];
+    $out = [];
+    foreach (golpos_reason_tokens($msg) as $w) { if (!isset($drop[$w])) { $out[] = $w; } }
+    return $out;
+}
+
+// Resolve the item a turn means, tolerating speech. Three passes, in order:
+// the register's own exact resolver; a DISTINCT-token scorer (a word counts
+// once per product however many of its names/aliases carry it — the old
+// shared scorer counted "red" twice for Red Wine, once from its name and
+// once from its alias "red wine", and so tied it against Red Bull's two
+// real words); then a fuzzy pass, so an in-catalog near-miss is never a
+// flat not-found. A token carried by exactly one product on the shelf is
+// that product's fingerprint and outweighs shared words.
+function golpos_reason_resolve(array $products, string $msg): array {
+    $r = resolve_item($products, $msg);
+    if (!empty($r['one'])) { return ['one' => $r['one'], 'how' => 'exact', 'items' => [$r['one']]]; }
+    static $stop = ['stock' => 1, 'price' => 1, 'kati' => 1, 'ring' => 1, 'gara' => 1, 'gar' => 1,
+        'add' => 1, 'thap' => 1, 'total' => 1, 'maujud' => 1, 'left' => 1, 'baki' => 1,
+        'how' => 1, 'many' => 1, 'much' => 1, 'have' => 1, 'got' => 1];
+    $content = [];
+    foreach (golpos_reason_content_tokens($msg) as $w) { if (!isset($stop[$w])) { $content[] = $w; } }
+    if (!$content) { return ['none' => true, 'items' => []]; }
+    $sets = []; $freq = [];
+    foreach ($products as $i => $p) {
+        $set = [];
+        $words = preg_split('/[^a-z0-9]+/u', mb_strtolower((string)$p['name'])) ?: [];
+        foreach ((array)($p['aliases'] ?? []) as $a) {
+            $words = array_merge($words, preg_split('/[^a-z0-9]+/u', mb_strtolower((string)$a)) ?: []);
+        }
+        foreach ($words as $w) { if (mb_strlen($w) >= 3) { $set[$w] = true; } }
+        $sets[$i] = $set;
+        foreach ($set as $w => $_) { $freq[$w] = ($freq[$w] ?? 0) + 1; }
+    }
+    $best = 0; $top = [];
+    foreach ($products as $i => $p) {
+        $s = 0;
+        foreach ($sets[$i] as $w => $_) {
+            if (in_array((string)$w, $content, true)) { $s += (($freq[$w] ?? 0) <= 1) ? 2 : 1; }
+        }
+        if ($s > $best) { $best = $s; $top = [$p]; }
+        elseif ($s === $best && $s > 0) { $top[] = $p; }
+    }
+    if ($best > 0 && count($top) === 1) { return ['one' => $top[0], 'how' => 'tokens', 'items' => $top]; }
+    if ($best > 0) { return ['many' => true, 'items' => $top]; }
+    // Fuzzy pass: close spellings and garbles of a shelf word.
+    $skel = static fn(string $w): string => preg_replace('/[aeiou]+/', '', $w) ?? $w;
+    $fbest = 0; $ftop = [];
+    foreach ($products as $i => $p) {
+        $s = 0;
+        foreach ($content as $w) {
+            if (mb_strlen($w) < 4) { continue; }
+            foreach ($sets[$i] as $pw => $_) {
+                $pw = (string)$pw;
+                if (mb_strlen($pw) < 4) { continue; }
+                $lim = mb_strlen($w) >= 7 ? 2 : 1;
+                if (levenshtein($w, $pw) <= $lim || $skel($w) === $skel($pw)) {
+                    $s += (($freq[$pw] ?? 0) <= 1) ? 2 : 1;
+                    break;
+                }
+            }
+        }
+        if ($s > $fbest) { $fbest = $s; $ftop = [$p]; }
+        elseif ($s === $fbest && $s > 0) { $ftop[] = $p; }
+    }
+    if ($fbest > 0 && count($ftop) === 1) { return ['one' => $ftop[0], 'how' => 'fuzzy', 'items' => $ftop]; }
+    if ($fbest > 0) { return ['many' => true, 'items' => $ftop]; }
+    return ['none' => true, 'items' => []];
+}
+
+// The reasoning step for a transcript the deterministic passes cannot
+// resolve: the model reads the turn against the shelf and names the item
+// the speaker most plausibly meant. Structured answer only; the sku is
+// validated against the catalog before anything uses it, and any failure
+// (provider down, bad JSON, unknown sku, low confidence) returns null —
+// the caller then answers honestly instead of guessing.
+function golpos_reason_interpret(array $products, string $msg): ?array {
+    if (!function_exists('golpos_meta_chat')) { return null; }
+    $list = implode('; ', array_map(static fn($p) => $p['sku'] . '=' . $p['name'], $products));
+    $sys = 'You are the interpreter inside a convenience-store register. A speech transcript may be garbled. '
+        . 'Given the transcript and the catalog (sku=name), return ONLY a JSON object {"sku":"...","confidence":0.0} '
+        . 'naming the ONE catalog item the speaker most plausibly meant, or {"sku":"","confidence":0} if none is plausible. No other text.';
+    $raw = golpos_meta_chat(golpos_spark_model(), $sys, "Transcript: {$msg}\nCatalog: {$list}", 1500, 20);
+    if ($raw === null) { return null; }
+    if (!preg_match('/\{.*\}/s', $raw, $m)) { return null; }
+    $j = json_decode($m[0], true);
+    if (!is_array($j) || empty($j['sku']) || (float)($j['confidence'] ?? 0) < 0.6) { return null; }
+    foreach ($products as $p) { if ((string)$p['sku'] === (string)$j['sku']) { return $p; } }
+    return null;
+}
+
+// The pack: the turn's live context, assembled before any interpreting.
+// The open sale rides in from the client with every message (app.js
+// brainPayload); the staged card is read from the register's own store.
+function golpos_reason_pack(array $in): array {
+    $cart = ['items' => [], 'subtotal' => 0.0, 'tax' => 0.0, 'total' => 0.0, 'count' => 0];
+    if (!empty($in['cart']) && is_array($in['cart'])) {
+        $c = $in['cart'];
+        foreach ((array)($c['items'] ?? []) as $it) {
+            if (!is_array($it)) { continue; }
+            $cart['items'][] = ['sku' => (string)($it['sku'] ?? ''), 'name' => (string)($it['name'] ?? ''),
+                'qty' => max(1, (int)($it['qty'] ?? 1)), 'price' => round((float)($it['price'] ?? 0), 2)];
+        }
+        $cart['count'] = array_sum(array_column($cart['items'], 'qty'));
+        // The client's own totals are the register's truth; recompute
+        // only when they did not ride along.
+        if (!empty($c['total'])) {
+            $cart['subtotal'] = round((float)($c['subtotal'] ?? 0), 2);
+            $cart['tax'] = round((float)($c['tax'] ?? 0), 2);
+            $cart['total'] = round((float)$c['total'], 2);
+        } elseif ($cart['items']) {
+            $rate = (float)(golpos_catalog()['store']['tax_rate'] ?? 0);
+            $sub = 0.0;
+            foreach ($cart['items'] as $it) { $sub += $it['qty'] * $it['price']; }
+            $cart['subtotal'] = round($sub, 2);
+            $cart['tax'] = round($sub * $rate, 2);
+            $cart['total'] = round($cart['subtotal'] + $cart['tax'], 2);
+        }
+    }
+    return ['cart' => $cart, 'pending' => golpos_pending()];
+}
+
+function golpos_reason_close_for(string $ymd): ?array {
+    foreach (golpos_read('closes.json', []) as $c) {
+        if ((string)($c['date'] ?? '') === $ymd) { return $c; }
+    }
+    return null;
+}
+
+function golpos_reason_last_close(): ?array {
+    $best = null;
+    foreach (golpos_read('closes.json', []) as $c) {
+        $d = (string)($c['date'] ?? '');
+        if ($d !== '' && $d <= date('Y-m-d') && ($best === null || $d > (string)$best['date'])) { $best = $c; }
+    }
+    return $best;
+}
+
+// The date a close question points at: an explicit date, or hijo/yesterday.
+function golpos_reason_close_ref(string $msg): ?array {
+    $d = golpos_norm_digits($msg);
+    if (preg_match('/(\d{4})-(\d{2})-(\d{2})/', $d, $m)) { return ['ymd' => "{$m[1]}-{$m[2]}-{$m[3]}"]; }
+    $months = ['jan' => 1, 'feb' => 2, 'mar' => 3, 'apr' => 4, 'may' => 5, 'jun' => 6,
+        'jul' => 7, 'aug' => 8, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12];
+    if (preg_match('/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})(?:st|nd|rd|th)?\b/iu', $d, $m)) {
+        $mo = $months[mb_strtolower(substr($m[1], 0, 3))];
+        $yr = (int)date('Y');
+        $ymd = sprintf('%04d-%02d-%02d', $yr, $mo, (int)$m[2]);
+        if ($ymd > date('Y-m-d')) { $ymd = sprintf('%04d-%02d-%02d', $yr - 1, $mo, (int)$m[2]); }
+        return ['ymd' => $ymd];
+    }
+    if (preg_match('/(hijo|yesterday|हिजो)/iu', $msg)) {
+        return ['ymd' => date('Y-m-d', strtotime('-1 day'))];
+    }
+    return null;
+}
+
+// Does the turn carry a RANGE shape (two day-dates, or a since/from
+// marker against a month)? Ranges belong to the period engine, never
+// to the single-month block — "Oct 20 dekhi Oct 31 samma" used to be
+// answered with the whole of October.
+function golpos_reason_rangeish(string $msg): bool {
+    $norm = golpos_norm_digits($msg);
+    if (preg_match_all('/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}/iu', $norm) >= 2) { return true; }
+    if (preg_match_all('/\d{4}-\d{2}-\d{2}/', $norm) >= 2) { return true; }
+    return preg_match('/(dekhi|since|from)/iu', $msg) === 1
+        && preg_match('/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*|\b(month|mahina)\b/iu', $msg) === 1;
+}
+
+// "Why was today slow?" is a reasoning question and gets a reasoned
+// answer built from the pack's own facts: how much of the selling day is
+// gone, what this weekday usually does, what the last close was, what
+// the average ticket looks like, and where the date sits in the season.
+// It never dumps the week line and calls that an answer.
+function golpos_reason_why_slow(): string {
+    $now = new DateTimeImmutable('now', golpos_store_tz());
+    $todayYmd = $now->format('Y-m-d');
+    $dow = strtolower($now->format('D'));
+    $today = golpos_day_summary($todayYmd);
+    $same = []; $tickGross = 0.0; $tickN = 0;
+    for ($i = 1; $i <= 42; $i++) {
+        $d = date('Y-m-d', strtotime("-{$i} day"));
+        $s = golpos_day_summary($d);
+        if ($s['txns'] <= 0) { continue; }
+        if (strtolower(date('D', strtotime($d))) === $dow) { $same[] = $s['gross']; }
+        if ($i <= 7) { $tickGross += $s['gross']; $tickN += $s['txns']; }
+    }
+    $wdAvg = $same ? array_sum($same) / count($same) : 0.0;
+    $avgTicket = $tickN > 0 ? $tickGross / $tickN : 0.0;
+    $set = golpos_settings();
+    $openH = 8; $closeH = 21;
+    if (preg_match('/^(\d{1,2})/', (string)($set['store_open'] ?? ''), $m)) { $openH = (int)$m[1]; }
+    if (preg_match('/^(\d{1,2})/', (string)($set['store_close'] ?? ''), $m)) { $closeH = (int)$m[1]; }
+    $minsNow = (int)$now->format('G') * 60 + (int)$now->format('i');
+    $span = max(1, ($closeH - $openH) * 60);
+    $elapsed = max(0.0, min(1.0, ($minsNow - $openH * 60) / $span));
+    $dayName = $now->format('l');
+    $bits = [];
+    if ($today['txns'] <= 0) {
+        $bits[] = 'Nothing has been rung yet today — and it is already ' . $now->format('g:i A')
+            . ', about ' . round($elapsed * 100) . '% through the selling day.';
+    } else {
+        $bits[] = 'Today is at ' . money($today['gross']) . ' across ' . $today['txns'] . ' sales so far ('
+            . $now->format('g:i A') . ', about ' . round($elapsed * 100) . '% of the selling day gone).';
+        $todayTicket = $today['gross'] / $today['txns'];
+        if ($avgTicket > 0 && $todayTicket < $avgTicket * 0.9) {
+            $bits[] = 'Baskets are smaller than usual too — today\'s average sale is ' . money($todayTicket)
+                . ' against a usual ' . money($avgTicket) . ', so it is smaller shops, not just fewer people.';
+        }
+    }
+    if ($wdAvg > 0) {
+        $line = 'A typical ' . $dayName . ' here does about ' . money($wdAvg) . ' for the full day';
+        if ($today['txns'] > 0 && $elapsed > 0.15 && $today['gross'] < $wdAvg * $elapsed * 0.75) {
+            $line .= ' — today\'s pace is running well under that, so this is a genuinely quiet ' . $dayName . ', not just the clock';
+        }
+        $bits[] = $line . '.';
+    }
+    // Season: the days right after Halloween are this trade's quietest.
+    $sinceH = (int)floor((strtotime($todayYmd) - strtotime($now->format('Y') . '-10-31')) / 86400);
+    if ($sinceH >= 0 && $sinceH <= 4) {
+        $bits[] = 'Part of it is the calendar: the shop is ' . ($sinceH === 0 ? 'on Halloween itself'
+            : $sinceH . ($sinceH === 1 ? ' day' : ' days') . ' past Halloween')
+            . ', and the post-Halloween lull is real in this trade — the rush money was spent last week.';
+    }
+    $yday = golpos_day_summary(date('Y-m-d', strtotime('-1 day')));
+    if ($yday['txns'] > 0) {
+        $bits[] = 'For reference, yesterday closed at ' . money($yday['gross']) . ' across ' . $yday['txns'] . ' sales.';
+    } elseif (($lc = golpos_reason_last_close()) !== null) {
+        $bits[] = 'The last completed close on record is ' . golpos_day_label((string)$lc['date']) . ' at ' . money((float)$lc['gross']) . '.';
+    }
+    return implode(' ', $bits);
+}
+
+// One item's stock + price, in the speaker's language, with the designed
+// stock card the lanes use — and the read journaled the same way the
+// stock lane journals it, so the verify tap sees the same truth.
+function golpos_reason_answer_item(array $p, string $sessionId, string $lang): void {
+    $oh = isset($p['stock']) && is_numeric($p['stock']) ? $p['stock'] + 0
+        : (isset($p['onHand']) && is_numeric($p['onHand']) ? $p['onHand'] + 0 : null);
+    $price = isset($p['price']) && is_numeric($p['price']) ? (float)$p['price'] : null;
+    golpos_ctx_set($p, 'stock_query');
+    golpos_verify_journal(['class' => 'stock_count', 'label' => (string)$p['name'],
+        'figure' => $oh !== null ? (float)$oh : 0.0, 'unit' => 'count',
+        'inputs' => ['sku' => (string)($p['sku'] ?? ''), 'name' => (string)$p['name'], 'mode' => 'local'],
+        'session' => (string)($GLOBALS['golpos_session_id'] ?? '')]);
+    if ($lang === 'np') {
+        $reply = $p['name'] . ' — ' . ($oh === null ? 'stock record chhaina' : ($oh > 0 ? $oh . ' ota baki chha' : 'sakisakyo (0)'))
+            . ($price !== null ? ', mulya ' . money($price) : '') . '.';
+    } else {
+        $reply = $p['name'] . ' — ' . ($oh === null ? 'stock not tracked' : ($oh > 0 ? $oh . ' left' : 'out of stock'))
+            . ($price !== null ? ', ' . money($price) : '') . '.';
+    }
+    out(['reply' => $reply, 'dcard' => ['type' => 'stock_list', 'display' => true, 'title' => 'Stock check',
+        'items' => [['name' => (string)$p['name'], 'qty' => $oh, 'price' => $price,
+            'note' => $oh !== null && $oh <= 0 ? 'out' : '']]]]);
+}
+
+// Tax collected over a set of days (ymd => true), from the sale journal
+// — the same scan the month block runs for its own month.
+function golpos_reason_range_tax(array $set): float {
+    $tax = 0.0;
+    foreach (golpos_sales() as $s) {
+        $d = substr((string)($s['at'] ?? ''), 0, 10);
+        if (isset($set[$d])) { $tax += (float)($s['tax'] ?? 0); }
+    }
+    return round($tax, 2);
+}
+
+// Top sellers over a set of days, from the sale lines — the only place
+// line detail lives. Returns rows by quantity and by revenue.
+function golpos_reason_top_items(array $set, int $n): array {
+    $agg = [];
+    foreach (golpos_sales() as $s) {
+        $d = substr((string)($s['at'] ?? ''), 0, 10);
+        if (!isset($set[$d])) { continue; }
+        foreach ((array)($s['lines'] ?? []) as $ln) {
+            if (!is_array($ln)) { continue; }
+            $nm = (string)($ln['name'] ?? '');
+            if ($nm === '') { continue; }
+            $q = (float)($ln['qty'] ?? 1);
+            $agg[$nm] = $agg[$nm] ?? ['name' => $nm, 'qty' => 0.0, 'rev' => 0.0];
+            $agg[$nm]['qty'] += $q;
+            $agg[$nm]['rev'] = round($agg[$nm]['rev'] + $q * (float)($ln['price'] ?? 0), 2);
+        }
+    }
+    $byQty = array_values($agg);
+    usort($byQty, static fn($a, $b) => ($b['qty'] <=> $a['qty']) ?: ($b['rev'] <=> $a['rev']));
+    $byRev = array_values($agg);
+    usort($byRev, static fn($a, $b) => ($b['rev'] <=> $a['rev']) ?: ($b['qty'] <=> $a['qty']));
+    return ['by_qty' => array_slice($byQty, 0, $n), 'by_rev' => array_slice($byRev, 0, $n)];
+}
+
+// One period, answered from the pack: the register's day summaries over
+// the period's days (the cash block is the register's own split-honest
+// aggregate), the journal's tax, and — when the ask scopes them — the
+// tender slice, the average ticket, the best day and the top sellers.
+// The designed report card rides every answer, as with every period.
+function golpos_reason_period_report(array $days, string $label, string $msg, string $lang): void {
+    $set = array_flip($days);
+    $blk = golpos_cash_block($days);
+    $tax = golpos_reason_range_tax($set);
+    $np = in_array($lang, ['np', 'hi', 'dev'], true);
+    $gross = (float)$blk['total']; $txns = (int)$blk['txns'];
+    $perDay = [];
+    foreach ($days as $ymd) { $perDay[$ymd] = (float)golpos_day_summary($ymd)['gross']; }
+    if (count($days) <= 31) {
+        $series = [];
+        foreach ($days as $ymd) {
+            $series[] = ['label' => count($days) <= 7 ? date('D j', strtotime($ymd)) : date('j', strtotime($ymd)),
+                         'value' => round($perDay[$ymd], 2), 'ymd' => $ymd];
+        }
+    } else {
+        $bym = [];
+        foreach ($days as $ymd) { $bym[substr($ymd, 0, 7)] = ($bym[substr($ymd, 0, 7)] ?? 0.0) + $perDay[$ymd]; }
+        $series = [];
+        foreach ($bym as $ym => $v) {
+            $series[] = ['label' => date('M', strtotime($ym . '-01')), 'value' => round($v, 2), 'ymd' => $ym . '-01'];
+        }
+    }
+    $graph = golpos_graph_payload('bars', $label, $series, round($gross, 2));
+    $graph = golpos_report_card($graph, $days);
+    if (isset($graph['cash']) && is_array($graph['cash'])) { $graph['cash']['tax'] = $tax; }
+    if ($txns <= 0) {
+        out(['reply' => $label . ($np ? ' — yo period ma kunai bikri record chhaina.'
+                                      : ' — no sales recorded in this period.'), 'graph' => $graph]);
+    }
+    $lines = [];
+    // Scoped leads: the ask's own slice speaks first.
+    if (preg_match('/\bcard\b/iu', $msg) && preg_match('/(bata|from|ma\s+kati|kati)/iu', $msg)) {
+        $lines[] = $np ? 'Card bata: ' . money((float)$blk['card']) . ' (jamma ' . money($gross) . ' madhye).'
+                       : 'By card: ' . money((float)$blk['card']) . ' of the ' . money($gross) . ' total.';
+    } elseif (preg_match('/\bcash\b/iu', $msg) && preg_match('/(bata|from|ma\s+kati|kati)/iu', $msg)) {
+        $lines[] = $np ? 'Cash bata: ' . money((float)$blk['cash']) . ' (jamma ' . money($gross) . ' madhye).'
+                       : 'By cash: ' . money((float)$blk['cash']) . ' of the ' . money($gross) . ' total.';
+    }
+    if (preg_match('/(tax|कर)/iu', $msg)) {
+        $lines[] = $np ? 'Tax collect: ' . money($tax) . '.'
+                       : 'Tax collected: ' . money($tax) . '.';
+    }
+    $lines[] = $label . ': ' . ($np ? 'jamma ' : 'gross ') . money($gross)
+        . ($np ? ' — ' : ' across ') . $txns . ($np ? ' bikri (cash ' : ' sales (cash ')
+        . money((float)$blk['cash']) . ', card ' . money((float)$blk['card'])
+        . (!empty($blk['credit']) ? ', credit ' . money((float)$blk['credit']) : '') . ').';
+    if (!preg_match('/(tax|कर)/iu', $msg) && $tax > 0) {
+        $lines[] = $np ? 'Tax collect: ' . money($tax) . '.' : 'Tax collected: ' . money($tax) . '.';
+    }
+    if (preg_match('/(average|ausat|औसत)/iu', $msg) && $txns > 0) {
+        $lines[] = $np ? 'Ausat bikri: ' . money(round($gross / $txns, 2)) . ' prati sale.'
+                       : 'Average sale: ' . money(round($gross / $txns, 2)) . ' per sale across ' . $txns . ' sales.';
+    }
+    if (preg_match('/(sabse|sabai\s*bhanda|most|best|highest|धेरै)/iu', $msg)
+        && preg_match('/(din|day|bikri|sales|बिक्री)/iu', $msg)
+        && !preg_match('/(item|saman|product|bikeko|bikyo)/iu', $msg) && count($days) > 1) {
+        $bestD = null; $bestV = -1.0;
+        foreach ($perDay as $ymd => $v) { if ($v > $bestV) { $bestV = $v; $bestD = $ymd; } }
+        if ($bestD !== null && $bestV > 0) {
+            $lines[] = $np ? 'Sabse dherai bikri bhayeko din: ' . golpos_day_label($bestD) . ' — ' . money($bestV) . '.'
+                           : 'Best day: ' . golpos_day_label($bestD) . ' — ' . money($bestV) . '.';
+        }
+    }
+    if (preg_match('/(bikeko|bikyo|bikri\s+bhayeko|sold|bestseller|best\s*sell|top|sabse)/iu', $msg)
+        && preg_match('/(item|saman|product|bikeko|bikyo|kun|\bke\b)/iu', $msg)) {
+        $top = golpos_reason_top_items($set, 3);
+        if ($top['by_qty']) {
+            $parts = [];
+            foreach ($top['by_qty'] as $r) { $parts[] = $r['name'] . ' — ' . (int)$r['qty'] . ' sold (' . money($r['rev']) . ')'; }
+            $lines[] = ($np ? 'Sabse dherai bikeko: ' : 'Top sellers: ') . implode('; ', $parts) . '.';
+            if ($top['by_rev'] && $top['by_rev'][0]['name'] !== $top['by_qty'][0]['name']) {
+                $lines[] = ($np ? 'Rakam ma sabse dherai: ' : 'By money: ') . $top['by_rev'][0]['name']
+                    . ' — ' . money($top['by_rev'][0]['rev']) . '.';
+            }
+        }
+    }
+    out(['reply' => implode("\n", $lines), 'graph' => $graph]);
+}
+
+// The layer itself. Returns true when the turn is understood and answered
+// here; false lets the lanes serve it. out() ends the request, as in the
+// rest of the brain.
+function golpos_reason_layer(string $msg, array $in, array $products, string $sessionId): bool {
+    // Confirms, card buttons and gated replays belong to the executor.
+    if (!empty($in['confirm']) || isset($in['cancel_card']) || isset($in['pending_pid'])) { return false; }
+    $lm = mb_strtolower(trim($msg));
+    if ($lm === 'gol' || $lm === 'गोल') { return false; }
+    $lang = golpos_lang($msg);
+    $pack = golpos_reason_pack($in);
+    $toks = golpos_reason_tokens($msg);
+    $hasW = static function (array $ws) use ($toks): bool {
+        foreach ($ws as $w) { if (in_array($w, $toks, true)) { return true; } }
+        return false;
+    };
+    $isQ = golpos_is_question($msg);
+
+    // FENCE — a bare greeting cancels an armed card, and the cancellation
+    // happens before the greeting's own path runs: afterwards a stray
+    // "gol" finds no card and can execute nothing. (The Nov 1 critical:
+    // "hi" answered nicely while a price change stayed armed — and then
+    // the next "gol" executed it.)
+    if (golpos_is_bare_greeting($msg) && $pack['pending'] !== null) {
+        $card = $pack['pending'];
+        golpos_clear_pending();
+        golpos_price_await_set(null);
+        $s = golpos_session($sessionId);
+        $s['ctx'] = null;
+        golpos_save_session($sessionId, $s);
+        out(['reply' => golpos_greet_word() . '. I have cancelled the card that was waiting — '
+            . golpos_card_summary($card) . '. Nothing will run unless you stage it again.']);
+        return true;
+    }
+
+    // BATCH STATE — a question about the card batch is a READ over the
+    // batch ledger, answered here. It must land BEFORE the close block
+    // below: "batch close bhaisakyo?" names the batch, not the day, and
+    // used to be answered with the DAY CLOSE — the wrong record. An
+    // imperative ("batch close gara") is not this read: it falls
+    // through to the batch lanes, which stage the seal as a card.
+    if (preg_match('/(batch|ब्याच)/iu', $msg)
+        && !golpos_is_batch_mode_set($msg)
+        && !preg_match('/(close|seal|banda)\s*(gara|gar|gardinu|deu|dinus|now|गर)/iu', $msg)
+        && ($isQ || preg_match('/(kati|kun|bhayo|bhaisakyo|bhaisakeko|cha|chha|छ|status|kahile|when|last|pichhillo|waiting|baki|बाँकी)/iu', $msg))) {
+        $actorB = golpos_actor();
+        $npB = in_array($lang, ['np', 'hi', 'dev'], true);
+        if ($actorB !== null && ($actorB['role'] ?? '') === 'employee') {
+            // Batch money is the owner's side of the till — an identified
+            // cashier gets the domain truth, never the figures.
+            out(['reply' => $npB
+                ? 'Batch ko hisab owner ko side ho — card batch ko rakam ma tapai lai dekhाउन mildaina.'
+                : 'Batch figures are on the owner\'s side — I can\'t show card batch totals to a cashier session.']);
+            return true;
+        }
+        $batchesB = golpos_batches();
+        $unbB = golpos_unbatched_card_sales();
+        $unbT = 0.0;
+        foreach ($unbB as $u) { $unbT += golpos_batch_amount($u); }
+        $unbT = round($unbT, 2);
+        $linesB = [];
+        if ($batchesB) {
+            $lastB = $batchesB[count($batchesB) - 1];
+            $linesB[] = $npB
+                ? 'Card batch — pichhillo seal: Batch #' . (int)$lastB['n'] . ', '
+                    . golpos_day_label((string)$lastB['date']) . ' — ' . (int)$lastB['count']
+                    . ' card bikri, ' . money((float)$lastB['total'])
+                    . (($lastB['closed_by'] ?? '') === 'auto' ? ' (auto seal).' : ' (manual seal).')
+                : 'Card batch — last sealed: Batch #' . (int)$lastB['n'] . ' on '
+                    . golpos_day_label((string)$lastB['date']) . ' — ' . (int)$lastB['count']
+                    . ' card sales, ' . money((float)$lastB['total'])
+                    . (($lastB['closed_by'] ?? '') === 'auto' ? ' (sealed automatically).' : ' (sealed manually).');
+        } else {
+            $linesB[] = $npB ? 'Ahile samma kunai batch seal bhayeko chhaina.'
+                             : 'No card batch has been sealed yet.';
+        }
+        $linesB[] = $unbB
+            ? ($npB ? 'Seal huna baki: ' . count($unbB) . ' card bikri — ' . money($unbT) . ' batch bhitra chhaina.'
+                    : 'Waiting to be sealed: ' . count($unbB) . ' card sales — ' . money($unbT) . ' not in a batch yet.')
+            : ($npB ? 'Seal huna baki kehi chhaina — sabai card bikri batch bhitra chha.'
+                    : 'Nothing is waiting — every card sale is inside a sealed batch.');
+        out(['reply' => implode("\n", $linesB)]);
+        return true;
+    }
+
+    // A question about a close is a READ. The old close lane matched the
+    // word "close" alone and EXECUTED a close on a question — locking
+    // the register mid-conversation. Questions answer from closes.json
+    // here; only a bare imperative falls through to the closing lane.
+    if (preg_match('/(close|banda|बन्द|क्लोज)/iu', $msg)
+        && ($isQ || preg_match('/\b(were|was|did|figures|kati|कति|hisab|हिसाब)\b/iu', $msg)
+            || golpos_reason_close_ref($msg) !== null)) {
+        $ref = golpos_reason_close_ref($msg);
+        $ymd = $ref['ymd'] ?? null;
+        $rec = $ymd !== null ? golpos_reason_close_for($ymd) : null;
+        $note = '';
+        if ($rec === null) {
+            $rec = golpos_reason_last_close();
+            if ($rec !== null && $ymd !== null) {
+                $note = 'No close is recorded for ' . golpos_day_label($ymd)
+                    . ' — the most recent saved close is ' . golpos_day_label((string)$rec['date']) . '. ';
+            }
+        }
+        if ($rec !== null) {
+            out(['reply' => $note . golpos_day_label((string)$rec['date']) . ' close — gross '
+                    . money((float)$rec['gross']) . ' across ' . (int)$rec['txns'] . ' sales: cash '
+                    . money((float)$rec['cash']) . ', card ' . money((float)$rec['card'])
+                    . (!empty($rec['credit']) ? ', credit ' . money((float)$rec['credit']) : '') . '.',
+                'close_record' => $rec]);
+            return true;
+        }
+        if ($ymd !== null) {
+            $d = golpos_day_summary($ymd);
+            if ($d['txns'] > 0) {
+                out(['reply' => 'No close was saved for ' . golpos_day_label($ymd) . ', but the day itself shows gross '
+                    . money($d['gross']) . ' across ' . $d['txns'] . ' sales: cash ' . money($d['cash'])
+                    . ', card ' . money($d['card']) . '.']);
+                return true;
+            }
+            out(['reply' => 'No close is recorded for ' . golpos_day_label($ymd) . ', and that day shows no sales either.']);
+            return true;
+        }
+        return false;
+    }
+
+    // hijo / yesterday — a report period, answered as a report: the saved
+    // close when there is one, with the day's graph and report card. When
+    // yesterday itself has nothing recorded, the last completed day is
+    // named and answered instead — never a bare "no figures".
+    if ($hasW(['hijo', 'yesterday', 'हिजो'])
+        && !preg_match('/(compar|vs|versus|भन्दा|bhanda)/iu', $msg)
+        && ($isQ || preg_match('/(hisab|hisaab|total|sales|bikri|report|close|kati|bhayo|kasto|कस्तो|भयो)/iu', $msg)
+            || count($toks) <= 2)) {
+        $ymd = date('Y-m-d', strtotime('-1 day'));
+        $rec = golpos_reason_close_for($ymd);
+        $day = golpos_day_summary($ymd);
+        $note = '';
+        if ($rec === null && $day['txns'] <= 0) {
+            $rec = golpos_reason_last_close();
+            if ($rec !== null) {
+                $note = golpos_day_label($ymd) . ' has nothing recorded on this register, '
+                    . 'so here is the last completed day. ';
+                $ymd = (string)$rec['date'];
+                $day = golpos_day_summary($ymd);
+            }
+        }
+        if ($rec !== null) {
+            [$nSeries, $nTotal] = golpos_graph_days_series_to(7, $ymd);
+            $graph = golpos_graph_payload('bars', date('D, M j', strtotime($ymd)), $nSeries, $nTotal,
+                ['label' => golpos_day_label($ymd), 'value' => round((float)$rec['gross'], 2)]);
+            $graph = golpos_report_card($graph, [$ymd]);
+            $lbl = golpos_day_label($ymd);
+            $head = stripos($lbl, 'Yesterday') === 0 ? $lbl : 'Yesterday — ' . $lbl;
+            out(['reply' => $note . $head . ' close: gross '
+                    . money((float)$rec['gross']) . ' across ' . (int)$rec['txns'] . ' sales — cash '
+                    . money((float)$rec['cash']) . ', card ' . money((float)$rec['card']) . '.',
+                'graph' => $graph, 'close_record' => $rec]);
+            return true;
+        }
+        if ($day['txns'] > 0) {
+            [$nSeries, $nTotal] = golpos_graph_days_series_to(7, $ymd);
+            $graph = golpos_graph_payload('bars', date('D, M j', strtotime($ymd)), $nSeries, $nTotal,
+                ['label' => golpos_day_label($ymd), 'value' => round((float)$day['gross'], 2)]);
+            $graph = golpos_report_card($graph, [$ymd]);
+            $lbl = golpos_day_label($ymd);
+            $head = stripos($lbl, 'Yesterday') === 0 ? $lbl : 'Yesterday — ' . $lbl;
+            out(['reply' => $note . $head . ': gross ' . money($day['gross'])
+                    . ' across ' . $day['txns'] . ' sales — cash ' . money($day['cash']) . ', card ' . money($day['card']) . '.',
+                'graph' => $graph]);
+            return true;
+        }
+        out(['reply' => 'Yesterday has nothing recorded on this register yet.']);
+        return true;
+    }
+
+    // A bare weekday name is a period too: the most recent such day,
+    // answered as a report. (Tasks, shifts and vendor due-days keep
+    // their own lanes.)
+    $wds = golpos_weekdays_in($msg);
+    if ($wds && !$hasW(['task', 'tasks', 'duty', 'duties', 'shift', 'shifts', 'vendor', 'due', 'birthday'])
+        && ($isQ || preg_match('/(hisab|hisaab|total|sales|bikri|report|close|kati|bhayo|how)/iu', $msg) || count($toks) <= 3)) {
+        $key = $wds[0];
+        $target = ['sun' => 0, 'mon' => 1, 'tue' => 2, 'wed' => 3, 'thu' => 4, 'fri' => 5, 'sat' => 6][$key];
+        $ymd = date('Y-m-d');
+        while ((int)date('w', strtotime($ymd)) !== $target) { $ymd = date('Y-m-d', strtotime($ymd . ' -1 day')); }
+        $rec = golpos_reason_close_for($ymd);
+        $day = golpos_day_summary($ymd);
+        if ($rec !== null || $day['txns'] > 0) {
+            $gross = $rec !== null ? (float)$rec['gross'] : $day['gross'];
+            $cash = $rec !== null ? (float)$rec['cash'] : $day['cash'];
+            $cardv = $rec !== null ? (float)$rec['card'] : $day['card'];
+            $txns = $rec !== null ? (int)$rec['txns'] : $day['txns'];
+            [$nSeries, $nTotal] = golpos_graph_days_series_to(7, $ymd);
+            $graph = golpos_graph_payload('bars', date('D, M j', strtotime($ymd)), $nSeries, $nTotal,
+                ['label' => golpos_day_label($ymd), 'value' => round($gross, 2)]);
+            $graph = golpos_report_card($graph, [$ymd]);
+            out(['reply' => golpos_day_name($key) . ' — ' . golpos_day_label($ymd) . ': gross ' . money($gross)
+                    . ' across ' . $txns . ' sales — cash ' . money($cash) . ', card ' . money($cardv) . '.',
+                'graph' => $graph]);
+            return true;
+        }
+        out(['reply' => 'No sales are recorded for ' . golpos_day_name($key) . ' (' . golpos_day_label($ymd) . ') yet.']);
+        return true;
+    }
+
+    // A month name is a full report period — never today's figures, never
+    // "no figures" — and the report carries the month's collected tax as
+    // its own line, the way the profit rule reads it. (Comparisons keep
+    // their lane; an item-price ask keeps its own.)
+    $monthRef = golpos_month_ref($msg);
+    // A measure ask that names the PERIOD KIND but no month — "mahina
+    // ko kar kati" — still names a month: the one the conversation is
+    // standing in (Gol's own last reply named one, inside the same
+    // follow-up window the task/list reads use), else the current
+    // month. Before this, the ask carried a scope and no referent and
+    // fell through every lane to "bujhina" (owner battery, Nov 2).
+    if ($monthRef === null
+        && preg_match('/(mahina|month|महिना)/iu', $msg)
+        && preg_match('/(tax|\bkar\b|कर|profit|nafa|नाफा|purchase|kharid|खरिद|expense|kharcha|खर्च|sales|sale|bikri|बिक्री|total|jamma|hisab|hisaab)/iu', $msg)) {
+        $boundM = null;
+        $ssM = golpos_session($sessionId);
+        $saidM = (string)($ssM['last_spoken'] ?? '');
+        $atM = (int)($ssM['last_spoken_at'] ?? 0);
+        if ($saidM !== '' && $atM > 0 && (time() - $atM) < 900) {
+            $boundM = golpos_month_ref($saidM);
+        }
+        if ($boundM === null) {
+            $dM = new DateTime('first day of this month');
+            $boundM = ['ym' => $dM->format('Y-m'), 'label' => $dM->format('F Y'), 'bare' => false];
+        }
+        $monthRef = $boundM;
+    }
+    // "sabai bhanda badhi" is a SUPERLATIVE (the most), not a comparison
+    // between two periods — bhanda only vetoes when it is not sabai's.
+    $cmpM = preg_match('/(compar|vs\.?|versus|than|against|difference)/iu', $msg)
+        || (preg_match('/(bhanda|भन्दा)/iu', $msg) && !preg_match('/(sabai|सबै)\s*(bhanda|भन्दा)/iu', $msg));
+    if ($monthRef !== null
+        && !$cmpM
+        && !golpos_reason_rangeish($msg)
+        && !preg_match('/(price|mulya|dam|दाम)/iu', $msg)
+        && ($monthRef['bare'] || preg_match('/(sales|sale|bikri|total|jamma|purchase|kharid|expense|kharcha|report|hisab|hisaab|how much|kati|revenue|tax|profit|nafa|नाफा|bikeko|sabse|best|biggest|top)/iu', $msg))) {
+        $ym = $monthRef['ym'];
+        $lbl = $monthRef['label'];
+        $ms = golpos_month_sales($ym);
+        $tax = 0.0;
+        foreach (golpos_sales() as $s) {
+            if (substr((string)($s['at'] ?? ''), 0, 7) === $ym) { $tax += (float)($s['tax'] ?? 0); }
+        }
+        $tax = round($tax, 2);
+        $series = [];
+        foreach ($ms['days'] as $dymd => $g) {
+            $series[] = ['label' => date('j', strtotime($dymd)), 'value' => round((float)$g, 2), 'ymd' => $dymd];
+        }
+        $graph = golpos_graph_payload('spark', $lbl . ' — report', $series, round((float)$ms['gross'], 2));
+        $graph = golpos_report_card($graph, array_keys($ms['days']));
+        if (isset($graph['cash']) && is_array($graph['cash'])) { $graph['cash']['tax'] = $tax; }
+        // The full profit-rule picture, from the month's own records:
+        // sales, purchases (vendor bills), expenses, tax as its own
+        // line, and the rule's result. A slice ask (kharid / kharcha /
+        // nafa) LEADS with its slice — the first cut of this block
+        // answered every month question with sales + tax only, so
+        // "October ma kharcha kati?" never named the expenses.
+        $mp = golpos_month_purchases($ym);
+        $me = golpos_month_expenses($ym);
+        $profit = round($ms['gross'] - $mp['total'] - $me['total'] - $tax, 2);
+        $salesLine = 'Sales: ' . money($ms['gross']) . ' across ' . $ms['txns'] . ' sales (cash '
+            . money($ms['cash']) . ', card ' . money($ms['card']) . ').';
+        $purchLine = $mp['bills'] > 0
+            ? 'Purchases: ' . money($mp['total']) . ' across ' . $mp['bills'] . ' vendor bills'
+              . ($mp['by_vendor'] ? ' — biggest: ' . array_key_first($mp['by_vendor']) . ' '
+                  . money((float)$mp['by_vendor'][array_key_first($mp['by_vendor'])]) : '') . '.'
+            : 'Purchases: no vendor bills recorded for this month.';
+        $expLine = $me['count'] > 0
+            ? 'Expenses: ' . money($me['total']) . ' across ' . $me['count'] . ' lines'
+              . ' — biggest: ' . (string)($me['rows'][0]['label'] ?? 'Expense') . ' '
+              . money((float)($me['rows'][0]['amount'] ?? 0)) . '.'
+            : 'Expenses: none recorded for this month.';
+        $taxLine = 'Tax collected: ' . money($tax) . '.';
+        $profLine = 'Profit (sales - purchases - expenses - tax): ' . money($profit) . '.';
+        // Scoped superlatives over the month's own days — the same
+        // questions the period engine answers for weeks and ranges,
+        // bound to the month's day map and sale lines. Computed BEFORE
+        // the lead is chosen: they are single-measure scopes too.
+        $bestDayLine = null;
+        if (preg_match('/(sabse|sabai\s*bhanda|most|best|biggest|highest|धेरै)/iu', $msg)
+            && preg_match('/(din|day|बिक्री|bikri|sales)/iu', $msg)
+            && !preg_match('/(item|saman|product|bikeko|bikyo)/iu', $msg)) {
+            $bd = null; $bv = -1.0;
+            foreach ($ms['days'] as $dymd => $g) { if ((float)$g > $bv) { $bv = (float)$g; $bd = $dymd; } }
+            if ($bd !== null && $bv > 0) {
+                $bestDayLine = 'Best day: ' . golpos_day_label($bd) . ' — ' . money($bv) . '.';
+            }
+        }
+        $topLines = [];
+        if (preg_match('/(bikeko|bikyo|sold|bestseller|best\s*sell|top|sabse)/iu', $msg)
+            && preg_match('/(item|saman|product|bikeko|bikyo|kun|\bke\b)/iu', $msg)) {
+            $topM = golpos_reason_top_items(array_flip(array_keys($ms['days'])), 3);
+            if ($topM['by_qty']) {
+                $partsM = [];
+                foreach ($topM['by_qty'] as $r) { $partsM[] = $r['name'] . ' — ' . (int)$r['qty'] . ' sold (' . money($r['rev']) . ')'; }
+                $topLines[] = 'Top sellers: ' . implode('; ', $partsM) . '.';
+                if ($topM['by_rev'] && $topM['by_rev'][0]['name'] !== $topM['by_qty'][0]['name']) {
+                    $topLines[] = 'By money: ' . $topM['by_rev'][0]['name'] . ' — ' . money($topM['by_rev'][0]['rev']) . '.';
+                }
+            }
+        }
+        // THE LEAD LAW: a month ask scoped to ONE measure LEADS with
+        // that measure as the headline — the figure the owner named is
+        // the first figure he reads, never buried under lines he did
+        // not ask about. (Owner live catch, Nov 2 21:35: "oct total
+        // sales tax" drew the full-month dump with the tax line FIFTH,
+        // under the circle's fold — the block had leads for profit /
+        // purchases / expenses but none for tax, best day or top
+        // seller, so those scopes were detected at the door and dropped.)
+        $leadUsed = null;
+        if (preg_match('/(profit|nafa|नाफा|munafa)/iu', $msg)) {
+            $reply = $lbl . ' — profit.' . "\n" . $profLine . "\n" . $salesLine . "\n"
+                . $purchLine . "\n" . $expLine . "\n" . $taxLine;
+            $leadUsed = 'profit';
+        } elseif (preg_match('/(tax|कर|\bkar\b)/iu', $msg)) {
+            $reply = $lbl . ' — tax.' . "\n" . $taxLine . "\n" . $salesLine . "\n" . $profLine;
+            $leadUsed = 'tax';
+        } elseif (preg_match('/(purchase|purchases|kharid|खरिद|bills?\b)/iu', $msg)) {
+            $reply = $lbl . ' — purchases.' . "\n" . $purchLine . "\n" . $salesLine . "\n" . $profLine;
+            $leadUsed = 'purchases';
+        } elseif (preg_match('/(expense|expenses|kharcha|खर्च)/iu', $msg)) {
+            $reply = $lbl . ' — expenses.' . "\n" . $expLine . "\n" . $salesLine . "\n" . $profLine;
+            $leadUsed = 'expenses';
+        } elseif ($bestDayLine !== null) {
+            $reply = $lbl . ' — best day.' . "\n" . $bestDayLine . "\n" . $salesLine . "\n" . $profLine;
+            $leadUsed = 'bestday';
+        } elseif ($topLines) {
+            $reply = $lbl . ' — top sellers.' . "\n" . implode("\n", $topLines) . "\n" . $salesLine . "\n" . $profLine;
+            $leadUsed = 'top';
+        } elseif ($ms['txns'] > 0) {
+            $reply = $lbl . ' — the full month.' . "\n" . $salesLine . "\n" . $purchLine . "\n"
+                . $expLine . "\n" . $taxLine . "\n" . $profLine;
+        } else {
+            $reply = $lbl . ' — no sales recorded for this month yet.' . "\n" . $purchLine . "\n" . $expLine;
+        }
+        // A superlative the lead did not already carry still rides
+        // along after the block (mixed asks keep both answers).
+        if ($bestDayLine !== null && $leadUsed !== 'bestday') { $reply .= "\n" . $bestDayLine; }
+        if ($topLines && $leadUsed !== 'top') { $reply .= "\n" . implode("\n", $topLines); }
+        out(['reply' => $reply, 'graph' => $graph]);
+        return true;
+    }
+
+    // PERIOD ENGINE — every period shape the register can be asked
+    // about, answered from the pack as ONE designed report: this week,
+    // last week, the last N days, an explicit range, a year, and the
+    // scoped single-day slices (tender / tax / average) the day lane
+    // answers only as a whole line. Before this block these shapes fell
+    // to the deep-think lane or the free-form composer, whose pack does
+    // not even carry the week's figures — the answers came back empty,
+    // deflected, or invented (owner battery, Nov 2: "yo hapta ko bikri"
+    // -> an empty reply with a graph; "last 10 days" -> a capability
+    // menu). Named months belong to the month block above; comparisons
+    // and single named days keep their own lanes; task asks are vetoed
+    // (the tasks block below owns them).
+    $cmpP = preg_match('/(compar|vs\.?|versus|than|against|difference)/iu', $msg)
+        || (preg_match('/(bhanda|भन्दा)/iu', $msg) && !preg_match('/(sabai|सबै)\s*(bhanda|भन्दा)/iu', $msg));
+    $perVeto = $cmpP
+        || preg_match('/(tasks?|duty|duties|shift)/iu', $msg)
+        || (golpos_month_ref($msg) !== null && !golpos_reason_rangeish($msg))
+        || golpos_weekdays_in($msg) !== [];
+    $perShape = preg_match('/(sales|sale|bikri|बिक्री|total|jamma|hisab|hisaab|report|revenue|kamai|tax|कर|card|cash|average|ausat|औसत|best|top|bikeko|sabse|सबैभन्दा)/iu', $msg) || $isQ;
+    if (!$perVeto && $perShape) {
+        $todayP = date('Y-m-d');
+        $normP = golpos_norm_digits($msg);
+        $daysP = null; $labelP = null;
+        $rngDays = static function (string $a, string $b): array {
+            $out = [];
+            for ($t = strtotime($a); $t <= strtotime($b); $t += 86400) { $out[] = date('Y-m-d', $t); }
+            return $out;
+        };
+        $sinceRef = golpos_month_ref($msg);
+        if ($daysP === null && $sinceRef !== null && preg_match('/(dekhi|since|from)/iu', $msg)
+            && !preg_match('/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}/iu', $normP)) {
+            $daysP = $rngDays($sinceRef['ym'] . '-01', $todayP);
+            $labelP = 'Since ' . $sinceRef['label'] . ' (' . date('M j', strtotime($daysP[0]))
+                . ' – ' . date('M j, Y', strtotime($todayP)) . ')';
+        }
+        if (preg_match_all('/(\d{4})-(\d{2})-(\d{2})/', $normP, $mmP) && count($mmP[0]) >= 2
+            && checkdate((int)$mmP[2][0], (int)$mmP[3][0], (int)$mmP[1][0])
+            && checkdate((int)$mmP[2][1], (int)$mmP[3][1], (int)$mmP[1][1])) {
+            $a = $mmP[0][0]; $b = $mmP[0][1];
+            if ($a > $b) { [$a, $b] = [$b, $a]; }
+            if ($b > $todayP) { $b = $todayP; }
+            if ($a <= $b) {
+                $daysP = $rngDays($a, $b);
+                $labelP = date('M j', strtotime($a)) . ' – ' . date('M j, Y', strtotime($b));
+            }
+        }
+        if ($daysP === null) {
+            $monN = ['jan' => 1, 'feb' => 2, 'mar' => 3, 'apr' => 4, 'may' => 5, 'jun' => 6,
+                     'jul' => 7, 'aug' => 8, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12];
+            if (preg_match_all('/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})(?:st|nd|rd|th)?\b/iu', $normP, $mdP)
+                && count($mdP[0]) >= 2) {
+                $mkD = static function (int $mo, int $da) use ($todayP): string {
+                    $yr = (int)date('Y');
+                    $ymd = sprintf('%04d-%02d-%02d', $yr, $mo, $da);
+                    if ($ymd > $todayP) { $ymd = sprintf('%04d-%02d-%02d', $yr - 1, $mo, $da); }
+                    return $ymd;
+                };
+                $a = $mkD($monN[mb_strtolower(substr($mdP[1][0], 0, 3))], (int)$mdP[2][0]);
+                $b = $mkD($monN[mb_strtolower(substr($mdP[1][1], 0, 3))], (int)$mdP[2][1]);
+                if ($a > $b) { [$a, $b] = [$b, $a]; }
+                $daysP = $rngDays($a, $b);
+                $labelP = date('M j', strtotime($a)) . ' – ' . date('M j, Y', strtotime($b));
+            } elseif (preg_match('/(dekhi|from|since)/iu', $msg)
+                && preg_match_all('/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})(?:st|nd|rd|th)?\b/iu', $normP, $mdP1)
+                && count($mdP1[0]) === 1
+                && preg_match('/(\d{1,2})\s*(samma|gha|to| सम्म)/iu', $normP, $endP)) {
+                $mo = $monN[mb_strtolower(substr($mdP1[1][0], 0, 3))];
+                $yr = (int)date('Y');
+                $a = sprintf('%04d-%02d-%02d', $yr, $mo, (int)$mdP1[2][0]);
+                if ($a > $todayP) { $a = sprintf('%04d-%02d-%02d', $yr - 1, $mo, (int)$mdP1[2][0]); }
+                $b = substr($a, 0, 8) . str_pad((string)(int)$endP[1], 2, '0', STR_PAD_LEFT);
+                if ($b >= $a && checkdate($mo, (int)$endP[1], (int)substr($a, 0, 4))) {
+                    $daysP = $rngDays($a, $b);
+                    $labelP = date('M j', strtotime($a)) . ' – ' . date('M j, Y', strtotime($b));
+                }
+            }
+        }
+        if ($daysP === null && preg_match('/(last|pichhillo|पछिल्लो|गत)\s*(\d{1,3})\s*(days?|din|दिन)/iu', $normP, $ndP)) {
+            $nD = max(2, min(92, (int)$ndP[2]));
+            $daysP = $rngDays(date('Y-m-d', strtotime('-' . ($nD - 1) . ' days')), $todayP);
+            $labelP = 'Last ' . $nD . ' days (' . date('M j', strtotime($daysP[0])) . ' – ' . date('M j, Y', strtotime($todayP)) . ')';
+        }
+        if ($daysP === null && preg_match('/(last|gata|गत|pichhillo)\s*(week|hapta|हप्ता)/iu', $msg)) {
+            $daysP = $rngDays(date('Y-m-d', strtotime('-13 days')), date('Y-m-d', strtotime('-7 days')));
+            $labelP = 'Last week (' . date('M j', strtotime($daysP[0])) . ' – ' . date('M j, Y', strtotime($daysP[6])) . ')';
+        }
+        if ($daysP === null && preg_match('/(week|hapta|हप्ता)/iu', $msg)) {
+            $daysP = $rngDays(date('Y-m-d', strtotime('-6 days')), $todayP);
+            $labelP = 'This week (' . date('M j', strtotime($daysP[0])) . ' – ' . date('M j, Y', strtotime($todayP)) . ')';
+        }
+        if ($daysP === null && preg_match('/(this\s+year|yo\s+barsha|यो\s+वर्ष)/iu', $msg)) {
+            $daysP = $rngDays(date('Y') . '-01-01', $todayP);
+            $labelP = date('Y') . ' so far (Jan 1 – ' . date('M j, Y', strtotime($todayP)) . ')';
+        }
+        if ($daysP === null && preg_match('/\b(20\d{2})\b/', $normP, $yrP)) {
+            $yr = (int)$yrP[1];
+            if ($yr >= 2020 && $yr <= (int)date('Y')) {
+                $endY = $yr === (int)date('Y') ? $todayP : $yr . '-12-31';
+                $daysP = $rngDays($yr . '-01-01', $endY);
+                $labelP = $yr . ($yr === (int)date('Y') ? ' so far' : '') . ' (' . $yr . ' full year)';
+                if ($yr === (int)date('Y')) { $labelP = $yr . ' so far (Jan 1 – ' . date('M j, Y', strtotime($todayP)) . ')'; }
+            }
+        }
+        if ($daysP === null && preg_match('/(aaja|today|आज)/iu', $msg)
+            && preg_match('/(bikri|बिक्री|sales|sale|total|jamma|hisab|hisaab|report|kamai|revenue)/iu', $msg)
+            && !preg_match('/(close|banda|बन्द|क्लोज)/iu', $msg)) {
+            // The plain day report, in the reason layer: the dispatch
+            // day lane's keyword net missed the most natural Nepali
+            // shape of all ("aaja ko bikri kati bhayo?") and an item
+            // lane answered it not-found. A period word (aaja) names
+            // the day; the designed card rides, as with every period.
+            $daysP = [$todayP];
+            $labelP = 'Today (' . date('D, M j', strtotime($todayP)) . ')';
+        }
+        if ($daysP === null
+            && (preg_match('/\b(card|cash|credit)\b/iu', $msg)
+                || preg_match('/(tax|कर|average|ausat|औसत)/iu', $msg))
+            && !preg_match('/(hijo|yesterday|हिजो|week|hapta|हप्ता|month|mahina|महिना|last|gata|गत|pichhillo|dekhi|year|barsha|वर्ष)/iu', $msg)) {
+            // The scoped single-day slices — the whole-day report is the
+            // day lane's; a tender / tax / average ask gets its slice.
+            // A periodless scoped ask ("average sale kati parcha?")
+            // defaults to today, the counter's now frame; any named
+            // period above has already claimed its own turn.
+            $daysP = [$todayP];
+            $labelP = 'Today (' . date('D, M j', strtotime($todayP)) . ')';
+        }
+        if ($daysP !== null && $labelP !== null) {
+            $actorP = golpos_actor();
+            if ($actorP !== null && ($actorP['role'] ?? '') === 'employee'
+                && !(count($daysP) === 1 && $daysP[0] === $todayP)) {
+                // Period money beyond the running day is the owner's
+                // domain — the PIN gate catches most shapes before
+                // here; this fence covers the shapes it cannot see.
+                out(['reply' => in_array($lang, ['np', 'hi', 'dev'], true)
+                    ? 'Period ko hisab owner ko side ho — ma tapai lai bikri ko report dekhाउन mildaina.'
+                    : 'Sales reports are on the owner\'s side — I can\'t show period figures to a cashier session.']);
+                return true;
+            }
+            golpos_reason_period_report($daysP, $labelP, $msg, $lang);
+            return true;
+        }
+    }
+
+    // OPEN TASKS + PRICE GAPS — a question about the work still open is
+    // a READ over the store's own records, answered HERE, in the
+    // reasoning layer, before the big brain's claims, the default lanes
+    // or the composer can improvise an answer. (Owner live test,
+    // Nov 2: his greeting named "64 task item(s) from yesterday are
+    // still open" and the follow-up "kun 64 task" fell through every
+    // lane to the composer, which answered with a capability menu —
+    // and "what tasks are open?" even drew "I don't have open tasks
+    // here".) The classifier binds the REFERENT, not a phrase: the
+    // turn names the task domain (task/kam/काम) in a question shape,
+    // or it is a short which/show follow-up and Gol's own previous
+    // reply (the session's last_spoken) named the list — the greeting's
+    // task line or price-gap line. Assignment, done-marking and duty
+    // turns are imperative work, never this read; they keep their lanes.
+    $taskRead = false; $gapRead = false;
+    // List PRESENTATION (owner live test, Nov 2, 20:40 — "K bhanya
+    // yetro"): the first cut of this block named every subject, but as
+    // ONE comma-joined line per group — a 63-item wall inside a chat
+    // bubble. A list answer is PRESENTED, not dumped: the header
+    // carries the true total, one group line per holder/field, the
+    // shared reason once on its own line, items one per line, and a
+    // long group is capped at LIST_CAP items and closed with the
+    // count still hidden. "sabai" / "show all" (the expand follow-up
+    // below) lifts the cap for that same read.
+    $LIST_CAP = 10;
+    $listCloser = static function (int $left, bool $np): string {
+        return $np ? "…ra aru {$left} ota — sabai hernu bhaye 'sabai' bhannus"
+                   : "…and {$left} more — say 'show all' to see the full list";
+    };
+    $taskNoun = (bool) preg_match('/(tasks?\b|\bkam\b|काम)/iu', $msg);
+    $qShapeT = $isQ || (bool) preg_match('/(kun|which|what|ke\s+ke|k\s+k|kati|show|list|dekha|dekhaideu|herna|baki|बाँकी|remaining|still\s+open|chha|cha|छ|chhan)/iu', $msg);
+    $workImperative = (bool) preg_match('/(assign|sakiyo|sakyo|siddiyo|garisak|mark\s+done|bhaisakyo|भइसक)/iu', $msg)
+        || golpos_parse_task_assign($msg) !== null
+        || (bool) preg_match('/(mero|my)\s+(duty|duties|kartabya|कर्तव्य)/iu', $msg);
+    if ($taskNoun && $qShapeT && !$workImperative) { $taskRead = true; }
+    if (preg_match('/(price\s*gaps?|gaps?)/iu', $msg) && $qShapeT && !$workImperative) { $gapRead = true; $taskRead = false; }
+    if (!$taskRead && !$gapRead && count($toks) <= 5
+        && preg_match('/(kun|which|show|list|dekha|dekhaideu|herau|tyo|ती)/iu', $msg)) {
+        $ssT = golpos_session($sessionId);
+        $saidT = (string)($ssT['last_spoken'] ?? '');
+        $atT = (int)($ssT['last_spoken_at'] ?? 0);
+        if ($saidT !== '' && $atT > 0 && (time() - $atT) < 900) {
+            if (preg_match('/(task item|open tasks?|khula task)/i', $saidT)) { $taskRead = true; }
+            elseif (preg_match('/price gaps?/i', $saidT)) { $gapRead = true; }
+        }
+    }
+    // EXPAND follow-up — "sabai" / "show all" right after a CAPPED
+    // list answer re-runs that same read with the cap lifted. The
+    // capped reply carries its own marker (the "…ra aru N ota" /
+    // "…and N more" closer), so the referent is proven from Gol's own
+    // last words — the same last_spoken machinery as the which/show
+    // follow-up above. A work imperative (e.g. "sabai sakiyo" — mark
+    // everything done) never expands; it keeps its own lane.
+    $expandList = false;
+    if (!$workImperative && count($toks) <= 6
+        && preg_match('/(sabai|सबै|show\s+all|full\s+list|pura|पुरा)/iu', $msg)) {
+        $ssE = golpos_session($sessionId);
+        $saidE = (string)($ssE['last_spoken'] ?? '');
+        $atE = (int)($ssE['last_spoken_at'] ?? 0);
+        if ($saidE !== '' && $atE > 0 && (time() - $atE) < 900
+            && preg_match('/(…\s*ra\s+aru\s+\d+\s+ota|…\s*and\s+\d+\s+more)/u', $saidE)) {
+            if (preg_match('/(task item|open tasks?|khula task)/i', $saidE)) { $taskRead = true; $expandList = true; }
+            elseif (preg_match('/price gaps?/i', $saidE)) { $gapRead = true; $taskRead = false; $expandList = true; }
+        }
+    }
+    if ($gapRead) {
+        $actorG = golpos_actor();
+        if ($actorG !== null && ($actorG['role'] ?? '') === 'admin') {
+            $gaps = [];
+            foreach ((array)(golpos_gap_state()['gaps'] ?? []) as $g) {
+                if (($g['status'] ?? '') === 'open') { $gaps[] = $g; }
+            }
+            $npG = in_array($lang, ['np', 'hi', 'dev'], true);
+            if (!$gaps) {
+                out(['reply' => $npG ? 'Ahile kunai price gap khula chhaina — sabai record cha.'
+                                     : 'No price gaps are open right now — every record is filled.']);
+                return true;
+            }
+            $byField = [];
+            foreach ($gaps as $g) { $byField[(string)($g['field'] ?? 'price')][] = (string)($g['name'] ?? ''); }
+            $lines = [$npG ? 'Khula price gap haru (' . count($gaps) . '):'
+                           : 'Open price gaps (' . count($gaps) . '):'];
+            foreach ($byField as $f => $names) {
+                $names = array_values(array_filter($names, static fn($x) => $x !== ''));
+                if (!$names) { continue; }
+                // One group line per field (label + count), then the
+                // products as a compact set, one per line — capped,
+                // with the count still hidden in the closer. Never a
+                // comma wall.
+                $lines[] = ($f === 'cost' ? ($npG ? 'Cost price chhaina' : 'Cost price missing')
+                                          : ucfirst($f)) . ' — ' . count($names) . ':';
+                $capG = $expandList ? count($names) : $LIST_CAP;
+                foreach (array_slice($names, 0, $capG) as $n) { $lines[] = '  • ' . $n; }
+                if (count($names) > $capG) { $lines[] = '  ' . $listCloser(count($names) - $capG, $npG); }
+            }
+            out(['reply' => implode("\n", $lines)]);
+            return true;
+        }
+        if ($actorG !== null && ($actorG['role'] ?? '') === 'employee') {
+            $brief = golpos_gap_brief_line((string)$actorG['email']);
+            if ($brief !== '') { out(['reply' => $brief]); return true; }
+        }
+        // No identified actor: the identity lanes own the answer.
+    }
+    if ($taskRead) {
+        golpos_tasks_sync();
+        $actorT = golpos_actor();
+        $npT = in_array($lang, ['np', 'hi', 'dev'], true);
+        if ($actorT !== null && ($actorT['role'] ?? '') === 'employee') {
+            // Her own view — the same source and shape her My Tasks lane
+            // has always returned: her items plus the open role items,
+            // never another person's list.
+            $items = golpos_open_items_for((string)$actorT['email']);
+            if (!$items) { out(['reply' => t('tasks_none')]); return true; }
+            $nextDue = golpos_next_due((string)$actorT['email']);
+            $lines = $nextDue !== null
+                ? ['Next: ' . $nextDue['text'] . ($nextDue['reason'] !== '' ? ' — ' . $nextDue['reason'] : ''),
+                   'Your open tasks (' . count($items) . '):']
+                : ['Your open tasks (' . count($items) . '):'];
+            $capE = $expandList ? count($items) : $LIST_CAP;
+            foreach (array_slice($items, 0, $capE) as $i => $it) {
+                $lines[] = ($i + 1) . '. ' . $it['text']
+                    . ($it['source'] === 'gol' && $it['reason'] !== '' ? ' — from Gol: ' . $it['reason'] : '');
+            }
+            if (count($items) > $capE) { $lines[] = $listCloser(count($items) - $capE, $npT); }
+            out(['reply' => implode("\n", $lines)]);
+            return true;
+        }
+        if ($actorT !== null && ($actorT['role'] ?? '') === 'admin') {
+            // The owner's list: every open item grouped by who holds
+            // it. The greeting's own count (items opened before today)
+            // is kept as a closing line so the answer binds to the
+            // number he actually saw in the greeting.
+            $todayT = date('Y-m-d');
+            $groups = []; $orderT = []; $oldN = 0; $newN = 0;
+            foreach (golpos_tasks() as $tk) {
+                if (($tk['status'] ?? '') === 'superseded' || golpos_task_status($tk) === 'done') { continue; }
+                $nmT = trim((string)($tk['employee_name'] ?? ''));
+                if ($nmT === '') { $nmT = 'Unassigned (owner inbox)'; }
+                $old = substr((string)($tk['created'] ?? ''), 0, 10) < $todayT;
+                foreach ((array)($tk['items'] ?? []) as $it) {
+                    if (!empty($it['done'])) { continue; }
+                    if ($old) { $oldN++; } else { $newN++; }
+                    if (!isset($groups[$nmT])) { $groups[$nmT] = []; $orderT[] = $nmT; }
+                    $groups[$nmT][] = (string)($it['text'] ?? '');
+                }
+            }
+            $totalT = $oldN + $newN;
+            if ($totalT === 0) {
+                out(['reply' => $npT ? 'Ahile khula task kehi chhaina — sabai sakiyo.'
+                                     : 'No open tasks right now — everything is done.']);
+                return true;
+            }
+            $lines = [$npT ? "Khula task haru ({$totalT}):" : "Open tasks ({$totalT}):"];
+            foreach ($orderT as $nmT) {
+                $its = $groups[$nmT];
+                $lines[] = $nmT . ' — ' . count($its) . ($npT ? ' khula:' : ' open:');
+                // Name every subject, ONE PER LINE. A reason tail
+                // shared by the whole group is stated once, on its own
+                // line, instead of repeated per item; the items then
+                // read as a compact set (heads only). A long group is
+                // capped and closed with the count still hidden —
+                // "sabai" / "show all" expands it in full.
+                $heads = []; $tails = [];
+                foreach ($its as $tx) {
+                    $pos = strpos($tx, ' — ');
+                    // Byte math: ' — ' is 5 bytes (space + 3-byte em dash
+                    // + space). Skipping only 3 cut the em dash in half
+                    // and put a bare continuation byte at the head of
+                    // every tail — invalid UTF-8 that made json_encode
+                    // fail on the reply AND on the session save (which
+                    // then wrote a 0-byte sessions.json). Skip the whole
+                    // separator.
+                    if ($pos !== false) { $heads[] = substr($tx, 0, $pos); $tails[] = substr($tx, $pos + strlen(' — ')); }
+                    else { $heads[] = $tx; $tails[] = ''; }
+                }
+                $shared = (count($its) > 1 && count(array_unique($tails)) === 1 && $tails[0] !== '') ? $tails[0] : null;
+                if ($shared !== null) { $lines[] = '  ' . ($npT ? 'Karan: ' : 'Reason: ') . $shared; }
+                $showT = $shared !== null ? $heads : $its;
+                $capT = $expandList ? count($showT) : $LIST_CAP;
+                foreach (array_slice($showT, 0, $capT) as $tx) { $lines[] = '  • ' . $tx; }
+                if (count($showT) > $capT) { $lines[] = '  ' . $listCloser(count($showT) - $capT, $npT); }
+            }
+            if ($newN > 0) {
+                $lines[] = $npT
+                    ? "Greeting le ginne {$oldN} hijo ra aghi ka hun; {$newN} aaja khuleka thap hun."
+                    : "The greeting counted {$oldN} from yesterday and earlier; {$newN} more opened today.";
+            }
+            out(['reply' => implode("\n", $lines)]);
+            return true;
+        }
+        // No identified actor: fall through — the identity lanes answer.
+    }
+
+    // COUNTING — "how many" over the pack's own sets: the catalog, a
+    // category, the out / low shelves, the roster. The composer used to
+    // answer these by counting a text string (it said 55 products; the
+    // shelf holds 63). A count is a pack fact: the sets are counted
+    // here, exactly. List asks ("kun kun sakiyo?") keep their list
+    // lanes — this family fires only on a count word, and never when a
+    // single item resolved (that is a stock ask, owned below).
+    if (preg_match('/(kati|कति|how\s+many)/iu', $msg)
+        && !preg_match('/(kun\s+kun|list|dekha|dekhaideu)/iu', $msg)) {
+        $rCnt = golpos_reason_resolve($products, $msg);
+        if (empty($rCnt['one'])) {
+            $npC = in_array($lang, ['np', 'hi', 'dev'], true);
+            if (preg_match('/(employee|employees|staff|karmachari|कर्मचारी)/iu', $msg)) {
+                $named = [];
+                foreach ((array)(golpos_people()['employees'] ?? []) as $e) {
+                    $dn = trim((string)($e['name'] ?? ''));
+                    if ($dn !== '') { $named[] = $dn; }
+                }
+                out(['reply' => $npC
+                    ? 'Staff ' . count($named) . ' jana chhan: ' . implode(', ', $named) . '.'
+                    : 'There are ' . count($named) . ' staff on the roster: ' . implode(', ', $named) . '.']);
+                return true;
+            }
+            if (preg_match('/(sakiyeka|sakisakyo|sakisakeko|out\s*of\s*stock|khatam)/iu', $msg)) {
+                $outN = [];
+                foreach ($products as $p) {
+                    $oh = isset($p['stock']) && is_numeric($p['stock']) ? $p['stock'] + 0
+                        : (isset($p['onHand']) && is_numeric($p['onHand']) ? $p['onHand'] + 0 : null);
+                    if ($oh !== null && $oh <= 0) { $outN[] = (string)$p['name']; }
+                }
+                out(['reply' => $npC
+                    ? count($outN) . ' ota item sakisakeko chha' . ($outN ? ': ' . implode(', ', $outN) : '') . '.'
+                    : count($outN) . ' items are out of stock' . ($outN ? ': ' . implode(', ', $outN) : '') . '.']);
+                return true;
+            }
+            if (preg_match('/(low|kamti|thorai|कम्ती)/iu', $msg) && preg_match('/(stock|item|saman|baki|बाँकी)/iu', $msg)) {
+                $lowN = [];
+                foreach ($products as $p) {
+                    $oh = isset($p['stock']) && is_numeric($p['stock']) ? $p['stock'] + 0
+                        : (isset($p['onHand']) && is_numeric($p['onHand']) ? $p['onHand'] + 0 : null);
+                    if ($oh !== null && $oh > 0 && $oh <= 5) { $lowN[] = (string)$p['name'] . ' (' . $oh . ')'; }
+                }
+                out(['reply' => $npC
+                    ? count($lowN) . ' ota item ko stock kamti (5 wa kam) chha' . ($lowN ? ': ' . implode(', ', $lowN) : '') . '.'
+                    : count($lowN) . ' items are running low (5 or fewer left)' . ($lowN ? ': ' . implode(', ', $lowN) : '') . '.']);
+                return true;
+            }
+            $catHit = null; $catCounts = [];
+            foreach ($products as $p) {
+                $c = (string)($p['category'] ?? '');
+                if ($c !== '') { $catCounts[$c] = ($catCounts[$c] ?? 0) + 1; }
+            }
+            foreach ($catCounts as $c => $n) {
+                if (mb_stripos($msg, $c) !== false
+                    || mb_stripos($msg, (string)preg_split('/\s+/', $c)[0]) !== false) { $catHit = $c; break; }
+            }
+            if ($catHit !== null) {
+                out(['reply' => $npC
+                    ? $catHit . ' category ma ' . $catCounts[$catHit] . ' ota item cha.'
+                    : 'The ' . $catHit . ' category holds ' . $catCounts[$catHit] . ' items.']);
+                return true;
+            }
+            if (preg_match('/(item|items|saman|product|products|catalog|menu)/iu', $msg)) {
+                arsort($catCounts);
+                $bitsC = [];
+                foreach ($catCounts as $c => $n) { $bitsC[] = $c . ' ' . $n; }
+                out(['reply' => $npC
+                    ? 'Catalog ma jamma ' . count($products) . ' ota item cha — ' . implode(', ', $bitsC) . '.'
+                    : 'The catalog holds ' . count($products) . ' items — ' . implode(', ', $bitsC) . '.']);
+                return true;
+            }
+        }
+    }
+
+    // "Why is it slow?" — reasoning, answered by the composer above.
+    if (preg_match('/\bwhy\b|किन/iu', $msg)
+        && preg_match('/(slow|quiet|down|kam|कम|sales|bikri|today|aaja|आज)/iu', $msg)) {
+        out(['reply' => golpos_reason_why_slow()]);
+        return true;
+    }
+
+    // CART CONTENTS — "cart ma ke ke cha?" asks what the open sale
+    // HOLDS. The pack carries the cart the client sent; before this
+    // block the ask fell to the composer, whose pack does not carry
+    // the cart at all, and it answered with a stale sale from another
+    // context. Contents are read from the pack, lines and all.
+    if (preg_match('/(cart|basket|tokari|टोकरी|current\s+sale|yo\s+sale)/iu', $msg)
+        && preg_match('/(ke\s+ke|ke\s+cha|what|kun\s+kun|items?|list|dekha)/iu', $msg)
+        && !preg_match('/(total|jamma)/iu', $msg)) {
+        $cartK = $pack['cart'];
+        if ($cartK['count'] === 0) {
+            out(['reply' => $lang === 'np'
+                ? 'Cart ahile khali chha — kehi add bhayeko chhaina.'
+                : 'The cart is empty right now — nothing has been added yet.']);
+            return true;
+        }
+        $linesK = []; $itemsK = [];
+        foreach ($cartK['items'] as $it) {
+            $linesK[] = $it['qty'] . ' × ' . $it['name'] . ' — ' . money($it['qty'] * $it['price']);
+            $itemsK[] = ['name' => $it['name'], 'qty' => $it['qty'], 'price' => $it['price'],
+                'total' => round($it['qty'] * $it['price'], 2)];
+        }
+        out(['reply' => ($lang === 'np' ? 'Cart ma ahile:' : 'In the cart right now:') . "\n"
+                . implode("\n", $linesK)
+                . "\n" . ($lang === 'np' ? 'Jamma ' : 'Total ') . money($cartK['total'])
+                . ' (subtotal ' . money($cartK['subtotal']) . ' + tax ' . money($cartK['tax']) . ').',
+            'dcard' => ['type' => 'sale_session', 'display' => true, 'title' => 'Current sale',
+                'items' => $itemsK, 'subtotal' => $cartK['subtotal'], 'tax' => $cartK['tax'], 'total' => $cartK['total']]]);
+        return true;
+    }
+
+    // "total" while a sale is open means THIS sale. The pack carries the
+    // cart, so the answer is the session, its lines read back — a period
+    // total always carries a period word and never lands here.
+    $cart = $pack['cart'];
+    if ($cart['count'] > 0 && preg_match('/(total|jamma|जम्मा)/iu', $msg)
+        && !preg_match('/(today|aaja|आज|hijo|yesterday|month|mahina|week|hapta|sales|bikri|hisab|हिसाब|report|close|बन्द)/iu', $msg)) {
+        $lines = []; $items = [];
+        foreach ($cart['items'] as $it) {
+            $lines[] = $it['qty'] . ' × ' . $it['name'] . ' — ' . money($it['qty'] * $it['price']);
+            $items[] = ['name' => $it['name'], 'qty' => $it['qty'], 'price' => $it['price'],
+                'total' => round($it['qty'] * $it['price'], 2)];
+        }
+        out(['reply' => "This sale so far:\n" . implode("\n", $lines)
+                . "\nSubtotal " . money($cart['subtotal']) . ' + tax ' . money($cart['tax'])
+                . ' = ' . money($cart['total']) . '.',
+            'dcard' => ['type' => 'sale_session', 'display' => true, 'title' => 'Current sale',
+                'items' => $items, 'subtotal' => $cart['subtotal'], 'tax' => $cart['tax'], 'total' => $cart['total']]]);
+        return true;
+    }
+
+    // STOCK-ADD — "stock ma thapdeu", "add ... to/on our stock" is an
+    // inventory INCREASE: not the stock CHECK the ASK lane answers and
+    // not a sale. It stages the same stock_receive card a delivery
+    // stages, and only "gol" executes it. The block claims the turn
+    // before SELL and ASK whenever BOTH the stock destination and an
+    // add/increase verb are spoken; a bare stock question ("Red Bull
+    // ko stock kati cha") carries no add verb and still falls to the
+    // ASK lane's answer, card-free. (Owner ear test, Nov 2: "stock ma
+    // thapdeu na chaubis" got a stock check and staged nothing.)
+    if (preg_match('/(stock|स्टक)/iu', $msg)
+        && preg_match('/(thap|thapdeu|badha|badhau|add|put|hala|joda|rakha|increase|थप|बढा)/iu', $msg)
+        && !preg_match('/(kati|how\s+many|how\s+much|कति)/iu', $msg)
+        && !golpos_is_info_question($msg)) {
+        $r = golpos_reason_resolve($products, $msg);
+        $p = !empty($r['one']) ? $r['one'] : golpos_ctx_product($products);
+        if ($p !== null) {
+            $qty = golpos_reason_loose_qty($msg, $p);
+            if ($qty !== null && $qty > 0) {
+                $card = golpos_stage(['type' => 'stock_receive', 'sku' => (string)$p['sku'],
+                                      'name' => (string)($p['mr_name'] ?? $p['name']), 'qty' => $qty]);
+                out(['reply' => t('card_staged'), 'card' => $card]);
+                return true;
+            }
+            out(['reply' => $lang === 'np'
+                ? $p['name'] . ' ko stock ma kati ota thapne? Number bhannus, card banaidinchu.'
+                : 'How many ' . $p['name'] . ' should I add to stock? Say the number and I will stage the card.']);
+            return true;
+        }
+        if (!empty($r['many'])) { return false; } // a real tie — the lanes ask, with names
+        out(['reply' => $lang === 'np'
+            ? 'Kun item ko stock thapne? Naam ra kati ota bhannus na.'
+            : 'Which item should I add stock for? Say its name and the count.']);
+        return true;
+    }
+
+    // SELL — a ring word, or a count bound to a classifier in a turn with
+    // no price word and no money sign, is a sale. The count is blanked
+    // before resolution so nothing downstream can read it as a price or
+    // a size; the answer is a read-back and states the running session
+    // total from the pack. A PRICE CHANGE never enters here — it carries
+    // a price word, and the lanes stage it as always.
+    $norm = golpos_norm_digits($msg);
+    $qtyBind = null;
+    if (preg_match('/(\d+(?:\.\d+)?)\s*(?:ta|ota|vata|wata|टा|वटा)\b/iu', $norm, $qm)) { $qtyBind = (float)$qm[1]; }
+    $isRingWord = (bool) preg_match('/\bring\b/iu', $msg);
+    $sellVeto = (bool) preg_match('/(ayo|aayo|आयो|received|delivery|restock|ginti|गिन्ती|count)/iu', $msg);
+    if (!$sellVeto && ($isRingWord
+        || ($qtyBind !== null && !preg_match('/(price|mulya|dam|daam|मूल्य|दाम)/iu', $msg) && strpos($msg, '$') === false))) {
+        $work = $qtyBind !== null
+            ? (preg_replace('/\d+(?:\.\d+)?\s*(?:ta|ota|vata|wata|टा|वटा)\b/iu', ' ', $norm) ?? $msg)
+            : $msg;
+        $r = golpos_reason_resolve($products, $work);
+        if (!empty($r['one'])) {
+            $p = $r['one'];
+            $n = $qtyBind !== null ? max(1, (int)$qtyBind)
+                : max(1, (int)(golpos_qty_in($msg, $p) ?? 1));
+            // The session after this add, computed from the pack at
+            // shelf prices — the same arithmetic the register runs.
+            $items = $pack['cart']['items'];
+            $found = false;
+            foreach ($items as &$it) {
+                if ($it['sku'] === (string)$p['sku']) { $it['qty'] += $n; $found = true; }
+            }
+            unset($it);
+            if (!$found) {
+                $items[] = ['sku' => (string)$p['sku'], 'name' => (string)$p['name'], 'qty' => $n, 'price' => (float)$p['price']];
+            }
+            $rate = (float)(golpos_catalog()['store']['tax_rate'] ?? 0);
+            $sub = 0.0; $rlines = [];
+            foreach ($items as $it) {
+                $sub += $it['qty'] * $it['price'];
+                $rlines[] = $it['qty'] . ' × ' . $it['name'] . ' — ' . money($it['qty'] * $it['price']);
+            }
+            $taxAmt = round($sub * $rate, 2);
+            out(['reply' => 'Ringing up ' . $n . ' × ' . $p['name'] . ' — a sale, not a price change.' . "\n"
+                    . implode("\n", $rlines)
+                    . "\nSale total now: " . money(round($sub + $taxAmt, 2)) . ' (subtotal ' . money(round($sub, 2)) . ' + tax ' . money($taxAmt) . ').',
+                'action' => ['type' => 'add', 'sku' => (string)$p['sku'], 'qty' => $n]]);
+            return true;
+        }
+        if (!empty($r['many'])) {
+            $names = implode(', ', array_map(static fn($x) => (string)$x['name'], array_slice($r['items'], 0, 4)));
+            out(['reply' => 'Which one should I ring — ' . $names . '?']);
+            return true;
+        }
+        out(['reply' => "I couldn't match that item on this register — name it once more and I'll ring it."]);
+        return true;
+    }
+
+    // ASK about one item — stock and price travel together, whichever was
+    // asked, because at the counter "kati cha" after a name means both.
+    $wantsStock = (bool) preg_match('/(stock|maujud|on\s*hand|स्टक|बाँकी|baki|left)/iu', $msg);
+    $wantsPrice = (bool) preg_match('/(price|mulya|dam|daam|मूल्य|दाम)/iu', $msg);
+    if (($wantsStock || ($wantsPrice && $isQ))
+        && !preg_match('/(ayo|aayo|आयो|received|delivery|restock|ginti|गिन्ती)/iu', $msg)) {
+        $r = golpos_reason_resolve($products, $msg);
+        if (!empty($r['one'])) {
+            golpos_reason_answer_item($r['one'], $sessionId, $lang);
+            return true;
+        }
+        if (!empty($r['many'])) { return false; } // a real tie — the lane asks, with prices
+        // A follow-up with no item of its own binds to the conversation
+        // topic ("tesko price kati ho?" right after a Coke answer). The
+        // ctx is the pack's own memory of what was just resolved; the
+        // interpreter pass below was the only road here before, and a
+        // pronoun follow-up fell through it to the composer.
+        $ctxP = golpos_ctx_product($products);
+        if ($ctxP !== null
+            && (preg_match('/(tesko|tyasko|yesko|esko|tyo|that|this|it\b)/iu', $msg) || count($toks) <= 4)) {
+            golpos_reason_answer_item($ctxP, $sessionId, $lang);
+            return true;
+        }
+        if (preg_match('/(out|low|sakiyo|sakina|khatam|खतम|सकियो)/iu', $msg)) { return false; } // aggregate lists are the lane's
+        // An in-catalog near-miss the ear mangled: one interpreter pass
+        // over the shelf, validated — anything less is answered honestly.
+        $hit = golpos_reason_interpret($products, $msg);
+        if ($hit !== null) {
+            golpos_reason_answer_item($hit, $sessionId, $lang);
+            return true;
+        }
+        out(['reply' => $lang === 'np'
+            ? 'Item ko naam bujhina — naam feri ek choti bhannus, stock ra mulya ahile dinchhu.'
+            : "I didn't catch the item name in that — say the name once more and I'll give you its stock and price right away."]);
+        return true;
+    }
+
+    // Fully garbled speech lands here: short, no digits, no shelf hit,
+    // no domain word at all. The honest answer is "didn't catch that" —
+    // never the capability menu, which reads as a deflection. Greetings
+    // and smalltalk are never garble — they keep their own lanes.
+    if (count($toks) <= 4 && !preg_match('/\d/u', $msg)
+        && !golpos_is_bare_greeting($msg) && !golpos_is_smalltalk($msg)
+        && !golpos_is_cancel_intent($msg) && !golpos_is_legacy_confirm($msg)
+        && !preg_match('/(setting|settings|print|receipt|hour|hours|open|close|lock|pin|admin|employee|staff|task|kam|काम|note|calendar|bill|vendor|order|refund|credit|batch|camera|poster|report|sales|sale|total|stock|price|item|product|add|ring|help|who|team|pay|rate|photo|scan)/iu', $msg)) {
+        $r = golpos_reason_resolve($products, $msg);
+        if (empty($r['one']) && empty($r['many'])) {
+            out(['reply' => $lang === 'np'
+                ? 'Bujhina — feri ek choti bhannus na?'
+                : "I didn't catch that — say it once more?"]);
+            return true;
+        }
+    }
+    return false;
+}
+
+// Every number WORD in the sentence as digits (EN 1–99 incl. compound
+// tens, Romanized Nepali 1–30, Devanagari core) — UNBOUND conversion:
+// the caller has already decided the turn's intent and stripped what
+// must not count (sizes, money, and — via golpos_mask_sizes — the
+// item's own name, whose number words are part of the name, never a
+// quantity). Used where a standing number word IS the quantity even
+// when it binds to nothing: golpos_qty_in and the stock-add reader.
+function golpos_numwords_to_digits(string $s): string {
+    $tens = ['twenty' => 20, 'thirty' => 30, 'forty' => 40, 'fifty' => 50,
+             'sixty' => 60, 'seventy' => 70, 'eighty' => 80, 'ninety' => 90];
+    $ones = ['one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5,
+             'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9];
+    $tAlt = implode('|', array_keys($tens));
+    $oAlt = implode('|', array_keys($ones));
+    $s = (string) preg_replace_callback('/\b(' . $tAlt . ')[-\s](' . $oAlt . ')\b/iu',
+        static function ($m) use ($tens, $ones) {
+            return (string) (($tens[mb_strtolower($m[1])] ?? 0) + ($ones[mb_strtolower($m[2])] ?? 0));
+        }, $s);
+    $words = ['one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5,
+              'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9, 'ten' => 10,
+              'eleven' => 11, 'twelve' => 12, 'thirteen' => 13, 'fourteen' => 14,
+              'fifteen' => 15, 'sixteen' => 16, 'seventeen' => 17, 'eighteen' => 18,
+              'nineteen' => 19, 'twenty' => 20, 'thirty' => 30, 'forty' => 40,
+              'fifty' => 50, 'sixty' => 60, 'seventy' => 70, 'eighty' => 80, 'ninety' => 90,
+              'ek' => 1, 'euta' => 1, 'ekta' => 1, 'dui' => 2, 'duita' => 2, 'tin' => 3,
+              'char' => 4, 'chaar' => 4, 'panch' => 5, 'paanch' => 5, 'chha' => 6,
+              'saat' => 7, 'aath' => 8, 'nau' => 9, 'das' => 10,
+              'eghara' => 11, 'bahra' => 12, 'chaudha' => 14, 'choudha' => 14,
+              'pandhra' => 15, 'pandra' => 15, 'sohra' => 16, 'satra' => 17,
+              'athara' => 18, 'unnais' => 19, 'bis' => 20, 'ekkais' => 21, 'bais' => 22,
+              'teis' => 23, 'chaubis' => 24, 'pachchis' => 25, 'chhabbis' => 26,
+              'sattais' => 27, 'aththais' => 28, 'unantis' => 29,
+              'दुई' => 2, 'तीन' => 3, 'चार' => 4, 'पाँच' => 5, 'छ' => 6,
+              'सात' => 7, 'आठ' => 8, 'नौ' => 9, 'दश' => 10, 'एघार' => 11, 'बाह्र' => 12,
+              'चौध' => 14, 'पन्ध्र' => 15, 'सोह्र' => 16, 'सत्र' => 17, 'अठार' => 18,
+              'उन्नाइस' => 19, 'बीस' => 20, 'चौबीस' => 24, 'तीस' => 30];
+    $alt = implode('|', array_map(static fn($w) => preg_quote($w, '/'), array_keys($words)));
+    $s = (string) preg_replace_callback('/\b(' . $alt . ')\b/iu',
+        static function ($m) use ($words) { return (string) ($words[mb_strtolower($m[1])] ?? $m[1]); }, $s);
+    return $s;
+}
+
+// The quantity for a stock-add turn: the strict count reader first
+// (classifier-bound and item-bound counts); then a loose read for a
+// number standing free at the end of the breath — "stock ma thapdeu
+// na chaubis" binds 24 to nothing the strict reader accepts, and in a
+// turn that already carries an add verb and the stock destination it
+// IS the quantity. Sizes and money are stripped before the loose
+// read, and the product's own name is masked, so a number inside a
+// name or a size can never be taken as the count.
+function golpos_reason_loose_qty(string $msg, ?array $product): ?int {
+    $q = golpos_extract_count(golpos_count_words($msg, $product), $product);
+    if ($q !== null && $q > 0) { return (int) round($q); }
+    $t = golpos_norm_digits($msg);
+    if ($product !== null) { $t = golpos_mask_sizes($t, $product); }
+    $t = preg_replace('/\$\s*\d+(?:\.\d+)?/u', ' ', $t) ?? $t;
+    $t = golpos_numwords_to_digits($t);
+    if (preg_match('/(?<!\d)(\d{1,3})(?!\d)/u', $t, $m)) {
+        $n = (int) $m[1];
+        if ($n >= 1 && $n <= 999) { return $n; }
+    }
+    return null;
+}
+
+// An explicit quantity in a turn that carries no classifier count:
+// "2 coke ring gara", "dui coke ring gara". Sizes ("20oz"), prices
+// ("$2") and years are stripped first so they can never become a count.
+// Number WORDS count too ("twenty-four ... ring gara" is 24) — the
+// item's own name is masked first when the caller knows it, so a
+// number word inside a name ("Five Hour Energy") is never a quantity.
+// Returns null when no explicit quantity is spoken (the caller rings 1).
+function golpos_qty_in(string $msg, ?array $product = null): ?int {
+    $t = golpos_norm_digits($msg);
+    if ($product !== null) { $t = golpos_mask_sizes($t, $product); }
+    $t = preg_replace('/\$\s*\d+(?:\.\d+)?/u', ' ', $t) ?? $t;
+    $t = preg_replace('/\d+(?:\.\d+)?[\s-]*(?:ounces?|oz|ml|l|lb|lbs|g|kg|pack|pk|ct|count|gram|grams)\b/iu', ' ', $t) ?? $t;
+    $t = preg_replace('/\b(?:19|20)\d{2}\b/u', ' ', $t) ?? $t;
+    $t = golpos_numwords_to_digits($t);
+    if (preg_match('/(?<!\d)(\d{1,2})(?!\d)/u', $t, $m)) {
+        $n = (int)$m[1];
+        if ($n >= 1 && $n <= 99) { return $n; }
+    }
+    return null;
+}
+
+function golpos_brain_route(string $msg, array $in, array $catalog, array $products, string $shop, array $session, string $sessionId): void {
+    $GLOBALS['golpos_products'] = $products;
+    if (golpos_cancel_card_handle($in, $session, $sessionId)) { return; }
+    if (golpos_is_who_intent($msg)) { golpos_who_answer($msg, $sessionId); }
+    if (golpos_reason_layer($msg, $in, $products, $sessionId)) { return; }
+    golpos_bigbrain_handle($msg, $in, $session, $sessionId, $shop);
+    golpos_dispatch($msg, $in, $catalog, $products, $shop);
 }
 
 // Lazy AUTO batch pass first: any chat call can be the one that finds the
@@ -5909,7 +8727,7 @@ if (golpos_lock_state($session)) {
         $session['attempts'] = (int)($session['attempts'] ?? 0) + 1;
         if ($session['attempts'] >= 3) {
             $session['attempts'] = 0;
-            $session['locked_until'] = $now + 600;
+            $session['locked_until'] = $now + 180;
             $GLOBALS['golpos_unlock_event'] = golpos_unlock_add(
                 ['kind' => 'lockout', 'name' => 'Unknown', 'email' => '', 'role' => '']);
             golpos_save_session($sessionId, $session);
@@ -5950,7 +8768,12 @@ if (golpos_lock_state($session)) {
 }
 
 // "lock" / "admin bata bahira" — drop elevation on the spot AND lock
-// the register: the next person opens it with their own PIN.
+// the register: the next person opens it with their own PIN. In setup
+// mode (NO roster PIN anywhere) a lock can never take effect —
+// golpos_lock_state stays false and the overlay never rises — so the
+// word used to "succeed" silently while nothing happened (owner trace,
+// Oct 31: he pressed Lock on a PIN-less register and hit a wall). With
+// no PIN the truthful answer is the PIN-creation path, not a fake lock.
 if (golpos_is_lock_intent($msg)) {
     $session['pin_stage'] = null;
     $session['pin_tmp'] = null;
@@ -5958,6 +8781,9 @@ if (golpos_is_lock_intent($msg)) {
     $session['price_await'] = null;
     $session['ctx'] = null;
     golpos_save_session($sessionId, $session);
+    if (!golpos_roster_has_pin()) {
+        out(['reply' => golpos_pin_help_reply()]);
+    }
     golpos_lock_session($sessionId);
     out(['reply' => t('admin_off')]);
 }
@@ -6019,8 +8845,8 @@ if (!empty($session['pin_stage'])) {
         golpos_save_session($sessionId, $session);
         if (is_array($pending) && (string)($pending['message'] ?? '') !== '') {
             $GLOBALS['golpos_pin_mask'] = true;
-            golpos_dispatch((string)$pending['message'],
-                            ['confirm' => !empty($pending['confirm'])], $catalog, $products, $shop);
+            golpos_brain_route((string)$pending['message'],
+                            ['confirm' => !empty($pending['confirm'])], $catalog, $products, $shop, $session, $sessionId);
         }
         out(['reply' => t('pin_set'), 'pin_mask' => true]);
     } else { // verify
@@ -6045,15 +8871,15 @@ if (!empty($session['pin_stage'])) {
             if (is_array($pending) && trim((string)($pending['message'] ?? '')) !== ''
                 && !preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', (string)$pending['message'])) {
                 $GLOBALS['golpos_pin_mask'] = true;
-                golpos_dispatch((string)$pending['message'],
-                                ['confirm' => !empty($pending['confirm'])], $catalog, $products, $shop);
+                golpos_brain_route((string)$pending['message'],
+                                ['confirm' => !empty($pending['confirm'])], $catalog, $products, $shop, $session, $sessionId);
             }
             out(['reply' => t('admin_on'), 'pin_mask' => true]);
         }
         $session['attempts'] = (int)($session['attempts'] ?? 0) + 1;
         if ($session['attempts'] >= 3) {
             $session['attempts'] = 0;
-            $session['locked_until'] = $now + 600;
+            $session['locked_until'] = $now + 180;
             $session['pin_stage'] = null;
             $session['pending'] = null;
             golpos_save_session($sessionId, $session);
@@ -6080,6 +8906,8 @@ if (!empty($session['bill_await']) && golpos_pending() === null) {
         out(['reply' => t('bill_cancelled')]);
     }
     if (in_array(mb_strtolower(trim($msg)), ['gol', 'गोल'], true) || !empty($in['confirm'])) {
+    if (golpos_echo_confirm($msg, $in)) { out(['reply' => 'That was my own voice. The card is still waiting. Tap Confirm after I am quiet.']); }
+
         out(['reply' => t('bill_reask', golpos_bill_missing_list($await))]);
     }
     $updated = golpos_bill_apply_prices($await, $msg);
@@ -6223,6 +9051,29 @@ if (!empty($session['price_await']) && golpos_pending() === null) {
     }
 }
 
+// --- PIN / admin guidance (owner trace, Oct 31) ---------------------------
+// An already-elevated session never meets the gate below, so the owner's
+// own PIN words ("admin", "set pin", "pin banaune", a bare 4–6 digit
+// number typed as his intended PIN) used to fall through to the free-form
+// composer and die there ("I can't help with that…", digits standing in
+// the thread unmasked). This intercept owns those words BEFORE the gate
+// and the dispatch — but AFTER every live wait above (a PIN flow, a bill,
+// a price ask) has had its own claim on the message. A bare number here
+// is never treated as a PIN, never verified, never echoed: the reply
+// carries pin_mask so the client masks the typed bubble, and the answer
+// is the real gate path for this register's PIN state.
+if (golpos_pin_shaped($msg) !== null) {
+    out(['reply' => t('pin_never_chat') . "\n" . golpos_pin_help_reply(), 'pin_mask' => true]);
+}
+// An actionable PIN-set ask (set verb + a named person or the admin
+// PIN) is NOT guidance: it falls through to the gate and the pin_set
+// lane, which stage the owner's card (TASKS 231).
+if ((golpos_is_pin_help_intent($msg)
+        && !(golpos_is_pin_set_intent($msg) && golpos_pin_set_target($msg) !== null))
+    || (!empty($session['admin']) && preg_match('/^\s*(admin|login|pin)\s*[.!]?\s*$/iu', $msg))) {
+    out(['reply' => golpos_pin_help_reply()]);
+}
+
 // The gate itself: an admin-domain message from an unelevated session gets
 // the PIN demand and NOTHING else — no figures, no hints, no partial answer.
 if (empty($session['admin']) && golpos_needs_admin($msg, $in)) {
@@ -6257,6 +9108,12 @@ if (empty($session['admin']) && golpos_needs_admin($msg, $in)) {
     out(['reply' => t('pin_ask')]);
 }
 
+// Calendar day taps arrive as a silent action, never as a message:
+// they skip the trail log and every brain lane (owner catch, Oct 31 —
+// a tap used to post "YYYY-MM-DD report" into the thread and stack a
+// whole new report under it). Read-only; out() exits inside.
+if (($in['action'] ?? '') === 'day_detail') { golpos_day_detail($in, $session); }
+
 // The presence trail's question record: an EMPLOYEE session's turns
 // are logged owner-side (what she asked Gol, and when). PIN-shaped
 // turns and PIN-flow turns are never recorded — digits are not data.
@@ -6273,4 +9130,4 @@ if (empty($session['pin_stage']) && golpos_pin_shaped($msg) === null) {
     if ($trailEmail !== null) { golpos_turn_log($sessionId, $trailEmail, $trailName, $msg); }
 }
 
-golpos_dispatch($msg, $in, $catalog, $products, $shop);
+golpos_brain_route($msg, $in, $catalog, $products, $shop, $session, $sessionId);

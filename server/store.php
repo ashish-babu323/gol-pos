@@ -16,16 +16,36 @@ function golpos_data_dir(): string {
 function golpos_read(string $name, $fallback) {
     $path = golpos_data_dir() . '/' . $name;
     if (!file_exists($path)) { return $fallback; }
+    // Per-request memo (Nov 1, six-month demo history): the seeded log
+    // runs to tens of thousands of sales, and lanes re-read the same
+    // files many times per turn. Keyed on mtime+size so a write from
+    // anywhere is never served stale; golpos_write also busts its key.
+    $sig = filemtime($path) . ':' . filesize($path);
+    if (isset($GLOBALS['golpos_read_memo'][$name])
+        && $GLOBALS['golpos_read_memo'][$name][0] === $sig) {
+        return $GLOBALS['golpos_read_memo'][$name][1];
+    }
     $raw = file_get_contents($path);
     $data = json_decode($raw === false ? '' : $raw, true);
-    return $data === null ? $fallback : $data;
+    if ($data === null) { return $fallback; }
+    $GLOBALS['golpos_read_memo'][$name] = [$sig, $data];
+    return $data;
 }
 
 function golpos_write(string $name, $data): void {
     $path = golpos_data_dir() . '/' . $name;
     $tmp = $path . '.tmp';
-    file_put_contents($tmp, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
+    // Encode guard (Nov 2, brain-task fix): if the payload cannot be
+    // JSON-encoded (e.g. one invalid UTF-8 byte in a composed string),
+    // json_encode returns false and the old code wrote that as an EMPTY
+    // file — a single bad byte wiped sessions.json to 0 bytes. Substitute
+    // bad bytes instead, and if encoding still fails, keep the old file:
+    // never install an empty write over real data.
+    $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($json === false) { return; }
+    file_put_contents($tmp, $json, LOCK_EX);
     rename($tmp, $path);
+    unset($GLOBALS['golpos_read_memo'][$name]);
 }
 
 // --- Verify Loop tap (Oct 28 — the watchdog claim, made mechanical) ----------
@@ -1352,8 +1372,11 @@ function golpos_execute_refund(array $sale, ?array $picks, string $byName, strin
 // --- People & access (owner directive, Oct 28) -------------------------------
 // Two roles live in data/people.json: the ADMIN (one PIN hash — the PIN is
 // the key to every admin-domain answer in the Gol chat) and EMPLOYEES, who
-// are invited by email, set their own PIN from a one-time link, and hold the
-// cashier domain only. PINs are never stored in plain text and never leave
+// are invited by email, accept from a one-time link, and hold the cashier
+// domain only. PIN OWNERSHIP (TASKS 231, Nov 2): the OWNER sets every PIN —
+// his own and each employee's — in the Owner panel's Team card or by a
+// staged Gol-chat card, and hands them out; an employee can never set or
+// reset their own PIN. PINs are never stored in plain text and never leave
 // the server: password_hash / password_verify throughout.
 function golpos_people(): array {
     $d = golpos_read('people.json', null);

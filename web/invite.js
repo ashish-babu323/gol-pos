@@ -1,10 +1,12 @@
 // Gol POS — employee invite page.
-// The link carries a one-time token (?t=). Lookup names the invitee; the
-// employee sets their own 4–6 digit PIN; the server flips the record to
-// active and issues a device token. The token + email are kept in
-// localStorage on THIS device only and ride along with register chat calls,
-// so the device is recognised as that employee (cashier domain — an
-// employee PIN never opens the admin domain).
+// The link carries a one-time token (?t=). Lookup names the invitee;
+// Activate accepts the invite and the server issues a device token.
+// PIN OWNERSHIP (TASKS 231, Nov 2): the OWNER sets every PIN — his own
+// and each employee's — and hands it out. This page never asks for,
+// accepts or changes a PIN; activation writes none. The token + email
+// are kept in localStorage on THIS device only and ride along with
+// register chat calls, so the device is recognised as that employee
+// (cashier domain — an employee PIN never opens the admin domain).
 'use strict';
 const INVITE = '../server/invite.php';
 const $ = (id) => document.getElementById(id);
@@ -33,33 +35,35 @@ async function init() {
   }
   if (data.status === 'active') {
     $('invTitle').textContent = 'You are already set up';
-    $('invSub').textContent = 'This device (or your first one) already holds your employee PIN. Just open the register.';
+    $('invSub').textContent = 'This invite was already accepted. Just open the register and use the PIN your owner gave you.';
     $('openRegister').classList.remove('hidden');
     return;
   }
   $('invTitle').textContent = 'Welcome to ' + data.shop + (data.name ? ', ' + data.name : '');
-  $('invSub').textContent = 'You were invited as an employee (' + data.email + '). '
-    + 'Choose the PIN you will use at the register — Gol never sees it again after this.';
-  $('pinForm').classList.remove('hidden');
+  $('invSub').textContent = 'You were invited as an employee (' + data.email + ').';
+  $('activateBox').classList.remove('hidden');
 }
 
-$('pinForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const pin = $('pin1').value.trim();
-  if (!/^\d{4,6}$/.test(pin)) { $('invSub').textContent = 'The PIN must be 4–6 digits.'; return; }
-  if (pin !== $('pin2').value.trim()) { $('invSub').textContent = "Those two PINs don't match — try again."; return; }
-  const { status, data } = await post({ action: 'setpin', token, pin });
+$('activateBtn').addEventListener('click', async () => {
+  const btn = $('activateBtn');
+  btn.disabled = true;
+  const { status, data } = await post({ action: 'activate', token });
   if (status !== 200 || !data.ok) {
+    btn.disabled = false;
     $('invSub').textContent = data.error || 'Something went wrong — try again.';
     return;
   }
   try {
     localStorage.setItem('golpos_employee', JSON.stringify({ email: data.email, token: data.emp_token }));
   } catch (err) { /* private mode: the register will simply not recognise the device */ }
-  $('pinForm').classList.add('hidden');
-  $('invTitle').textContent = 'All set, ' + (data.email || 'employee');
+  $('activateBox').classList.add('hidden');
+  $('invTitle').textContent = 'All set' + (data.email ? ', ' + data.email : '');
   $('invSub').classList.add('hidden');
   $('invDone').classList.remove('hidden');
+  if (!data.has_pin) {
+    $('invDone').textContent = 'You are set — this device now rings sales as you at the register. '
+      + 'Your owner has not given you a PIN yet: ask them for it — they set it and hand it to you.';
+  }
   $('openRegister').classList.remove('hidden');
 });
 

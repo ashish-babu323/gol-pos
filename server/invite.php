@@ -1,13 +1,18 @@
 <?php
-// Gol POS — employee invite endpoint (owner directive, Oct 28).
+// Gol POS — employee invite endpoint (owner directive, Oct 28;
+// PIN-ownership correction, Nov 2 — TASKS 231).
 // The owner adds an employee in the Gol chat; the invite email carries a
 // one-time link to web/invite.html?t=<token>. This endpoint serves that
-// page: lookup validates the token and names the invitee; setpin lets the
-// employee choose their own 4–6 digit PIN, flips the record to active, and
-// issues the device token the register will present with chat calls.
+// page: lookup validates the token and names the invitee; activate flips
+// the record to active and issues the device token the register will
+// present with chat calls. Activation NEVER writes a PIN: the OWNER sets
+// every PIN (his own and each employee's) — in the Owner panel's Team
+// card or by a staged Gol-chat card — and hands it to the employee. An
+// employee can never set or reset their own PIN, here or anywhere.
 // Only SHA-256 hashes of the invite token and the device token are stored;
-// the employee PIN is a password_hash. Nothing here elevates anyone to
-// admin — an employee session holds the cashier domain only.
+// PINs live as password_hash, written only by owner paths. Nothing here
+// elevates anyone to admin — an employee session holds the cashier
+// domain only.
 
 declare(strict_types=1);
 require __DIR__ . '/store.php';
@@ -37,20 +42,22 @@ if ($action === 'lookup') {
           'status' => (string)($emp['status'] ?? '')]);
 }
 
-if ($action === 'setpin') {
+// Activation accepts the invite and issues the device token. The legacy
+// action name 'setpin' is accepted for an already-open page, but any PIN
+// field in the request is IGNORED — activation writes no PIN, ever
+// (TASKS 231: the owner sets all PINs and hands them out).
+if ($action === 'activate' || $action === 'setpin') {
     if (($emp['status'] ?? '') === 'active') {
-        iout(['error' => 'This invite was already used — the employee PIN is set on their device.'], 409);
+        iout(['error' => 'This invite was already used — this employee is active. The owner manages PINs.'], 409);
     }
-    $pin = golpos_norm_pin((string)($in['pin'] ?? ''));
-    if ($pin === null) { iout(['error' => 'Choose a PIN of 4–6 digits.'], 422); }
     $device = bin2hex(random_bytes(24));
-    $emp['pin_hash'] = password_hash($pin, PASSWORD_DEFAULT);
     $emp['status'] = 'active';
     $emp['invite_token_hash'] = null;
     $emp['device_token_hash'] = hash('sha256', $device);
     $emp['activated_at'] = date('c');
     golpos_save_employee($emp);
-    iout(['ok' => true, 'email' => (string)$emp['email'], 'emp_token' => $device]);
+    iout(['ok' => true, 'email' => (string)$emp['email'], 'emp_token' => $device,
+          'has_pin' => !empty($emp['pin_hash'])]);
 }
 
 iout(['error' => 'Unknown action.'], 400);
