@@ -1661,6 +1661,7 @@ async function sendPhoto(file, promptText) {
   const res = await fetch('../server/photo.php', { method: 'POST', body: fd });
   const r = await res.json();
   if (r.reply) { chatMsg(r.reply, 'gol'); }
+  golRingForReply(r);
   let photoCardEl = null;
   if (r.card) { photoCardEl = chatCard(r.card); }
   try { golSpeak(posSayFor(r, promptText, photoCardEl)); } catch (e) {}
@@ -1691,6 +1692,7 @@ async function sendChat(text, callSeq) {
   // digits standing in the chat history.
   if (r.pin_mask && mine) { mine.textContent = '••••'; }
   if (r.reply) { chatMsg(r.reply, 'gol'); }
+  golRingForReply(r);
   if (r.cancelled_pid) { markStagedCancelled(r.cancelled_pid, null, r.reply); }
   else if (r.cancelled) { markStagedCancelled('', null, r.reply); }
   if (r.graph) { chatGraph(r.graph); }
@@ -1709,6 +1711,32 @@ async function sendChat(text, callSeq) {
     loadCatalog(); loadSettings();
   }
   botClearThinking();
+}
+
+// --- Saturn ring = meaning (owner law, Nov 3 21:17 ET) -----------------------
+// The bot's body and face NEVER change; the ring around the Saturn
+// carries the signal, subtly (a tint, never a loud solid): default
+// Gol-blue = normal conversation · green = an order / action ready
+// or done · amber = waiting on the owner's decision · red =
+// something off / urgent. One data-ring attribute on the chat
+// drawer recolors the ring disc of every bot inside the panel
+// (styles.css, RING MEANING block). Driven from each brain reply:
+// an executed action (r.done) reads green, a staged card waiting
+// for the owner's tap reads amber, an error/blocked turn reads
+// red, anything else settles back to blue.
+function golRing(state) {
+  const dr = document.querySelector('.chat-drawer');
+  if (!dr) { return; }
+  if (state) { dr.setAttribute('data-ring', state); } else { dr.removeAttribute('data-ring'); }
+}
+function golRingForReply(r) {
+  try {
+    if (!r) { return; }
+    if (r.error || r.ok === false || r.blocked) { golRing('alert'); return; }
+    if (r.done) { golRing('order'); return; }
+    if (r.card) { golRing('wait'); return; }
+    golRing('');
+  } catch (e) { /* the ring never breaks a turn */ }
 }
 
 // --- Gol Bot face state (BOTFACE v1) -----------------------------------------
@@ -2412,8 +2440,9 @@ async function pinPadSubmit() {
   try {
     const res = await fetch(BRAIN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(brainPayload({ message: digits })) });
     r = await res.json();
-  } catch (e) { chatMsg('Connection hiccup — try the PIN again.', 'gol'); return; }
+  } catch (e) { chatMsg('Connection hiccup — try the PIN again.', 'gol'); golRing('alert'); return; }
   if (r.reply) { chatMsg(r.reply, 'gol'); }
+  golRingForReply(r);
   if (r.cancelled_pid) { markStagedCancelled(r.cancelled_pid, null, r.reply); }
   else if (r.cancelled) { markStagedCancelled('', null, r.reply); }
   if (r.graph) { chatGraph(r.graph); }

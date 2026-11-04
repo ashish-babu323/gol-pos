@@ -2774,3 +2774,42 @@ html.gol-chat-open, body.gol-chat-open { overflow: hidden !important; overscroll
   background: url("assets/gol-network-v1.svg") 0 0 / 440px 440px repeat,
     linear-gradient(180deg, #ffffff 0%, #f7faff 60%, #eef4ff 100%);
 }
+
+/* ================================================================
+   RING MEANING (owner law, Nov 3 21:17 ET): the Saturn bot's body
+   and face never change — the RING carries the signal, subtly: a
+   tint of the same ring disc, never a loud solid bot. Default
+   Gol-blue = normal conversation · GREEN = an order / action
+   ready or done · AMBER = waiting on the owner's decision ·
+   RED = something off / urgent. app.js sets data-ring on the
+   chat drawer from each brain reply (golRingForReply); these
+   rules re-tint the ring disc of every bot inside the panel
+   with the stock gradient's own stop geometry and alphas.
+   ================================================================ */
+.chat-drawer[data-ring="order"] .gb-ringdisc {
+  background: radial-gradient(ellipse 50% 20.5% at 50% 50%,
+    rgba(134,239,172,0) 0%, rgba(134,239,172,0) 52%,
+    rgba(74,222,128,.22) 56%, rgba(34,197,94,.48) 61%,
+    rgba(22,163,74,.52) 65.5%, rgba(134,239,172,.55) 70%,
+    rgba(22,163,74,.48) 75%, rgba(74,222,128,.58) 81%,
+    rgba(20,83,45,.38) 86%, rgba(34,197,94,.62) 91%,
+    rgba(187,247,208,.85) 95.5%, rgba(22,163,74,.4) 98.5%,
+    rgba(134,239,172,0) 100%); }
+.chat-drawer[data-ring="wait"] .gb-ringdisc {
+  background: radial-gradient(ellipse 50% 20.5% at 50% 50%,
+    rgba(253,224,71,0) 0%, rgba(253,224,71,0) 52%,
+    rgba(251,191,36,.22) 56%, rgba(245,158,11,.48) 61%,
+    rgba(217,119,6,.52) 65.5%, rgba(253,224,71,.55) 70%,
+    rgba(217,119,6,.48) 75%, rgba(251,191,36,.58) 81%,
+    rgba(146,64,14,.38) 86%, rgba(245,158,11,.62) 91%,
+    rgba(254,243,199,.85) 95.5%, rgba(217,119,6,.4) 98.5%,
+    rgba(253,224,71,0) 100%); }
+.chat-drawer[data-ring="alert"] .gb-ringdisc {
+  background: radial-gradient(ellipse 50% 20.5% at 50% 50%,
+    rgba(252,165,165,0) 0%, rgba(252,165,165,0) 52%,
+    rgba(248,113,113,.22) 56%, rgba(239,68,68,.48) 61%,
+    rgba(220,38,38,.52) 65.5%, rgba(252,165,165,.55) 70%,
+    rgba(220,38,38,.48) 75%, rgba(248,113,113,.58) 81%,
+    rgba(127,29,29,.38) 86%, rgba(239,68,68,.62) 91%,
+    rgba(254,226,226,.85) 95.5%, rgba(220,38,38,.4) 98.5%,
+    rgba(252,165,165,0) 100%); }
