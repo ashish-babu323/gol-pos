@@ -1,8 +1,10 @@
-# Gol AI POS
+# Gol — the AI business operator
 
-**A point of sale a shopkeeper runs by conversation.** Gol is an AI that runs a
-store's whole business — selling, stock, reports, expenses, purchases, bills,
-staff — through chat and voice, with the Gol POS as its selling screen. The
+**Stop operating software. Talk to your business. Gol operates the systems
+for you.** Gol is an AI business operator that runs a store's whole business —
+selling, stock, reports, expenses, purchases, bills, staff — through chat and
+voice. The point of sale in this repo is its selling screen, one surface of the
+MR.STORE operating system it runs. The
 owner doesn't open menus; they ask, in their own language, and Gol reasons over
 the shop's live data, answers in designed cards, and stages every write for the
 owner's one-word confirmation: **"gol"**. In its builder's words, it is *a very
