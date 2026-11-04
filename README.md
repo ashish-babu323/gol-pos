@@ -23,6 +23,19 @@ real counter needed it.
 Built from scratch during the **Meta / Cerebral Valley Global AI Developer
 Hackathon** (October 26 – November 4, 2026) — see `docs/BUILD-LOG.md`.
 
+## Try it live — the judge's links
+
+- **The presentation:** https://luckymart.biz/presentation/ — the whole story,
+  the demo film, and a live Gol panel on the page: ask it anything.
+- **The demo till (this repo, running):** https://luckymart.biz/gol-pos-dev/web/
+  — the Sunrise Mart register. Ring a sale; open the owner view with PIN
+  **9999**.
+- **A real store's website:** https://luckymart.biz/store/ — Lucky Mart, live,
+  with Gol working its storefront.
+- **The back office:** https://luckymart.biz/ — MR.STORE, the platform Gol
+  runs; real stores stay behind the owner's login, and the presentation's
+  back-office section shows it working.
+
 ## Verify it in two minutes
 
 - **Live demo storefront:** https://luckymart.biz/s/sunrise-mart — open the Gol
